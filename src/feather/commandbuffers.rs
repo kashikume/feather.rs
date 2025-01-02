@@ -26,7 +26,7 @@ pub unsafe fn create_command_buffers(device: &Device, data: &mut AppData) -> Res
 
         let render_area = vk::Rect2D::builder()
             .offset(vk::Offset2D::default())
-            .extent(data.swapchain_extent);
+            .extent(data.swapchain.swapchain_extent);
 
         let color_clear_value = vk::ClearValue {
             color: vk::ClearColorValue {

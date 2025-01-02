@@ -24,7 +24,7 @@ const PORTABILITY_MACOS_VERSION: Version = Version::new(1, 3, 216);
 pub unsafe fn create_logical_device(entry: &Entry, instance: &Instance, data: &mut AppData) -> Result<Device> {
     // Queue Create Infos
 
-    let indices = QueueFamilyIndices::get(instance, data, data.physical_device)?;
+    let indices = QueueFamilyIndices::get(instance, data.surface, data.physical_device)?;
 
     let mut unique_indices = HashSet::new();
     unique_indices.insert(indices.graphics);

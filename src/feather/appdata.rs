@@ -1,6 +1,7 @@
 use vulkanalia::prelude::v1_0::*;
 
 use super::vertex::Vertex;
+use super::swapchain::Swapchain;
 
 /// The Vulkan handles and associated properties used by our Vulkan app.
 #[derive(Clone, Debug, Default)]
@@ -15,11 +16,7 @@ pub struct AppData {
     pub graphics_queue: vk::Queue,
     pub present_queue: vk::Queue,
     // Swapchain
-    pub swapchain_format: vk::Format,
-    pub swapchain_extent: vk::Extent2D,
-    pub swapchain: vk::SwapchainKHR,
-    pub swapchain_images: Vec<vk::Image>,
-    pub swapchain_image_views: Vec<vk::ImageView>,
+    pub swapchain: Swapchain,
     // Pipeline
     pub render_pass: vk::RenderPass,
     pub descriptor_set_layout: vk::DescriptorSetLayout,

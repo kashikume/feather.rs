@@ -14,7 +14,7 @@ pub unsafe fn create_render_pass(instance: &Instance, device: &Device, data: &mu
     // Attachments
 
     let color_attachment = vk::AttachmentDescription::builder()
-        .format(data.swapchain_format)
+        .format(data.swapchain.swapchain_format)
         .samples(data.msaa_samples)
         .load_op(vk::AttachmentLoadOp::CLEAR)
         .store_op(vk::AttachmentStoreOp::STORE)
@@ -34,7 +34,7 @@ pub unsafe fn create_render_pass(instance: &Instance, device: &Device, data: &mu
         .final_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
 
     let color_resolve_attachment = vk::AttachmentDescription::builder()
-        .format(data.swapchain_format)
+        .format(data.swapchain.swapchain_format)
         .samples(vk::SampleCountFlags::_1)
         .load_op(vk::AttachmentLoadOp::DONT_CARE)
         .store_op(vk::AttachmentStoreOp::STORE)
@@ -149,14 +149,14 @@ pub unsafe fn create_pipeline(device: &Device, data: &mut AppData) -> Result<()>
     let viewport = vk::Viewport::builder()
         .x(0.0)
         .y(0.0)
-        .width(data.swapchain_extent.width as f32)
-        .height(data.swapchain_extent.height as f32)
+        .width(data.swapchain.swapchain_extent.width as f32)
+        .height(data.swapchain.swapchain_extent.height as f32)
         .min_depth(0.0)
         .max_depth(1.0);
 
     let scissor = vk::Rect2D::builder()
         .offset(vk::Offset2D { x: 0, y: 0 })
-        .extent(data.swapchain_extent);
+        .extent(data.swapchain.swapchain_extent);
 
     let viewports = &[viewport];
     let scissors = &[scissor];

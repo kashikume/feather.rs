@@ -32,7 +32,7 @@ use super::framebuffers::create_framebuffers;
 use super::logicaldevice::create_logical_device;
 use super::model::load_model;
 use super::physicaldevice::pick_physical_device;
-use super::swapchain::{create_swapchain, create_swapchain_image_views};
+use super::swapchain::Swapchain;
 use super::instance::create_instance;
 use super::pipeline::{create_descriptor_set_layout, create_pipeline, create_render_pass};
 use super::syncobjects::create_sync_objects;
@@ -60,8 +60,8 @@ impl App {
         data.surface = vk_window::create_surface(&instance, &window, &window)?;
         pick_physical_device(&instance, &mut data)?;
         let device = create_logical_device(&entry, &instance, &mut data)?;
-        create_swapchain(window, &instance, &device, &mut data)?;
-        create_swapchain_image_views(&device, &mut data)?;
+        data.swapchain = Swapchain::create(window, &instance, &device, &data)?;
+        data.swapchain.create_image_views(&device)?;
         create_render_pass(&instance, &device, &mut data)?;
         create_descriptor_set_layout(&device, &mut data)?;
         create_pipeline(&device, &mut data)?;
@@ -98,7 +98,7 @@ impl App {
         self.device.wait_for_fences(&[in_flight_fence], true, u64::MAX)?;
 
         let result = self.device.acquire_next_image_khr(
-            self.data.swapchain,
+            self.data.swapchain.swapchain,
             u64::MAX,
             self.data.image_available_semaphores[self.frame],
             vk::Fence::null(),
@@ -134,7 +134,7 @@ impl App {
         self.device
             .queue_submit(self.data.graphics_queue, &[submit_info], in_flight_fence)?;
 
-        let swapchains = &[self.data.swapchain];
+        let swapchains = &[self.data.swapchain.swapchain];
         let image_indices = &[image_index as u32];
         let present_info = vk::PresentInfoKHR::builder()
             .wait_semaphores(signal_semaphores)
@@ -180,7 +180,7 @@ impl App {
         let proj = correction
             * cgmath::perspective(
                 Deg(45.0),
-                self.data.swapchain_extent.width as f32 / self.data.swapchain_extent.height as f32,
+                self.data.swapchain.swapchain_extent.width as f32 / self.data.swapchain.swapchain_extent.height as f32,
                 0.1,
                 10.0,
             );
@@ -208,8 +208,8 @@ impl App {
     unsafe fn recreate_swapchain(&mut self, window: &Window) -> Result<()> {
         self.device.device_wait_idle()?;
         self.destroy_swapchain();
-        create_swapchain(window, &self.instance, &self.device, &mut self.data)?;
-        create_swapchain_image_views(&self.device, &mut self.data)?;
+        self.data.swapchain = Swapchain::create(window, &self.instance, &self.device, &self.data)?;
+        self.data.swapchain.create_image_views(&self.device)?;
         create_render_pass(&self.instance, &self.device, &mut self.data)?;
         create_pipeline(&self.device, &mut self.data)?;
         create_color_objects(&self.instance, &self.device, &mut self.data)?;
@@ -219,7 +219,7 @@ impl App {
         create_descriptor_pool(&self.device, &mut self.data)?;
         create_descriptor_sets(&self.device, &mut self.data)?;
         create_command_buffers(&self.device, &mut self.data)?;
-        self.data.images_in_flight.resize(self.data.swapchain_images.len(), vk::Fence::null());
+        self.data.images_in_flight.resize(self.data.swapchain.swapchain_images.len(), vk::Fence::null());
         Ok(())
     }
 
@@ -270,8 +270,8 @@ impl App {
         self.device.destroy_pipeline(self.data.pipeline, None);
         self.device.destroy_pipeline_layout(self.data.pipeline_layout, None);
         self.device.destroy_render_pass(self.data.render_pass, None);
-        self.data.swapchain_image_views.iter().for_each(|v| self.device.destroy_image_view(*v, None));
-        self.device.destroy_swapchain_khr(self.data.swapchain, None);
+        self.data.swapchain.swapchain_image_views.iter().for_each(|v| self.device.destroy_image_view(*v, None));
+        self.device.destroy_swapchain_khr(self.data.swapchain.swapchain, None);
     }
 }
 

@@ -13,16 +13,16 @@ use super::uniformbufferobject::UniformBufferObject;
 pub unsafe fn create_descriptor_pool(device: &Device, data: &mut AppData) -> Result<()> {
     let ubo_size = vk::DescriptorPoolSize::builder()
         .type_(vk::DescriptorType::UNIFORM_BUFFER)
-        .descriptor_count(data.swapchain_images.len() as u32);
+        .descriptor_count(data.swapchain.swapchain_images.len() as u32);
 
     let sampler_size = vk::DescriptorPoolSize::builder()
         .type_(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-        .descriptor_count(data.swapchain_images.len() as u32);
+        .descriptor_count(data.swapchain.swapchain_images.len() as u32);
 
     let pool_sizes = &[ubo_size, sampler_size];
     let info = vk::DescriptorPoolCreateInfo::builder()
         .pool_sizes(pool_sizes)
-        .max_sets(data.swapchain_images.len() as u32);
+        .max_sets(data.swapchain.swapchain_images.len() as u32);
 
     data.descriptor_pool = device.create_descriptor_pool(&info, None)?;
 
@@ -32,7 +32,7 @@ pub unsafe fn create_descriptor_pool(device: &Device, data: &mut AppData) -> Res
 pub unsafe fn create_descriptor_sets(device: &Device, data: &mut AppData) -> Result<()> {
     // Allocate
 
-    let layouts = vec![data.descriptor_set_layout; data.swapchain_images.len()];
+    let layouts = vec![data.descriptor_set_layout; data.swapchain.swapchain_images.len()];
     let info = vk::DescriptorSetAllocateInfo::builder()
         .descriptor_pool(data.descriptor_pool)
         .set_layouts(&layouts);
@@ -41,7 +41,7 @@ pub unsafe fn create_descriptor_sets(device: &Device, data: &mut AppData) -> Res
 
     // Update
 
-    for i in 0..data.swapchain_images.len() {
+    for i in 0..data.swapchain.swapchain_images.len() {
         let info = vk::DescriptorBufferInfo::builder()
             .buffer(data.uniform_buffers[i])
             .offset(0)

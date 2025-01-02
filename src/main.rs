@@ -15,7 +15,7 @@ fn main() -> Result<()> {
 
     let event_loop = EventLoop::new()?;
     let window = WindowBuilder::new()
-        .with_title("Vulkan Tutorial (Rust)")
+        .with_title("Feather development app")
         .with_inner_size(LogicalSize::new(1024, 768))
         .build(&event_loop)?;
 

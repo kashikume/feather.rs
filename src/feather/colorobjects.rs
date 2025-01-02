@@ -15,11 +15,11 @@ pub unsafe fn create_color_objects(instance: &Instance, device: &Device, data: &
         instance,
         device,
         data,
-        data.swapchain_extent.width,
-        data.swapchain_extent.height,
+        data.swapchain.swapchain_extent.width,
+        data.swapchain.swapchain_extent.height,
         1,
         data.msaa_samples,
-        data.swapchain_format,
+        data.swapchain.swapchain_format,
         vk::ImageTiling::OPTIMAL,
         vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::TRANSIENT_ATTACHMENT,
         vk::MemoryPropertyFlags::DEVICE_LOCAL,
@@ -33,7 +33,7 @@ pub unsafe fn create_color_objects(instance: &Instance, device: &Device, data: &
     data.color_image_view = create_image_view(
         device,
         data.color_image,
-        data.swapchain_format,
+        data.swapchain.swapchain_format,
         vk::ImageAspectFlags::COLOR,
         1,
     )?;

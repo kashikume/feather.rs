@@ -1,10 +1,9 @@
 use anyhow::{anyhow, Result};
 use vulkanalia::prelude::v1_0::*;
 use vulkanalia::vk::KhrSurfaceExtension;
+use vulkanalia::vk::SurfaceKHR;
 
-use crate::feather::physicaldevice::SuitabilityError;
-
-use super::appdata::AppData;
+use super::physicaldevice::SuitabilityError;
 
 #[derive(Copy, Clone, Debug)]
 pub struct QueueFamilyIndices {
@@ -13,7 +12,7 @@ pub struct QueueFamilyIndices {
 }
 
 impl QueueFamilyIndices {
-    pub unsafe fn get(instance: &Instance, data: &AppData, physical_device: vk::PhysicalDevice) -> Result<Self> {
+    pub unsafe fn get(instance: &Instance, surface: SurfaceKHR, physical_device: vk::PhysicalDevice) -> Result<Self> {
         let properties = instance.get_physical_device_queue_family_properties(physical_device);
 
         let graphics = properties
@@ -23,7 +22,7 @@ impl QueueFamilyIndices {
 
         let mut present = None;
         for (index, _properties) in properties.iter().enumerate() {
-            if instance.get_physical_device_surface_support_khr(physical_device, index as u32, data.surface)? {
+            if instance.get_physical_device_surface_support_khr(physical_device, index as u32, surface)? {
                 present = Some(index as u32);
                 break;
             }

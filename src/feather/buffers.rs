@@ -113,7 +113,7 @@ pub unsafe fn create_uniform_buffers(instance: &Instance, device: &Device, data:
     data.uniform_buffers.clear();
     data.uniform_buffers_memory.clear();
 
-    for _ in 0..data.swapchain_images.len() {
+    for _ in 0..data.swapchain.swapchain_images.len() {
         let (uniform_buffer, uniform_buffer_memory) = create_buffer(
             instance,
             device,
