@@ -9,7 +9,8 @@ use super::appdata::AppData;
 
 pub unsafe fn create_framebuffers(device: &Device, data: &mut AppData) -> Result<()> {
     data.framebuffers = data
-        .swapchain.swapchain_image_views
+        .swapchain
+        .swapchain_image_views
         .iter()
         .map(|i| {
             let attachments = &[data.color_image_view, data.depth_image_view, *i];

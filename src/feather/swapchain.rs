@@ -15,14 +15,17 @@ pub struct Swapchain {
     pub swapchain_extent: vk::Extent2D,
     pub swapchain: vk::SwapchainKHR,
     pub swapchain_images: Vec<vk::Image>,
-    pub swapchain_image_views: Vec<vk::ImageView>,    
+    pub swapchain_image_views: Vec<vk::ImageView>,
 }
 
 fn get_swapchain_surface_format(formats: &[vk::SurfaceFormatKHR]) -> vk::SurfaceFormatKHR {
     formats
         .iter()
         .cloned()
-        .find(|f| f.format == vk::Format::B8G8R8A8_SRGB && f.color_space == vk::ColorSpaceKHR::SRGB_NONLINEAR)
+        .find(|f| {
+            f.format == vk::Format::B8G8R8A8_SRGB
+                && f.color_space == vk::ColorSpaceKHR::SRGB_NONLINEAR
+        })
         .unwrap_or_else(|| formats[0])
 }
 
@@ -53,7 +56,12 @@ fn get_swapchain_extent(window: &Window, capabilities: vk::SurfaceCapabilitiesKH
 }
 
 impl Swapchain {
-    pub unsafe fn create(window: &Window, instance: &Instance, device: &Device, data: &AppData) -> Result<Self> {
+    pub unsafe fn create(
+        window: &Window,
+        instance: &Instance,
+        device: &Device,
+        data: &AppData,
+    ) -> Result<Self> {
         // Image
 
         let indices = QueueFamilyIndices::get(instance, data.surface, data.physical_device)?;
@@ -67,7 +75,9 @@ impl Swapchain {
         let swapchain_extent = extent;
 
         let mut image_count = support.capabilities.min_image_count + 1;
-        if support.capabilities.max_image_count != 0 && image_count > support.capabilities.max_image_count {
+        if support.capabilities.max_image_count != 0
+            && image_count > support.capabilities.max_image_count
+        {
             image_count = support.capabilities.max_image_count;
         }
 
@@ -117,10 +127,17 @@ impl Swapchain {
         self.swapchain_image_views = self
             .swapchain_images
             .iter()
-            .map(|i| create_image_view(device, *i, self.swapchain_format, vk::ImageAspectFlags::COLOR, 1))
+            .map(|i| {
+                create_image_view(
+                    device,
+                    *i,
+                    self.swapchain_format,
+                    vk::ImageAspectFlags::COLOR,
+                    1,
+                )
+            })
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(())
     }
 }
-

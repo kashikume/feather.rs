@@ -8,7 +8,11 @@ use super::queuefamilyindices::QueueFamilyIndices;
 // Command Pool
 //================================================
 
-pub unsafe fn create_command_pool(instance: &Instance, device: &Device, data: &mut AppData) -> Result<()> {
+pub unsafe fn create_command_pool(
+    instance: &Instance,
+    device: &Device,
+    data: &mut AppData,
+) -> Result<()> {
     let indices = QueueFamilyIndices::get(instance, data.surface, data.physical_device)?;
 
     let info = vk::CommandPoolCreateInfo::builder().queue_family_index(indices.graphics);

@@ -23,7 +23,10 @@ pub unsafe fn get_memory_type_index(
         .ok_or_else(|| anyhow!("Failed to find suitable memory type."))
 }
 
-pub unsafe fn begin_single_time_commands(device: &Device, data: &AppData) -> Result<vk::CommandBuffer> {
+pub unsafe fn begin_single_time_commands(
+    device: &Device,
+    data: &AppData,
+) -> Result<vk::CommandBuffer> {
     // Allocate
 
     let info = vk::CommandBufferAllocateInfo::builder()
@@ -35,14 +38,19 @@ pub unsafe fn begin_single_time_commands(device: &Device, data: &AppData) -> Res
 
     // Begin
 
-    let info = vk::CommandBufferBeginInfo::builder().flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
+    let info =
+        vk::CommandBufferBeginInfo::builder().flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
 
     device.begin_command_buffer(command_buffer, &info)?;
 
     Ok(command_buffer)
 }
 
-pub unsafe fn end_single_time_commands(device: &Device, data: &AppData, command_buffer: vk::CommandBuffer) -> Result<()> {
+pub unsafe fn end_single_time_commands(
+    device: &Device,
+    data: &AppData,
+    command_buffer: vk::CommandBuffer,
+) -> Result<()> {
     // End
 
     device.end_command_buffer(command_buffer)?;

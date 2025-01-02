@@ -29,12 +29,12 @@ use super::commandpool::create_command_pool;
 use super::dephobjects::create_depth_objects;
 use super::descriptors::{create_descriptor_pool, create_descriptor_sets};
 use super::framebuffers::create_framebuffers;
+use super::instance::create_instance;
 use super::logicaldevice::create_logical_device;
 use super::model::load_model;
 use super::physicaldevice::pick_physical_device;
-use super::swapchain::Swapchain;
-use super::instance::create_instance;
 use super::pipeline::{create_descriptor_set_layout, create_pipeline, create_render_pass};
+use super::swapchain::Swapchain;
 use super::syncobjects::create_sync_objects;
 use super::texture::{create_texture_image, create_texture_image_view, create_texture_sampler};
 use super::uniformbufferobject::UniformBufferObject;
@@ -95,7 +95,8 @@ impl App {
     pub unsafe fn render(&mut self, window: &Window) -> Result<()> {
         let in_flight_fence = self.data.in_flight_fences[self.frame];
 
-        self.device.wait_for_fences(&[in_flight_fence], true, u64::MAX)?;
+        self.device
+            .wait_for_fences(&[in_flight_fence], true, u64::MAX)?;
 
         let result = self.device.acquire_next_image_khr(
             self.data.swapchain.swapchain,
@@ -112,7 +113,8 @@ impl App {
 
         let image_in_flight = self.data.images_in_flight[image_index];
         if !image_in_flight.is_null() {
-            self.device.wait_for_fences(&[image_in_flight], true, u64::MAX)?;
+            self.device
+                .wait_for_fences(&[image_in_flight], true, u64::MAX)?;
         }
 
         self.data.images_in_flight[image_index] = in_flight_fence;
@@ -141,8 +143,11 @@ impl App {
             .swapchains(swapchains)
             .image_indices(image_indices);
 
-        let result = self.device.queue_present_khr(self.data.present_queue, &present_info);
-        let changed = result == Ok(vk::SuccessCode::SUBOPTIMAL_KHR) || result == Err(vk::ErrorCode::OUT_OF_DATE_KHR);
+        let result = self
+            .device
+            .queue_present_khr(self.data.present_queue, &present_info);
+        let changed = result == Ok(vk::SuccessCode::SUBOPTIMAL_KHR)
+            || result == Err(vk::ErrorCode::OUT_OF_DATE_KHR);
         if self.resized || changed {
             self.resized = false;
             self.recreate_swapchain(window)?;
@@ -180,7 +185,8 @@ impl App {
         let proj = correction
             * cgmath::perspective(
                 Deg(45.0),
-                self.data.swapchain.swapchain_extent.width as f32 / self.data.swapchain.swapchain_extent.height as f32,
+                self.data.swapchain.swapchain_extent.width as f32
+                    / self.data.swapchain.swapchain_extent.height as f32,
                 0.1,
                 10.0,
             );
@@ -198,7 +204,8 @@ impl App {
 
         memcpy(&ubo, memory.cast(), 1);
 
-        self.device.unmap_memory(self.data.uniform_buffers_memory[image_index]);
+        self.device
+            .unmap_memory(self.data.uniform_buffers_memory[image_index]);
 
         Ok(())
     }
@@ -274,5 +281,3 @@ impl App {
         self.device.destroy_swapchain_khr(self.data.swapchain.swapchain, None);
     }
 }
-
-

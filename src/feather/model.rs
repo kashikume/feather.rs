@@ -4,7 +4,6 @@ use std::fs::File;
 
 use std::io::BufReader;
 
-
 use anyhow::Result;
 use cgmath::{vec2, vec3};
 

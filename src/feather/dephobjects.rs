@@ -8,7 +8,11 @@ use super::images::{create_image, create_image_view};
 // Depth Objects
 //================================================
 
-pub unsafe fn create_depth_objects(instance: &Instance, device: &Device, data: &mut AppData) -> Result<()> {
+pub unsafe fn create_depth_objects(
+    instance: &Instance,
+    device: &Device,
+    data: &mut AppData,
+) -> Result<()> {
     // Image + Image Memory
 
     let format = get_depth_format(instance, data)?;
@@ -32,7 +36,13 @@ pub unsafe fn create_depth_objects(instance: &Instance, device: &Device, data: &
 
     // Image View
 
-    data.depth_image_view = create_image_view(device, data.depth_image, format, vk::ImageAspectFlags::DEPTH, 1)?;
+    data.depth_image_view = create_image_view(
+        device,
+        data.depth_image,
+        format,
+        vk::ImageAspectFlags::DEPTH,
+        1,
+    )?;
 
     Ok(())
 }
@@ -64,7 +74,8 @@ unsafe fn get_supported_format(
         .iter()
         .cloned()
         .find(|f| {
-            let properties = instance.get_physical_device_format_properties(data.physical_device, *f);
+            let properties =
+                instance.get_physical_device_format_properties(data.physical_device, *f);
             match tiling {
                 vk::ImageTiling::LINEAR => properties.linear_tiling_features.contains(features),
                 vk::ImageTiling::OPTIMAL => properties.optimal_tiling_features.contains(features),
@@ -73,4 +84,3 @@ unsafe fn get_supported_format(
         })
         .ok_or_else(|| anyhow!("Failed to find supported format!"))
 }
-

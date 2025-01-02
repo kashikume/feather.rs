@@ -1,7 +1,7 @@
 use vulkanalia::prelude::v1_0::*;
 
-use super::vertex::Vertex;
 use super::swapchain::Swapchain;
+use super::vertex::Vertex;
 
 /// The Vulkan handles and associated properties used by our Vulkan app.
 #[derive(Clone, Debug, Default)]

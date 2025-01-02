@@ -6,14 +6,20 @@ use vulkanalia::prelude::v1_0::*;
 
 use super::appdata::AppData;
 use super::buffers::create_buffer;
-use super::images::{copy_buffer_to_image, create_image, create_image_view, transition_image_layout};
+use super::images::{
+    copy_buffer_to_image, create_image, create_image_view, transition_image_layout,
+};
 use super::other::{begin_single_time_commands, end_single_time_commands};
 
 //================================================
 // Texture
 //================================================
 
-pub unsafe fn create_texture_image(instance: &Instance, device: &Device, data: &mut AppData) -> Result<()> {
+pub unsafe fn create_texture_image(
+    instance: &Instance,
+    device: &Device,
+    data: &mut AppData,
+) -> Result<()> {
     // Load
 
     let image = File::open("resources/viking_room.png")?;
@@ -63,7 +69,9 @@ pub unsafe fn create_texture_image(instance: &Instance, device: &Device, data: &
         vk::SampleCountFlags::_1,
         vk::Format::R8G8B8A8_SRGB,
         vk::ImageTiling::OPTIMAL,
-        vk::ImageUsageFlags::SAMPLED | vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::TRANSFER_SRC,
+        vk::ImageUsageFlags::SAMPLED
+            | vk::ImageUsageFlags::TRANSFER_DST
+            | vk::ImageUsageFlags::TRANSFER_SRC,
         vk::MemoryPropertyFlags::DEVICE_LOCAL,
     )?;
 
@@ -82,7 +90,14 @@ pub unsafe fn create_texture_image(instance: &Instance, device: &Device, data: &
         data.mip_levels,
     )?;
 
-    copy_buffer_to_image(device, data, staging_buffer, data.texture_image, width, height)?;
+    copy_buffer_to_image(
+        device,
+        data,
+        staging_buffer,
+        data.texture_image,
+        width,
+        height,
+    )?;
 
     // Cleanup
 
@@ -122,7 +137,9 @@ unsafe fn generate_mipmaps(
         .optimal_tiling_features
         .contains(vk::FormatFeatureFlags::SAMPLED_IMAGE_FILTER_LINEAR)
     {
-        return Err(anyhow!("Texture image format does not support linear blitting!"));
+        return Err(anyhow!(
+            "Texture image format does not support linear blitting!"
+        ));
     }
 
     // Mipmaps

@@ -1,9 +1,7 @@
 use std::hash::{Hash, Hasher};
 use std::mem::size_of;
 
-
 use vulkanalia::prelude::v1_0::*;
-
 
 type Vec2 = cgmath::Vector2<f32>;
 type Vec3 = cgmath::Vector3<f32>;
@@ -18,7 +16,11 @@ pub struct Vertex {
 
 impl Vertex {
     pub fn new(pos: Vec3, color: Vec3, tex_coord: Vec2) -> Self {
-        Self { pos, color, tex_coord }
+        Self {
+            pos,
+            color,
+            tex_coord,
+        }
     }
 
     pub fn binding_description() -> vk::VertexInputBindingDescription {

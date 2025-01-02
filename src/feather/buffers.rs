@@ -13,7 +13,11 @@ use super::vertex::Vertex;
 // Buffers
 //================================================
 
-pub unsafe fn create_vertex_buffer(instance: &Instance, device: &Device, data: &mut AppData) -> Result<()> {
+pub unsafe fn create_vertex_buffer(
+    instance: &Instance,
+    device: &Device,
+    data: &mut AppData,
+) -> Result<()> {
     // Create (staging)
 
     let size = (size_of::<Vertex>() * data.vertices.len()) as u64;
@@ -61,7 +65,11 @@ pub unsafe fn create_vertex_buffer(instance: &Instance, device: &Device, data: &
     Ok(())
 }
 
-pub unsafe fn create_index_buffer(instance: &Instance, device: &Device, data: &mut AppData) -> Result<()> {
+pub unsafe fn create_index_buffer(
+    instance: &Instance,
+    device: &Device,
+    data: &mut AppData,
+) -> Result<()> {
     // Create (staging)
 
     let size = (size_of::<u32>() * data.indices.len()) as u64;
@@ -109,7 +117,11 @@ pub unsafe fn create_index_buffer(instance: &Instance, device: &Device, data: &m
     Ok(())
 }
 
-pub unsafe fn create_uniform_buffers(instance: &Instance, device: &Device, data: &mut AppData) -> Result<()> {
+pub unsafe fn create_uniform_buffers(
+    instance: &Instance,
+    device: &Device,
+    data: &mut AppData,
+) -> Result<()> {
     data.uniform_buffers.clear();
     data.uniform_buffers_memory.clear();
 
@@ -157,7 +169,12 @@ pub unsafe fn create_buffer(
 
     let memory_info = vk::MemoryAllocateInfo::builder()
         .allocation_size(requirements.size)
-        .memory_type_index(get_memory_type_index(instance, data, properties, requirements)?);
+        .memory_type_index(get_memory_type_index(
+            instance,
+            data,
+            properties,
+            requirements,
+        )?);
 
     let buffer_memory = device.allocate_memory(&memory_info, None)?;
 

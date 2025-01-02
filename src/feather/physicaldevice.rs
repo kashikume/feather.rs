@@ -12,7 +12,6 @@ use super::swapchainsupport::SwapchainSupport;
 /// The required device extensions.
 const DEVICE_EXTENSIONS: &[vk::ExtensionName] = &[vk::KHR_SWAPCHAIN_EXTENSION.name];
 
-
 //================================================
 // Physical Device
 //================================================
@@ -26,7 +25,10 @@ pub unsafe fn pick_physical_device(instance: &Instance, data: &mut AppData) -> R
         let properties = instance.get_physical_device_properties(physical_device);
 
         if let Err(error) = check_physical_device(instance, data, physical_device) {
-            warn!("Skipping physical device (`{}`): {}", properties.device_name, error);
+            warn!(
+                "Skipping physical device (`{}`): {}",
+                properties.device_name, error
+            );
         } else {
             info!("Selected physical device (`{}`).", properties.device_name);
             data.physical_device = physical_device;
@@ -59,7 +61,10 @@ unsafe fn check_physical_device(
     Ok(())
 }
 
-unsafe fn check_physical_device_extensions(instance: &Instance, physical_device: vk::PhysicalDevice) -> Result<()> {
+unsafe fn check_physical_device_extensions(
+    instance: &Instance,
+    physical_device: vk::PhysicalDevice,
+) -> Result<()> {
     let extensions = instance
         .enumerate_device_extension_properties(physical_device, None)?
         .iter()
@@ -68,13 +73,16 @@ unsafe fn check_physical_device_extensions(instance: &Instance, physical_device:
     if DEVICE_EXTENSIONS.iter().all(|e| extensions.contains(e)) {
         Ok(())
     } else {
-        Err(anyhow!(SuitabilityError("Missing required device extensions.")))
+        Err(anyhow!(SuitabilityError(
+            "Missing required device extensions."
+        )))
     }
 }
 
 unsafe fn get_max_msaa_samples(instance: &Instance, data: &AppData) -> vk::SampleCountFlags {
     let properties = instance.get_physical_device_properties(data.physical_device);
-    let counts = properties.limits.framebuffer_color_sample_counts & properties.limits.framebuffer_depth_sample_counts;
+    let counts = properties.limits.framebuffer_color_sample_counts
+        & properties.limits.framebuffer_depth_sample_counts;
     [
         vk::SampleCountFlags::_64,
         vk::SampleCountFlags::_32,
@@ -88,4 +96,3 @@ unsafe fn get_max_msaa_samples(instance: &Instance, data: &AppData) -> vk::Sampl
     .find(|c| counts.contains(*c))
     .unwrap_or(vk::SampleCountFlags::_1)
 }
-
