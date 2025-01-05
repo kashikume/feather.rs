@@ -211,7 +211,6 @@ impl App {
     }
 
     /// Recreates the swapchain for our Vulkan app.
-    #[rustfmt::skip]
     unsafe fn recreate_swapchain(&mut self, window: &Window) -> Result<()> {
         self.device.device_wait_idle()?;
         self.destroy_swapchain();
@@ -277,7 +276,6 @@ impl App {
         self.device.destroy_pipeline(self.data.pipeline, None);
         self.device.destroy_pipeline_layout(self.data.pipeline_layout, None);
         self.device.destroy_render_pass(self.data.render_pass, None);
-        self.data.swapchain.swapchain_image_views.iter().for_each(|v| self.device.destroy_image_view(*v, None));
-        self.device.destroy_swapchain_khr(self.data.swapchain.swapchain, None);
+        self.data.swapchain.destroy(&self.device);
     }
 }

@@ -140,4 +140,16 @@ impl Swapchain {
 
         Ok(())
     }
+
+    pub fn destroy(&mut self, device: &Device) {
+        unsafe {
+            for image_view in &self.swapchain_image_views {
+                device.destroy_image_view(*image_view, None);
+            }
+
+            device.destroy_swapchain_khr(self.swapchain, None);
+            self.swapchain_image_views.clear();
+            self.swapchain = vk::SwapchainKHR::null();
+        }
+    }
 }
