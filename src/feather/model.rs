@@ -23,6 +23,7 @@ pub fn load_model(data: &mut AppData) -> Result<()> {
         &mut reader,
         &tobj::LoadOptions {
             triangulate: true,
+            single_index: true,
             ..Default::default()
         },
         |_| Ok(Default::default()),
@@ -36,6 +37,7 @@ pub fn load_model(data: &mut AppData) -> Result<()> {
         for index in &model.mesh.indices {
             let pos_offset = (3 * index) as usize;
             let tex_coord_offset = (2 * index) as usize;
+            let normals_offset = (3 * index) as usize;
 
             let vertex = Vertex::new(
                 vec3(
@@ -43,7 +45,11 @@ pub fn load_model(data: &mut AppData) -> Result<()> {
                     model.mesh.positions[pos_offset + 1],
                     model.mesh.positions[pos_offset + 2],
                 ),
-                vec3(1.0, 1.0, 1.0),
+                vec3(
+                    model.mesh.normals[normals_offset],
+                    model.mesh.normals[normals_offset + 1],
+                    model.mesh.normals[normals_offset + 2],
+                ),
                 vec2(
                     model.mesh.texcoords[tex_coord_offset],
                     1.0 - model.mesh.texcoords[tex_coord_offset + 1],

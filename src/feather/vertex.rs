@@ -10,15 +10,15 @@ type Vec3 = cgmath::Vector3<f32>;
 #[derive(Copy, Clone, Debug)]
 pub struct Vertex {
     pub pos: Vec3,
-    pub color: Vec3,
+    pub normal: Vec3,
     pub tex_coord: Vec2,
 }
 
 impl Vertex {
-    pub fn new(pos: Vec3, color: Vec3, tex_coord: Vec2) -> Self {
+    pub fn new(pos: Vec3, normal: Vec3, tex_coord: Vec2) -> Self {
         Self {
             pos,
-            color,
+            normal,
             tex_coord,
         }
     }
@@ -38,7 +38,7 @@ impl Vertex {
             .format(vk::Format::R32G32B32_SFLOAT)
             .offset(0)
             .build();
-        let color = vk::VertexInputAttributeDescription::builder()
+        let normal = vk::VertexInputAttributeDescription::builder()
             .binding(0)
             .location(1)
             .format(vk::Format::R32G32B32_SFLOAT)
@@ -50,13 +50,13 @@ impl Vertex {
             .format(vk::Format::R32G32_SFLOAT)
             .offset((size_of::<Vec3>() + size_of::<Vec3>()) as u32)
             .build();
-        [pos, color, tex_coord]
+        [pos, normal, tex_coord]
     }
 }
 
 impl PartialEq for Vertex {
     fn eq(&self, other: &Self) -> bool {
-        self.pos == other.pos && self.color == other.color && self.tex_coord == other.tex_coord
+        self.pos == other.pos && self.normal == other.normal && self.tex_coord == other.tex_coord
     }
 }
 
@@ -67,9 +67,9 @@ impl Hash for Vertex {
         self.pos[0].to_bits().hash(state);
         self.pos[1].to_bits().hash(state);
         self.pos[2].to_bits().hash(state);
-        self.color[0].to_bits().hash(state);
-        self.color[1].to_bits().hash(state);
-        self.color[2].to_bits().hash(state);
+        self.normal[0].to_bits().hash(state);
+        self.normal[1].to_bits().hash(state);
+        self.normal[2].to_bits().hash(state);
         self.tex_coord[0].to_bits().hash(state);
         self.tex_coord[1].to_bits().hash(state);
     }
