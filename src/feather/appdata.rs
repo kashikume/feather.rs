@@ -1,10 +1,11 @@
 use vulkanalia::prelude::v1_0::*;
 
+use super::mesh::Mesh;
 use super::swapchain::Swapchain;
 use super::vertex::Vertex;
 
 /// The Vulkan handles and associated properties used by our Vulkan app.
-#[derive(Clone, Debug, Default)]
+#[derive(Default)]
 pub struct AppData {
     // Debug
     pub messenger: vk::DebugUtilsMessengerEXT,
@@ -41,8 +42,7 @@ pub struct AppData {
     pub texture_image_view: vk::ImageView,
     pub texture_sampler: vk::Sampler,
     // Model
-    pub vertices: Vec<Vertex>,
-    pub indices: Vec<u32>,
+    pub mesh: Mesh,
     // Buffers
     pub vertex_buffer: vk::Buffer,
     pub vertex_buffer_memory: vk::DeviceMemory,

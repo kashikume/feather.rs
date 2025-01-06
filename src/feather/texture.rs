@@ -1,15 +1,37 @@
 use std::fs::File;
 use std::ptr::copy_nonoverlapping as memcpy;
+use std::rc::Rc;
 
 use anyhow::{anyhow, Result};
 use vulkanalia::prelude::v1_0::*;
 
 use super::appdata::AppData;
+use super::atlas::Atlas;
 use super::buffers::create_buffer;
 use super::images::{
     copy_buffer_to_image, create_image, create_image_view, transition_image_layout,
 };
 use super::other::{begin_single_time_commands, end_single_time_commands};
+
+pub struct Texture {
+    atlas: Rc<Atlas>,
+    u_min: f32,
+    v_min: f32,
+    u_range: f32,
+    v_range: f32,
+}
+
+impl Texture {
+    pub fn full_atlas(atlas: Rc<Atlas>) -> Self {
+        Self {
+            atlas,
+            u_min: 0.0,
+            v_min: 0.0,
+            u_range: 1.0,
+            v_range: 1.0,
+        }
+    }
+}
 
 //================================================
 // Texture

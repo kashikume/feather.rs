@@ -3,8 +3,7 @@ use std::mem::size_of;
 
 use vulkanalia::prelude::v1_0::*;
 
-type Vec2 = cgmath::Vector2<f32>;
-type Vec3 = cgmath::Vector3<f32>;
+use super::math::{Vec2, Vec3};
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]

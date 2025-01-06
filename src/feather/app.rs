@@ -19,8 +19,6 @@ const VALIDATION_ENABLED: bool = cfg!(debug_assertions);
 /// The maximum number of frames that can be processed concurrently.
 const MAX_FRAMES_IN_FLIGHT: usize = 2;
 
-type Mat4 = cgmath::Matrix4<f32>;
-
 use super::appdata::AppData;
 use super::buffers::{create_index_buffer, create_uniform_buffers, create_vertex_buffer};
 use super::colorobjects::create_color_objects;
@@ -31,6 +29,7 @@ use super::descriptors::{create_descriptor_pool, create_descriptor_sets};
 use super::framebuffers::create_framebuffers;
 use super::instance::create_instance;
 use super::logicaldevice::create_logical_device;
+use super::math::*;
 use super::model::load_model;
 use super::physicaldevice::pick_physical_device;
 use super::pipeline::{create_descriptor_set_layout, create_pipeline, create_render_pass};
@@ -166,7 +165,7 @@ impl App {
 
         let time = self.start.elapsed().as_secs_f32();
 
-        let model = Mat4::from_axis_angle(vec3(0.0, 0.0, 1.0), Deg(90.0) * time);
+        let model = Mat4::from_axis_angle(vec3(0.0, 0.0, 1.0), Deg(10.0) * time);
 
         let view = Mat4::look_at_rh(
             point3::<f32>(2.0, 2.0, 2.0),
@@ -225,7 +224,10 @@ impl App {
         create_descriptor_pool(&self.device, &mut self.data)?;
         create_descriptor_sets(&self.device, &mut self.data)?;
         create_command_buffers(&self.device, &mut self.data)?;
-        self.data.images_in_flight.resize(self.data.swapchain.swapchain_images.len(), vk::Fence::null());
+        self.data.images_in_flight.resize(
+            self.data.swapchain.swapchain_images.len(),
+            vk::Fence::null(),
+        );
         Ok(())
     }
 

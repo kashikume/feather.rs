@@ -20,7 +20,7 @@ pub unsafe fn create_vertex_buffer(
 ) -> Result<()> {
     // Create (staging)
 
-    let size = (size_of::<Vertex>() * data.vertices.len()) as u64;
+    let size = (size_of::<Vertex>() * data.mesh.vertices.len()) as u64;
 
     let (staging_buffer, staging_buffer_memory) = create_buffer(
         instance,
@@ -35,7 +35,11 @@ pub unsafe fn create_vertex_buffer(
 
     let memory = device.map_memory(staging_buffer_memory, 0, size, vk::MemoryMapFlags::empty())?;
 
-    memcpy(data.vertices.as_ptr(), memory.cast(), data.vertices.len());
+    memcpy(
+        data.mesh.vertices.as_ptr(),
+        memory.cast(),
+        data.mesh.vertices.len(),
+    );
 
     device.unmap_memory(staging_buffer_memory);
 
@@ -72,7 +76,7 @@ pub unsafe fn create_index_buffer(
 ) -> Result<()> {
     // Create (staging)
 
-    let size = (size_of::<u32>() * data.indices.len()) as u64;
+    let size = (size_of::<u32>() * data.mesh.indices.len()) as u64;
 
     let (staging_buffer, staging_buffer_memory) = create_buffer(
         instance,
@@ -87,7 +91,11 @@ pub unsafe fn create_index_buffer(
 
     let memory = device.map_memory(staging_buffer_memory, 0, size, vk::MemoryMapFlags::empty())?;
 
-    memcpy(data.indices.as_ptr(), memory.cast(), data.indices.len());
+    memcpy(
+        data.mesh.indices.as_ptr(),
+        memory.cast(),
+        data.mesh.indices.len(),
+    );
 
     device.unmap_memory(staging_buffer_memory);
 
