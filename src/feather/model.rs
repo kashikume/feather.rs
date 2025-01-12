@@ -16,6 +16,6 @@ pub fn load_model(data: &mut AppData) -> Result<()> {
         meshbuildercuboid::MeshBuilderCuboid::new_same_walls((-0.5, 0.5), (-0.5, 0.5), (-0.5, 0.5));
     let mesh2 = meshbuildercuboid.build()?;
 
-    data.mesh = mesh2;
+    data.mesh = mesh;
     Ok(())
 }

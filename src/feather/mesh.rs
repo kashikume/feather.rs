@@ -8,10 +8,10 @@ pub struct Mesh {
 }
 
 impl Mesh {
-    pub fn new() -> Self {
+    pub fn new(vertices: Vec<Vertex>, indices: Vec<u32>) -> Self {
         Self {
-            vertices: Vec::new(),
-            indices: Vec::new(),
+            vertices,
+            indices,
         }
     }
 

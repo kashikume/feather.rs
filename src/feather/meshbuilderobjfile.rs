@@ -18,7 +18,7 @@ impl MeshBuilderObjFile {
         }
     }
 
-    pub fn build(&self) -> Result<Mesh> {
+    pub fn build(self) -> Result<Mesh> {
         let mut reader = BufReader::new(File::open(&self.file_name)?);
 
         let (models, _) = tobj::load_obj_buf(
@@ -34,8 +34,8 @@ impl MeshBuilderObjFile {
         // Vertices / Indices
 
         let mut unique_vertices = HashMap::new();
-
-        let mut out = Mesh::new();
+        let mut vertices = Vec::new();
+        let mut indices = Vec::new();
 
         for model in &models {
             for index in &model.mesh.indices {
@@ -61,16 +61,16 @@ impl MeshBuilderObjFile {
                 );
 
                 if let Some(index) = unique_vertices.get(&vertex) {
-                    out.indices.push(*index as u32);
+                    indices.push(*index as u32);
                 } else {
-                    let index = out.vertices.len();
+                    let index = vertices.len();
                     unique_vertices.insert(vertex, index);
-                    out.vertices.push(vertex);
-                    out.indices.push(index as u32);
+                    vertices.push(vertex);
+                    indices.push(index as u32);
                 }
             }
         }
 
-        Ok(out)
+        Ok(Mesh::new(vertices, indices))
     }
 }

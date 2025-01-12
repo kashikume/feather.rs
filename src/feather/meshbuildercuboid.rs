@@ -28,6 +28,8 @@ pub struct MeshBuilderCuboid {
     z: (f32, f32),
     u: Vec<(f32, f32)>,
     v: Vec<(f32, f32)>,
+    vertices: Vec<Vertex>,
+    indices: Vec<u32>,
 }
 
 impl MeshBuilderCuboid {
@@ -62,6 +64,8 @@ impl MeshBuilderCuboid {
                 }
                 None => vec![(0.0, 1.0)],
             },
+            vertices: Vec::new(),
+            indices: Vec::new(),
         }
     }
 
@@ -69,12 +73,10 @@ impl MeshBuilderCuboid {
         Self::new(x, y, z, None, None)
     }
 
-    pub fn build(&self) -> Result<Mesh> {
-        let mut mesh = Mesh::new();
+    pub fn build(mut self) -> Result<Mesh> {
 
         // 0
-        Self::add_wall(
-            &mut mesh,
+        self.add_wall(
             (self.x.0, self.x.1),
             (self.y.0, self.y.1),
             (self.z.0, self.z.0),
@@ -84,8 +86,7 @@ impl MeshBuilderCuboid {
         )?;
 
         // 1
-        Self::add_wall(
-            &mut mesh,
+        self.add_wall(
             (self.x.1, self.x.1),
             (self.y.0, self.y.1),
             (self.z.1, self.z.0),
@@ -95,8 +96,7 @@ impl MeshBuilderCuboid {
         )?;
 
         // 2
-        Self::add_wall(
-            &mut mesh,
+        self.add_wall(
             (self.x.1, self.x.0),
             (self.y.0, self.y.1),
             (self.z.1, self.z.1),
@@ -106,8 +106,7 @@ impl MeshBuilderCuboid {
         )?;
 
         // 3
-        Self::add_wall(
-            &mut mesh,
+        self.add_wall(
             (self.x.0, self.x.0),
             (self.y.1, self.y.0),
             (self.z.1, self.z.0),
@@ -117,8 +116,7 @@ impl MeshBuilderCuboid {
         )?;
 
         // 4
-        Self::add_wall(
-            &mut mesh,
+        self.add_wall(
             (self.x.0, self.x.1),
             (self.y.0, self.y.0),
             (self.z.1, self.z.0),
@@ -128,8 +126,7 @@ impl MeshBuilderCuboid {
         )?;
 
         // 5
-        Self::add_wall(
-            &mut mesh,
+        self.add_wall(
             (self.x.1, self.x.0),
             (self.y.1, self.y.1),
             (self.z.1, self.z.0),
@@ -138,43 +135,42 @@ impl MeshBuilderCuboid {
             (0.0, -1.0, 0.0),
         )?;
 
-        Ok(mesh)
+        Ok(Mesh::new(self.vertices, self.indices))
     }
 
     #[rustfmt::skip]
-    fn add_wall(mesh:&mut Mesh, x:(f32,f32), y:(f32,f32), z:(f32,f32), u:(f32,f32), v:(f32,f32), n:(f32, f32, f32) ) -> Result<()> {
-        let start_pos = mesh.vertices.len() as u32;
+    fn add_wall(&mut self, x:(f32,f32), y:(f32,f32), z:(f32,f32), u:(f32,f32), v:(f32,f32), n:(f32, f32, f32) ) -> Result<()> {
+        let start_pos = self.vertices.len() as u32;
 
         if z.0 == z.1 {
-			mesh.vertices.push(Vertex::new(Vec3{x:x.0, y:y.0, z:z.0}, Vec3{x:n.0, y:n.1, z:n.2}, Vec2{x:u.0, y:v.0}));
-			mesh.vertices.push(Vertex::new(Vec3{x:x.1, y:y.0, z:z.0}, Vec3{x:n.0, y:n.1, z:n.2}, Vec2{x:u.1, y:v.0}));
-			mesh.vertices.push(Vertex::new(Vec3{x:x.1, y:y.1, z:z.0}, Vec3{x:n.0, y:n.1, z:n.2}, Vec2{x:u.1, y:v.1}));
-			mesh.vertices.push(Vertex::new(Vec3{x:x.0, y:y.1, z:z.0}, Vec3{x:n.0, y:n.1, z:n.2}, Vec2{x:u.0, y:v.1}));
+			self.vertices.push(Vertex::new(Vec3{x:x.0, y:y.0, z:z.0}, Vec3{x:n.0, y:n.1, z:n.2}, Vec2{x:u.0, y:v.0}));
+			self.vertices.push(Vertex::new(Vec3{x:x.1, y:y.0, z:z.0}, Vec3{x:n.0, y:n.1, z:n.2}, Vec2{x:u.1, y:v.0}));
+			self.vertices.push(Vertex::new(Vec3{x:x.1, y:y.1, z:z.0}, Vec3{x:n.0, y:n.1, z:n.2}, Vec2{x:u.1, y:v.1}));
+			self.vertices.push(Vertex::new(Vec3{x:x.0, y:y.1, z:z.0}, Vec3{x:n.0, y:n.1, z:n.2}, Vec2{x:u.0, y:v.1}));
 		}
 		else if y.0 == y.1 {
-			mesh.vertices.push(Vertex::new(Vec3{x:x.0, y:y.0, z:z.0}, Vec3{x:n.0, y:n.1, z:n.2}, Vec2{x:u.0, y:v.0}));
-			mesh.vertices.push(Vertex::new(Vec3{x:x.1, y:y.0, z:z.0}, Vec3{x:n.0, y:n.1, z:n.2}, Vec2{x:u.1, y:v.0}));
-			mesh.vertices.push(Vertex::new(Vec3{x:x.1, y:y.0, z:z.1}, Vec3{x:n.0, y:n.1, z:n.2}, Vec2{x:u.1, y:v.1}));
-			mesh.vertices.push(Vertex::new(Vec3{x:x.0, y:y.0, z:z.1}, Vec3{x:n.0, y:n.1, z:n.2}, Vec2{x:u.0, y:v.1}));
+			self.vertices.push(Vertex::new(Vec3{x:x.0, y:y.0, z:z.0}, Vec3{x:n.0, y:n.1, z:n.2}, Vec2{x:u.0, y:v.0}));
+			self.vertices.push(Vertex::new(Vec3{x:x.1, y:y.0, z:z.0}, Vec3{x:n.0, y:n.1, z:n.2}, Vec2{x:u.1, y:v.0}));
+			self.vertices.push(Vertex::new(Vec3{x:x.1, y:y.0, z:z.1}, Vec3{x:n.0, y:n.1, z:n.2}, Vec2{x:u.1, y:v.1}));
+			self.vertices.push(Vertex::new(Vec3{x:x.0, y:y.0, z:z.1}, Vec3{x:n.0, y:n.1, z:n.2}, Vec2{x:u.0, y:v.1}));
 		}
 		else if x.0 == x.1 {
-			mesh.vertices.push(Vertex::new(Vec3{x:x.0, y:y.0, z:z.0}, Vec3{x:n.0, y:n.1, z:n.2}, Vec2{x:u.0, y:v.0}));
-			mesh.vertices.push(Vertex::new(Vec3{x:x.0, y:y.1, z:z.0}, Vec3{x:n.0, y:n.1, z:n.2}, Vec2{x:u.1, y:v.0}));
-			mesh.vertices.push(Vertex::new(Vec3{x:x.0, y:y.1, z:z.1}, Vec3{x:n.0, y:n.1, z:n.2}, Vec2{x:u.1, y:v.1}));
-			mesh.vertices.push(Vertex::new(Vec3{x:x.0, y:y.0, z:z.1}, Vec3{x:n.0, y:n.1, z:n.2}, Vec2{x:u.0, y:v.1}));
+			self.vertices.push(Vertex::new(Vec3{x:x.0, y:y.0, z:z.0}, Vec3{x:n.0, y:n.1, z:n.2}, Vec2{x:u.0, y:v.0}));
+			self.vertices.push(Vertex::new(Vec3{x:x.0, y:y.1, z:z.0}, Vec3{x:n.0, y:n.1, z:n.2}, Vec2{x:u.1, y:v.0}));
+			self.vertices.push(Vertex::new(Vec3{x:x.0, y:y.1, z:z.1}, Vec3{x:n.0, y:n.1, z:n.2}, Vec2{x:u.1, y:v.1}));
+			self.vertices.push(Vertex::new(Vec3{x:x.0, y:y.0, z:z.1}, Vec3{x:n.0, y:n.1, z:n.2}, Vec2{x:u.0, y:v.1}));
 		}
 		else {
 			bail!("Invalid cuboid wall");
         }
 
-        mesh.indices.push(start_pos + 0);
-        mesh.indices.push(start_pos + 3);
-        mesh.indices.push(start_pos + 1);
+        self.indices.push(start_pos + 0);
+        self.indices.push(start_pos + 3);
+        self.indices.push(start_pos + 1);
 
-        mesh.indices.push(start_pos + 1);
-        mesh.indices.push(start_pos + 3);
-        mesh.indices.push(start_pos + 2);
-
+        self.indices.push(start_pos + 1);
+        self.indices.push(start_pos + 3);
+        self.indices.push(start_pos + 2);
 
         Ok(())
     }
