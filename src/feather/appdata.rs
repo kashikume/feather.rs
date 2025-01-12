@@ -1,8 +1,8 @@
 use vulkanalia::prelude::v1_0::*;
 
 use super::mesh::Mesh;
+use super::meshbuffer::MeshBuffer;
 use super::swapchain::Swapchain;
-use super::vertex::Vertex;
 
 /// The Vulkan handles and associated properties used by our Vulkan app.
 #[derive(Default)]
@@ -44,10 +44,7 @@ pub struct AppData {
     // Model
     pub mesh: Mesh,
     // Buffers
-    pub vertex_buffer: vk::Buffer,
-    pub vertex_buffer_memory: vk::DeviceMemory,
-    pub index_buffer: vk::Buffer,
-    pub index_buffer_memory: vk::DeviceMemory,
+    pub mesh_buffer: MeshBuffer,
     pub uniform_buffers: Vec<vk::Buffer>,
     pub uniform_buffers_memory: Vec<vk::DeviceMemory>,
     // Descriptors

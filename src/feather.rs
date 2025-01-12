@@ -14,6 +14,7 @@ pub mod logicaldevice;
 pub mod material;
 pub mod math;
 pub mod mesh;
+pub mod meshbuffer;
 pub mod meshbuildercuboid;
 pub mod meshbuilderobjfile;
 pub mod model;

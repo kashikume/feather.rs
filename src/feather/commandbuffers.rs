@@ -54,8 +54,8 @@ pub unsafe fn create_command_buffers(device: &Device, data: &mut AppData) -> Res
             vk::PipelineBindPoint::GRAPHICS,
             data.pipeline,
         );
-        device.cmd_bind_vertex_buffers(*command_buffer, 0, &[data.vertex_buffer], &[0]);
-        device.cmd_bind_index_buffer(*command_buffer, data.index_buffer, 0, vk::IndexType::UINT32);
+        device.cmd_bind_vertex_buffers(*command_buffer, 0, &[data.mesh_buffer.vertex_buffer], &[0]);
+        device.cmd_bind_index_buffer(*command_buffer, data.mesh_buffer.index_buffer, 0, vk::IndexType::UINT32);
         device.cmd_bind_descriptor_sets(
             *command_buffer,
             vk::PipelineBindPoint::GRAPHICS,

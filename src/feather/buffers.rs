@@ -54,8 +54,8 @@ pub unsafe fn create_vertex_buffer(
         vk::MemoryPropertyFlags::DEVICE_LOCAL,
     )?;
 
-    data.vertex_buffer = vertex_buffer;
-    data.vertex_buffer_memory = vertex_buffer_memory;
+    data.mesh_buffer.vertex_buffer = vertex_buffer;
+    data.mesh_buffer.vertex_buffer_memory = vertex_buffer_memory;
 
     // Copy (vertex)
 
@@ -110,8 +110,8 @@ pub unsafe fn create_index_buffer(
         vk::MemoryPropertyFlags::DEVICE_LOCAL,
     )?;
 
-    data.index_buffer = index_buffer;
-    data.index_buffer_memory = index_buffer_memory;
+    data.mesh_buffer.index_buffer = index_buffer;
+    data.mesh_buffer.index_buffer_memory = index_buffer_memory;
 
     // Copy (index)
 
