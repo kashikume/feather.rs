@@ -20,7 +20,7 @@ pub unsafe fn create_vertex_buffer(
 ) -> Result<()> {
     // Create (staging)
 
-    let size = (size_of::<Vertex>() * data.mesh.vertices.len()) as u64;
+    let size = data.mesh.data_size_for_vertexes() as u64;
 
     let (staging_buffer, staging_buffer_memory) = create_buffer(
         instance,
@@ -76,7 +76,7 @@ pub unsafe fn create_index_buffer(
 ) -> Result<()> {
     // Create (staging)
 
-    let size = (size_of::<u32>() * data.mesh.indices.len()) as u64;
+    let size = data.mesh.data_size_for_indexes() as u64;
 
     let (staging_buffer, staging_buffer_memory) = create_buffer(
         instance,
