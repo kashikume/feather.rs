@@ -1,5 +1,6 @@
 use vulkanalia::prelude::v1_0::*;
 
+use super::idgen::IdGen;
 use super::mesh::Mesh;
 use super::meshbuffer::MeshBuffer;
 use super::swapchain::Swapchain;
@@ -7,6 +8,7 @@ use super::swapchain::Swapchain;
 /// The Vulkan handles and associated properties used by our Vulkan app.
 #[derive(Default)]
 pub struct AppData {
+    pub id_gen: IdGen,
     // Debug
     pub messenger: vk::DebugUtilsMessengerEXT,
     // Surface

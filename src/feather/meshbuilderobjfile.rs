@@ -1,6 +1,7 @@
 use std::{collections::HashMap, fs::File, io::BufReader};
 
 use super::{
+    idgen::IdGen,
     math::{Vec2, Vec3},
     mesh::Mesh,
     vertex::Vertex,
@@ -18,7 +19,7 @@ impl MeshBuilderObjFile {
         }
     }
 
-    pub fn build(self) -> Result<Mesh> {
+    pub fn build(self, id_gen: &mut IdGen) -> Result<Mesh> {
         let mut reader = BufReader::new(File::open(&self.file_name)?);
 
         let (models, _) = tobj::load_obj_buf(
@@ -71,6 +72,6 @@ impl MeshBuilderObjFile {
             }
         }
 
-        Ok(Mesh::new(vertices, indices))
+        Ok(Mesh::new(id_gen, vertices, indices))
     }
 }

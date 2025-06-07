@@ -10,11 +10,11 @@ use super::{meshbuildercuboid, meshbuilderobjfile};
 pub fn load_model(data: &mut AppData) -> Result<()> {
     let meshbuilderobjfile =
         meshbuilderobjfile::MeshBuilderObjFile::new("resources/viking_room.obj");
-    let mesh = meshbuilderobjfile.build()?;
+    let mesh = meshbuilderobjfile.build(&mut data.id_gen)?;
 
     let meshbuildercuboid =
         meshbuildercuboid::MeshBuilderCuboid::new_same_walls((-0.5, 0.5), (-0.5, 0.5), (-0.5, 0.5));
-    let mesh2 = meshbuildercuboid.build()?;
+    let mesh2 = meshbuildercuboid.build(&mut data.id_gen)?;
 
     data.mesh = mesh;
     Ok(())
