@@ -59,7 +59,7 @@ pub unsafe fn create_vertex_buffer(
 
     // Copy (vertex)
 
-    copy_buffer(device, data, staging_buffer, vertex_buffer, size)?;
+    copy_buffer(device, &data.command_pool, &data.graphics_queue, staging_buffer, vertex_buffer, size)?;
 
     // Cleanup
 
@@ -115,7 +115,7 @@ pub unsafe fn create_index_buffer(
 
     // Copy (index)
 
-    copy_buffer(device, data, staging_buffer, index_buffer, size)?;
+    copy_buffer(device, &data.command_pool, &data.graphics_queue, staging_buffer, index_buffer, size)?;
 
     // Cleanup
 
@@ -193,17 +193,18 @@ pub unsafe fn create_buffer(
 
 unsafe fn copy_buffer(
     device: &Device,
-    data: &AppData,
+    command_pool: &vk::CommandPool,
+    graphics_queue: &vk::Queue,
     source: vk::Buffer,
     destination: vk::Buffer,
     size: vk::DeviceSize,
 ) -> Result<()> {
-    let command_buffer = begin_single_time_commands(device, data)?;
+    let command_buffer = begin_single_time_commands(device, command_pool)?;
 
     let regions = vk::BufferCopy::builder().size(size);
     device.cmd_copy_buffer(command_buffer, source, destination, &[regions]);
 
-    end_single_time_commands(device, data, command_buffer)?;
+    end_single_time_commands(device, command_pool, graphics_queue, command_buffer)?;
 
     Ok(())
 }

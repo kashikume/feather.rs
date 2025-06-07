@@ -166,7 +166,7 @@ unsafe fn generate_mipmaps(
 
     // Mipmaps
 
-    let command_buffer = begin_single_time_commands(device, data)?;
+    let command_buffer = begin_single_time_commands(device, &data.command_pool)?;
 
     let subresource = vk::ImageSubresourceRange::builder()
         .aspect_mask(vk::ImageAspectFlags::COLOR)
@@ -282,7 +282,7 @@ unsafe fn generate_mipmaps(
         &[barrier],
     );
 
-    end_single_time_commands(device, data, command_buffer)?;
+    end_single_time_commands(device, &data.command_pool, &data.graphics_queue, command_buffer)?;
 
     Ok(())
 }

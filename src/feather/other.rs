@@ -25,13 +25,13 @@ pub unsafe fn get_memory_type_index(
 
 pub unsafe fn begin_single_time_commands(
     device: &Device,
-    data: &AppData,
+    command_pool: &vk::CommandPool,
 ) -> Result<vk::CommandBuffer> {
     // Allocate
 
     let info = vk::CommandBufferAllocateInfo::builder()
         .level(vk::CommandBufferLevel::PRIMARY)
-        .command_pool(data.command_pool)
+        .command_pool(*command_pool)
         .command_buffer_count(1);
 
     let command_buffer = device.allocate_command_buffers(&info)?[0];
@@ -48,7 +48,8 @@ pub unsafe fn begin_single_time_commands(
 
 pub unsafe fn end_single_time_commands(
     device: &Device,
-    data: &AppData,
+    command_pool: &vk::CommandPool,
+    graphics_queue: &vk::Queue,
     command_buffer: vk::CommandBuffer,
 ) -> Result<()> {
     // End
@@ -60,12 +61,12 @@ pub unsafe fn end_single_time_commands(
     let command_buffers = &[command_buffer];
     let info = vk::SubmitInfo::builder().command_buffers(command_buffers);
 
-    device.queue_submit(data.graphics_queue, &[info], vk::Fence::null())?;
-    device.queue_wait_idle(data.graphics_queue)?;
+    device.queue_submit(*graphics_queue, &[info], vk::Fence::null())?;
+    device.queue_wait_idle(*graphics_queue)?;
 
     // Cleanup
 
-    device.free_command_buffers(data.command_pool, &[command_buffer]);
+    device.free_command_buffers(*command_pool, &[command_buffer]);
 
     Ok(())
 }

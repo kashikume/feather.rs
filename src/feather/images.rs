@@ -110,7 +110,7 @@ pub unsafe fn transition_image_layout(
             _ => return Err(anyhow!("Unsupported image layout transition!")),
         };
 
-    let command_buffer = begin_single_time_commands(device, data)?;
+    let command_buffer = begin_single_time_commands(device, &data.command_pool)?;
 
     let subresource = vk::ImageSubresourceRange::builder()
         .aspect_mask(vk::ImageAspectFlags::COLOR)
@@ -139,7 +139,7 @@ pub unsafe fn transition_image_layout(
         &[barrier],
     );
 
-    end_single_time_commands(device, data, command_buffer)?;
+    end_single_time_commands(device, &data.command_pool, &data.graphics_queue, command_buffer)?;
 
     Ok(())
 }
@@ -152,7 +152,7 @@ pub unsafe fn copy_buffer_to_image(
     width: u32,
     height: u32,
 ) -> Result<()> {
-    let command_buffer = begin_single_time_commands(device, data)?;
+    let command_buffer = begin_single_time_commands(device, &data.command_pool)?;
 
     let subresource = vk::ImageSubresourceLayers::builder()
         .aspect_mask(vk::ImageAspectFlags::COLOR)
@@ -180,7 +180,7 @@ pub unsafe fn copy_buffer_to_image(
         &[region],
     );
 
-    end_single_time_commands(device, data, command_buffer)?;
+    end_single_time_commands(device, &data.command_pool, &data.graphics_queue, command_buffer)?;
 
     Ok(())
 }
