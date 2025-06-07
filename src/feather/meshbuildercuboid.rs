@@ -1,8 +1,9 @@
 use anyhow::{bail, Result};
+use std::rc::Rc;
 
-use super::idgen::IdGen;
 use super::math::{Vec2, Vec3};
 use super::mesh::Mesh;
+use super::scene::Scene;
 use super::vertex::Vertex;
 
 //   ^ y
@@ -74,7 +75,7 @@ impl MeshBuilderCuboid {
         Self::new(x, y, z, None, None)
     }
 
-    pub fn build(mut self, id_gen: &mut IdGen) -> Result<Mesh> {
+    pub fn build(mut self, scene: &mut Scene) -> Result<Rc<Mesh>> {
 
         // 0
         self.add_wall(
@@ -136,7 +137,9 @@ impl MeshBuilderCuboid {
             (0.0, -1.0, 0.0),
         )?;
 
-        Ok(Mesh::new(id_gen, self.vertices, self.indices))
+        let mesh = Rc::new( Mesh::new(&mut scene.id_gen, self.vertices, self.indices) );
+        scene.add_mesh(mesh.clone());
+        Ok(mesh)
     }
 
     #[rustfmt::skip]

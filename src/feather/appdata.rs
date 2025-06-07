@@ -1,14 +1,16 @@
+use std::rc::Rc;
+
 use vulkanalia::prelude::v1_0::*;
 
-use super::idgen::IdGen;
 use super::mesh::Mesh;
 use super::meshbuffer::MeshBuffer;
+use super::scene::Scene;
 use super::swapchain::Swapchain;
 
 /// The Vulkan handles and associated properties used by our Vulkan app.
 #[derive(Default)]
 pub struct AppData {
-    pub id_gen: IdGen,
+    pub scene: Scene,
     // Debug
     pub messenger: vk::DebugUtilsMessengerEXT,
     // Surface
@@ -44,7 +46,7 @@ pub struct AppData {
     pub texture_image_view: vk::ImageView,
     pub texture_sampler: vk::Sampler,
     // Model
-    pub mesh: Mesh,
+    pub mesh: Rc<Mesh>,
     // Buffers
     pub mesh_buffer: MeshBuffer,
     pub uniform_buffers: Vec<vk::Buffer>,

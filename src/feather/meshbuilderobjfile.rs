@@ -1,9 +1,9 @@
-use std::{collections::HashMap, fs::File, io::BufReader};
+use std::{collections::HashMap, fs::File, io::BufReader, rc::Rc};
 
 use super::{
-    idgen::IdGen,
     math::{Vec2, Vec3},
     mesh::Mesh,
+    scene::Scene,
     vertex::Vertex,
 };
 use anyhow::Result;
@@ -19,7 +19,7 @@ impl MeshBuilderObjFile {
         }
     }
 
-    pub fn build(self, id_gen: &mut IdGen) -> Result<Mesh> {
+    pub fn build(self, scene: &mut Scene) -> Result<Rc<Mesh>> {
         let mut reader = BufReader::new(File::open(&self.file_name)?);
 
         let (models, _) = tobj::load_obj_buf(
@@ -72,6 +72,8 @@ impl MeshBuilderObjFile {
             }
         }
 
-        Ok(Mesh::new(id_gen, vertices, indices))
+        let mesh = Rc::new( Mesh::new(&mut scene.id_gen, vertices, indices) );
+        scene.add_mesh(mesh.clone());
+        Ok(mesh)
     }
 }
