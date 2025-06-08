@@ -7,7 +7,6 @@ use vulkanalia::prelude::v1_0::*;
 use super::appdata::AppData;
 use super::other::{begin_single_time_commands, end_single_time_commands, get_memory_type_index};
 use super::uniformbufferobject::UniformBufferObject;
-use super::vertex::Vertex;
 
 //================================================
 // Buffers

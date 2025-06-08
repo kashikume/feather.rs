@@ -1,19 +1,23 @@
 use std::{collections::HashMap, rc::Rc};
 
-use super::{idgen::IdGen, mesh::Mesh, node::Node};
+use super::{idgen::IdGen, mesh::Mesh, meshbuffer::MeshBuffer, node::Node};
 
 pub struct Scene {
-    pub id_gen: IdGen,
+    pub id_gen_mesh: IdGen,
+    pub id_gen_buffers: IdGen,
     pub meshes: HashMap<u64, Rc<Mesh>>,
+    pub buffers: HashMap<u64, Rc<MeshBuffer>>,
     pub root: Rc<Node>,
 }
 
 impl Scene {
     pub fn new() -> Self {
         Self {
-            id_gen: IdGen::default(),
+            id_gen_mesh: IdGen::default(),
+            id_gen_buffers: IdGen::default(),
             root: Node::new_root(),
             meshes: HashMap::new(),
+            buffers: HashMap::new(),
         }
     }
 

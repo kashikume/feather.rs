@@ -1,3 +1,4 @@
+use super::bufferdata::BufferData;
 use super::idgen::IdGen;
 use super::vertex::Vertex;
 use std::mem::size_of;
@@ -5,8 +6,10 @@ use std::mem::size_of;
 #[derive(Default)]
 pub struct Mesh {
     pub id: u64,
-    pub vertices: Vec<Vertex>,
-    pub indices: Vec<u32>,
+    pub(crate) vertices: Vec<Vertex>,
+    pub(crate) vertex_buffer_data: Option<BufferData>,
+    pub(crate) indices: Vec<u32>,
+    pub(crate) index_buffer_data: Option<BufferData>,
 }
 
 impl Mesh {
@@ -14,7 +17,9 @@ impl Mesh {
         Self {
             id: id_gen.next(),
             vertices,
+            vertex_buffer_data: None,
             indices,
+            index_buffer_data: None,
         }
     }
 
@@ -24,5 +29,18 @@ impl Mesh {
 
     pub fn data_size_for_indexes(&self) -> usize {
         size_of::<u32>() * self.indices.len()
+    }
+
+    pub fn set_vertex_buffer_data(&mut self, buffer_data: BufferData) {
+        self.vertex_buffer_data = Some(buffer_data);
+    }
+
+    pub fn set_index_buffer_data(&mut self, buffer_data: BufferData) {
+        self.index_buffer_data = Some(buffer_data);
+    }
+
+    pub(crate) fn reset_buffer_data(&mut self) {
+        self.vertex_buffer_data = None;
+        self.index_buffer_data = None;
     }
 }

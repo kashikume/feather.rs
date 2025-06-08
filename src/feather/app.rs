@@ -3,7 +3,7 @@ use std::ptr::copy_nonoverlapping as memcpy;
 use std::time::Instant;
 
 use anyhow::{anyhow, Result};
-use cgmath::{point3, vec3, Deg};
+use cgmath::{vec3, Deg};
 use vulkanalia::loader::{LibloadingLoader, LIBRARY};
 use vulkanalia::prelude::v1_0::*;
 use vulkanalia::window as vk_window;
@@ -21,6 +21,7 @@ const MAX_FRAMES_IN_FLIGHT: usize = 2;
 
 use super::appdata::AppData;
 use super::buffers::{create_index_buffer, create_uniform_buffers, create_vertex_buffer};
+use super::camera::Camera;
 use super::colorobjects::create_color_objects;
 use super::commandbuffers::create_command_buffers;
 use super::commandpool::create_command_pool;
@@ -37,6 +38,7 @@ use super::swapchain::Swapchain;
 use super::syncobjects::create_sync_objects;
 use super::texture::{create_texture_image, create_texture_image_view, create_texture_sampler};
 use super::uniformbufferobject::UniformBufferObject;
+use super::perspectivecamera::PerspectiveCamera;
 
 /// Our Vulkan app.
 pub struct App {
@@ -165,32 +167,15 @@ impl App {
 
         let time = self.start.elapsed().as_secs_f32();
 
+        let mut camera = PerspectiveCamera::new();
+        camera.set_screen_dimention(self.data.swapchain.swapchain_extent.width, self.data.swapchain.swapchain_extent.height)
+            .set_fov(45.0)
+            .set_near_far(0.1, 10.0)
+            .set_view(Point3::new(2.0, 2.0, 2.0), Point3::new(0.0, 0.0, 0.0), Vec3::new(0.0, 0.0, 1.0));
+
         let model = Mat4::from_axis_angle(vec3(0.0, 0.0, 1.0), Deg(10.0) * time);
 
-        let view = Mat4::look_at_rh(
-            point3::<f32>(2.0, 2.0, 2.0),
-            point3::<f32>(0.0, 0.0, 0.0),
-            vec3(0.0, 0.0, 1.0),
-        );
-
-        #[rustfmt::skip]
-        let correction = Mat4::new(
-            1.0,  0.0,       0.0, 0.0,
-            0.0, -1.0,       0.0, 0.0,
-            0.0,  0.0, 1.0 / 2.0, 0.0,
-            0.0,  0.0, 1.0 / 2.0, 1.0,
-        );
-
-        let proj = correction
-            * cgmath::perspective(
-                Deg(45.0),
-                self.data.swapchain.swapchain_extent.width as f32
-                    / self.data.swapchain.swapchain_extent.height as f32,
-                0.1,
-                10.0,
-            );
-
-        let ubo = UniformBufferObject { model, view, proj };
+        let ubo = UniformBufferObject { model, view: camera.get_view(), proj: camera.get_projection() };
 
         // Copy
 

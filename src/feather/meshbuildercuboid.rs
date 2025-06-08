@@ -137,7 +137,7 @@ impl MeshBuilderCuboid {
             (0.0, -1.0, 0.0),
         )?;
 
-        let mesh = Rc::new( Mesh::new(&mut scene.id_gen, self.vertices, self.indices) );
+        let mesh = Rc::new( Mesh::new(&mut scene.id_gen_mesh, self.vertices, self.indices) );
         scene.add_mesh(mesh.clone());
         Ok(mesh)
     }

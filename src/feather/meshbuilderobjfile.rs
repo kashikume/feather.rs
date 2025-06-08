@@ -72,7 +72,7 @@ impl MeshBuilderObjFile {
             }
         }
 
-        let mesh = Rc::new( Mesh::new(&mut scene.id_gen, vertices, indices) );
+        let mesh = Rc::new( Mesh::new(&mut scene.id_gen_mesh, vertices, indices) );
         scene.add_mesh(mesh.clone());
         Ok(mesh)
     }
