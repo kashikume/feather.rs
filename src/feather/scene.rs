@@ -1,32 +1,56 @@
-use std::{collections::HashMap, rc::Rc};
 
-use super::{idgen::IdGen, mesh::Mesh, meshbuffer::MeshBuffer, node::Node};
+use super::{mesh::Mesh, meshbuffer::MeshBuffer, node::Node, objdb::ObjDB};
 
 pub struct Scene {
-    pub id_gen_mesh: IdGen,
-    pub id_gen_buffers: IdGen,
-    pub meshes: HashMap<u64, Rc<Mesh>>,
-    pub buffers: HashMap<u64, Rc<MeshBuffer>>,
-    pub root: Rc<Node>,
+    pub meshes: ObjDB<Mesh>,
+    pub buffers: ObjDB<MeshBuffer>,
+    pub nodes: ObjDB<Node>,
 }
 
 impl Scene {
     pub fn new() -> Self {
         Self {
-            id_gen_mesh: IdGen::default(),
-            id_gen_buffers: IdGen::default(),
-            root: Node::new_root(),
-            meshes: HashMap::new(),
-            buffers: HashMap::new(),
+            meshes: ObjDB::new(),
+            buffers: ObjDB::new(),
+            nodes: ObjDB::new(),
         }
     }
 
-    pub fn add_mesh(&mut self, mesh: Rc<Mesh>) {
-        self.meshes.insert(mesh.id, mesh);
+    pub fn add_mesh(&mut self, mesh: Mesh) -> usize {
+        self.meshes.add(mesh)
     }
 
-    pub fn get_mesh(&self, id: u64) -> Option<Rc<Mesh>> {
-        self.meshes.get(&id).cloned()
+    pub fn create_root_node(&mut self, name: Option<String>) -> usize {
+        let node = Node::new_root(name);
+        self.nodes.add(node)
+    }
+
+    pub fn create_node(&mut self, name: Option<String>, parent_handle: usize) -> usize {
+        let node = Node::new(name, parent_handle);
+        let node_handle = self.nodes.add(node);
+        let parent_node = self.nodes.get_mut(parent_handle).unwrap();
+        parent_node.add_child(node_handle);
+        node_handle
+    }
+
+    pub fn disconnect_node(&mut self, node_handle: usize) {
+        let node = self.nodes.get_mut(node_handle).unwrap();
+        if let Some(parent) = node.get_parent() {
+            let parent_node = self.nodes.get_mut(parent).unwrap();
+            parent_node.remove_child(node_handle);
+        }
+    }
+
+    pub fn get_node(&self, handle: usize) -> Option<&Node> {
+        self.nodes.get(handle)
+    }
+
+    pub fn get_node_mut(&mut self, handle: usize) -> Option<&mut Node> {
+        self.nodes.get_mut(handle)
+    }   
+
+    pub fn get_mesh(&self, handle: usize) -> Option<&Mesh> {
+        self.meshes.get(handle)
     }
 }
 

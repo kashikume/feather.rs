@@ -75,7 +75,7 @@ impl MeshBuilderCuboid {
         Self::new(x, y, z, None, None)
     }
 
-    pub fn build(mut self, scene: &mut Scene) -> Result<Rc<Mesh>> {
+    pub fn build(mut self, scene: &mut Scene) -> Result<usize> {
 
         // 0
         self.add_wall(
@@ -137,9 +137,8 @@ impl MeshBuilderCuboid {
             (0.0, -1.0, 0.0),
         )?;
 
-        let mesh = Rc::new( Mesh::new(&mut scene.id_gen_mesh, self.vertices, self.indices) );
-        scene.add_mesh(mesh.clone());
-        Ok(mesh)
+        let mesh = Mesh::new(None, self.vertices, self.indices);
+        Ok(scene.add_mesh(mesh))
     }
 
     #[rustfmt::skip]

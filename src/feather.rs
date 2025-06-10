@@ -22,6 +22,8 @@ pub mod meshbuildercuboid;
 pub mod meshbuilderobjfile;
 pub mod model;
 pub mod node;
+pub mod objdb;
+pub mod object;
 pub mod other;
 pub mod physicaldevice;
 pub mod perspectivecamera;

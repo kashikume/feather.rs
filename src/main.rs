@@ -6,8 +6,13 @@ use winit::window::WindowBuilder;
 
 mod feather;
 use feather::app::App;
-use feather::node::Node;
 use feather::scene::Scene;
+use feather::perspectivecamera::PerspectiveCamera;
+use feather::math::{Point3, Vec3};
+
+use crate::feather::model::load_model;
+
+
 
 #[rustfmt::skip]
 fn main() -> Result<()> {
@@ -20,9 +25,6 @@ fn main() -> Result<()> {
         .with_title("Feather development app")
         .with_inner_size(LogicalSize::new(1024, 768))
         .build(&event_loop)?;
-
-    let scene = Scene::new();
-    let _node = Node::new(&scene.root);
 
     // App
 

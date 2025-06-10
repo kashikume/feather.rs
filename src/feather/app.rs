@@ -19,6 +19,9 @@ const VALIDATION_ENABLED: bool = cfg!(debug_assertions);
 /// The maximum number of frames that can be processed concurrently.
 const MAX_FRAMES_IN_FLIGHT: usize = 2;
 
+use crate::feather::perspectivecamera::PerspectiveCamera;
+use crate::feather::scene::Scene;
+
 use super::appdata::AppData;
 use super::buffers::{create_index_buffer, create_uniform_buffers, create_vertex_buffer};
 use super::camera::Camera;
@@ -38,17 +41,29 @@ use super::swapchain::Swapchain;
 use super::syncobjects::create_sync_objects;
 use super::texture::{create_texture_image, create_texture_image_view, create_texture_sampler};
 use super::uniformbufferobject::UniformBufferObject;
-use super::perspectivecamera::PerspectiveCamera;
 
 /// Our Vulkan app.
 pub struct App {
     _entry: Entry,
     instance: Instance,
-    data: AppData,
+    pub data: AppData,
     device: Device,
     frame: usize,
     pub resized: bool,
     start: Instant,
+}
+
+fn create_scene(data: &mut AppData) {
+    let mut scene = Scene::new();
+    let _root_node = scene.create_root_node(Some("Scene root".to_string()));
+    data.scene = scene;
+    let mut camera = PerspectiveCamera::new();
+    camera.set_fov(45.0)
+        .set_near_far(0.1, 10.0)
+        .set_view(Point3::new(2.0, 2.0, 2.0), Point3::new(0.0, 0.0, 0.0), Vec3::new(0.0, 0.0, 1.0));
+    data.camera = camera;
+    load_model(data)
+        .expect("Failed to load model");
 }
 
 impl App {
@@ -73,7 +88,7 @@ impl App {
         create_texture_image(&instance, &device, &mut data)?;
         create_texture_image_view(&device, &mut data)?;
         create_texture_sampler(&device, &mut data)?;
-        load_model(&mut data)?;
+        create_scene(&mut data);
         create_vertex_buffer(&instance, &device, &mut data)?;
         create_index_buffer(&instance, &device, &mut data)?;
         create_uniform_buffers(&instance, &device, &mut data)?;
@@ -162,20 +177,16 @@ impl App {
     }
 
     /// Updates the uniform buffer object for our Vulkan app.
-    unsafe fn update_uniform_buffer(&self, image_index: usize) -> Result<()> {
+    unsafe fn update_uniform_buffer(&mut self, image_index: usize) -> Result<()> {
         // MVP
 
         let time = self.start.elapsed().as_secs_f32();
 
-        let mut camera = PerspectiveCamera::new();
-        camera.set_screen_dimention(self.data.swapchain.swapchain_extent.width, self.data.swapchain.swapchain_extent.height)
-            .set_fov(45.0)
-            .set_near_far(0.1, 10.0)
-            .set_view(Point3::new(2.0, 2.0, 2.0), Point3::new(0.0, 0.0, 0.0), Vec3::new(0.0, 0.0, 1.0));
+        self.data.camera.set_screen_dimention(self.data.swapchain.swapchain_extent.width, self.data.swapchain.swapchain_extent.height);
 
         let model = Mat4::from_axis_angle(vec3(0.0, 0.0, 1.0), Deg(10.0) * time);
 
-        let ubo = UniformBufferObject { model, view: camera.get_view(), proj: camera.get_projection() };
+        let ubo = UniformBufferObject { model, view: self.data.camera.get_view(), proj: self.data.camera.get_projection() };
 
         // Copy
 
