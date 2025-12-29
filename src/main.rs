@@ -6,12 +6,15 @@ use winit::window::WindowBuilder;
 
 mod feather;
 use feather::app::App;
+
 use feather::scene::Scene;
 use feather::perspectivecamera::PerspectiveCamera;
 use feather::math::{Point3, Vec3};
 
-use crate::feather::model::load_model;
+mod testapp;
+use testapp::testapp::TestApp;
 
+use crate::feather::model::load_model;
 
 
 #[rustfmt::skip]
@@ -28,36 +31,8 @@ fn main() -> Result<()> {
 
     // App
 
-    let mut app = unsafe { App::create(&window)? };
-    let mut minimized = false;
-    event_loop.run(move |event, elwt| {
-        match event {
-            // Request a redraw when all events were processed.
-            Event::AboutToWait => window.request_redraw(),
-            Event::WindowEvent { event, .. } => match event {
-                // Render a frame if our Vulkan app is not being destroyed.
-                WindowEvent::RedrawRequested if !elwt.exiting() && !minimized => {
-                    unsafe { app.render(&window) }.unwrap();
-                },
-                // Mark the window as having been resized.
-                WindowEvent::Resized(size) => {
-                    if size.width == 0 || size.height == 0 {
-                        minimized = true;
-                    } else {
-                        minimized = false;
-                        app.resized = true;
-                    }
-                }
-                // Destroy our Vulkan app.
-                WindowEvent::CloseRequested => {
-                    elwt.exit();
-                    unsafe { app.destroy(); }
-                }
-                _ => {}
-            }
-            _ => {}
-        }
-    })?;
+    let mut app = unsafe { App::create(&window, Box::new(TestApp::new()))? };
+    app.run(&window, event_loop)?;
 
     Ok(())
 }

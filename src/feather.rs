@@ -9,6 +9,7 @@ pub mod commandbuffers;
 pub mod commandpool;
 pub mod dephobjects;
 pub mod descriptors;
+pub mod featherapp;
 pub mod framebuffers;
 pub mod images;
 pub mod instance;

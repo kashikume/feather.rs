@@ -7,10 +7,11 @@ use super::meshbuffer::MeshBuffer;
 use super::scene::Scene;
 use super::swapchain::Swapchain;
 use super::perspectivecamera::PerspectiveCamera;
+use super::featherapp::FeatherApp;
 
 /// The Vulkan handles and associated properties used by our Vulkan app.
-#[derive(Default)]
 pub struct AppData {
+    pub app: Box<dyn FeatherApp>,
     pub scene: Scene,
     pub camera: PerspectiveCamera,
     // Debug

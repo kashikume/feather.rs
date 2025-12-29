@@ -8,6 +8,8 @@ use vulkanalia::loader::{LibloadingLoader, LIBRARY};
 use vulkanalia::prelude::v1_0::*;
 use vulkanalia::window as vk_window;
 use winit::window::Window;
+use winit::event::{Event, WindowEvent};
+use winit::event_loop::EventLoop;
 
 use vulkanalia::vk::ExtDebugUtilsExtension;
 use vulkanalia::vk::KhrSurfaceExtension;
@@ -41,6 +43,8 @@ use super::swapchain::Swapchain;
 use super::syncobjects::create_sync_objects;
 use super::texture::{create_texture_image, create_texture_image_view, create_texture_sampler};
 use super::uniformbufferobject::UniformBufferObject;
+use super::featherapp::FeatherApp;
+use super::meshbuffer::MeshBuffer;
 
 /// Our Vulkan app.
 pub struct App {
@@ -68,10 +72,49 @@ fn create_scene(data: &mut AppData) {
 
 impl App {
     /// Creates our Vulkan app.
-    pub unsafe fn create(window: &Window) -> Result<Self> {
+    pub unsafe fn create(window: &Window, app: Box<dyn FeatherApp>) -> Result<Self> {
         let loader = LibloadingLoader::new(LIBRARY)?;
         let entry = Entry::new(loader).map_err(|b| anyhow!("{}", b))?;
-        let mut data = AppData::default();
+        let mut data = AppData {
+            app,
+            scene: Scene::default(),
+            camera: PerspectiveCamera::default(),
+            messenger: vk::DebugUtilsMessengerEXT::default(),
+            surface: vk::SurfaceKHR::default(),
+            physical_device: vk::PhysicalDevice::default(),
+            msaa_samples: vk::SampleCountFlags::default(),
+            graphics_queue: vk::Queue::default(),
+            present_queue: vk::Queue::default(),
+            swapchain: Swapchain::default(),
+            render_pass: vk::RenderPass::default(),
+            descriptor_set_layout: vk::DescriptorSetLayout::default(),
+            pipeline_layout: vk::PipelineLayout::default(),
+            pipeline: vk::Pipeline::default(),
+            framebuffers: Vec::new(),
+            command_pool: vk::CommandPool::default(),
+            color_image: vk::Image::default(),
+            color_image_memory: vk::DeviceMemory::default(),
+            color_image_view: vk::ImageView::default(),
+            depth_image: vk::Image::default(),
+            depth_image_memory: vk::DeviceMemory::default(),
+            depth_image_view: vk::ImageView::default(),
+            mip_levels: 0,
+            texture_image: vk::Image::default(),
+            texture_image_memory: vk::DeviceMemory::default(),
+            texture_image_view: vk::ImageView::default(),
+            texture_sampler: vk::Sampler::default(),
+            mesh: 0,
+            mesh_buffer: MeshBuffer::default(),
+            uniform_buffers: Vec::new(),
+            uniform_buffers_memory: Vec::new(),
+            descriptor_pool: vk::DescriptorPool::default(),
+            descriptor_sets: Vec::new(),
+            command_buffers: Vec::new(),
+            image_available_semaphores: Vec::new(),
+            render_finished_semaphores: Vec::new(),
+            in_flight_fences: Vec::new(),
+            images_in_flight: Vec::new(),
+        };
         let instance = create_instance(window, &entry, &mut data)?;
         data.surface = vk_window::create_surface(&instance, &window, &window)?;
         pick_physical_device(&instance, &mut data)?;
@@ -96,6 +139,7 @@ impl App {
         create_descriptor_sets(&device, &mut data)?;
         create_command_buffers(&device, &mut data)?;
         create_sync_objects(&device, &mut data)?;
+        data.app.on_create()?;
         Ok(Self {
             _entry: entry,
             instance,
@@ -109,6 +153,7 @@ impl App {
 
     /// Renders a frame for our Vulkan app.
     pub unsafe fn render(&mut self, window: &Window) -> Result<()> {
+        self.data.app.on_render()?;
         let in_flight_fence = self.data.in_flight_fences[self.frame];
 
         self.device
@@ -181,6 +226,7 @@ impl App {
         // MVP
 
         let time = self.start.elapsed().as_secs_f32();
+        self.data.app.on_update(time)?;
 
         self.data.camera.set_screen_dimention(self.data.swapchain.swapchain_extent.width, self.data.swapchain.swapchain_extent.height);
 
@@ -230,6 +276,7 @@ impl App {
     /// Destroys our Vulkan app.
     #[rustfmt::skip]
     pub unsafe fn destroy(&mut self) {
+        self.data.app.on_destroy();
         self.device.device_wait_idle().unwrap();
 
         self.destroy_swapchain();
@@ -275,5 +322,38 @@ impl App {
         self.device.destroy_pipeline_layout(self.data.pipeline_layout, None);
         self.device.destroy_render_pass(self.data.render_pass, None);
         self.data.swapchain.destroy(&self.device);
+    }
+
+    pub fn run(&mut self, window: &Window, event_loop: EventLoop<()>) -> Result<()> {
+        let mut minimized = false;
+        event_loop.run(move |event, elwt| {
+        match event {
+            // Request a redraw when all events were processed.
+            Event::AboutToWait => window.request_redraw(),
+            Event::WindowEvent { event, .. } => match event {
+                // Render a frame if our Vulkan app is not being destroyed.
+                WindowEvent::RedrawRequested if !elwt.exiting() && !minimized => {
+                    unsafe { self.render(&window) }.unwrap();
+                },
+                // Mark the window as having been resized.
+                WindowEvent::Resized(size) => {
+                    if size.width == 0 || size.height == 0 {
+                        minimized = true;
+                    } else {
+                        minimized = false;
+                        self.resized = true;
+                    }
+                }
+                // Destroy our Vulkan app.
+                WindowEvent::CloseRequested => {
+                    elwt.exit();
+                    unsafe { self.destroy(); }
+                }
+                _ => {}
+            }
+            _ => {}
+        }
+    })?;
+    Ok(())
     }
 }
