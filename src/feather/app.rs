@@ -7,6 +7,8 @@ use cgmath::{vec3, Deg};
 use vulkanalia::loader::{LibloadingLoader, LIBRARY};
 use vulkanalia::prelude::v1_0::*;
 use vulkanalia::window as vk_window;
+use winit::event::{Event, WindowEvent};
+use winit::event_loop::EventLoop;
 use winit::window::Window;
 
 use vulkanalia::vk::ExtDebugUtilsExtension;
@@ -19,22 +21,19 @@ const VALIDATION_ENABLED: bool = cfg!(debug_assertions);
 /// The maximum number of frames that can be processed concurrently.
 const MAX_FRAMES_IN_FLIGHT: usize = 2;
 
-use crate::feather::perspectivecamera::PerspectiveCamera;
-use crate::feather::scene::Scene;
-
 use super::appdata::AppData;
-use super::buffers::{create_index_buffer, create_uniform_buffers, create_vertex_buffer};
+use super::buffers::create_uniform_buffers;
 use super::camera::Camera;
 use super::colorobjects::create_color_objects;
 use super::commandbuffers::create_command_buffers;
 use super::commandpool::create_command_pool;
 use super::dephobjects::create_depth_objects;
 use super::descriptors::{create_descriptor_pool, create_descriptor_sets};
+use super::featherapp::FeatherApp;
 use super::framebuffers::create_framebuffers;
 use super::instance::create_instance;
 use super::logicaldevice::create_logical_device;
 use super::math::*;
-use super::model::load_model;
 use super::physicaldevice::pick_physical_device;
 use super::pipeline::{create_descriptor_set_layout, create_pipeline, create_render_pass};
 use super::swapchain::Swapchain;
@@ -53,22 +52,9 @@ pub struct App {
     start: Instant,
 }
 
-fn create_scene(data: &mut AppData) {
-    let mut scene = Scene::new();
-    let _root_node = scene.create_root_node(Some("Scene root".to_string()));
-    data.scene = scene;
-    let mut camera = PerspectiveCamera::new();
-    camera.set_fov(45.0)
-        .set_near_far(0.1, 10.0)
-        .set_view(Point3::new(2.0, 2.0, 2.0), Point3::new(0.0, 0.0, 0.0), Vec3::new(0.0, 0.0, 1.0));
-    data.camera = camera;
-    load_model(data)
-        .expect("Failed to load model");
-}
-
 impl App {
     /// Creates our Vulkan app.
-    pub unsafe fn create(window: &Window) -> Result<Self> {
+    pub unsafe fn create(window: &Window, app: &mut impl FeatherApp) -> Result<Self> {
         let loader = LibloadingLoader::new(LIBRARY)?;
         let entry = Entry::new(loader).map_err(|b| anyhow!("{}", b))?;
         let mut data = AppData::default();
@@ -88,9 +74,9 @@ impl App {
         create_texture_image(&instance, &device, &mut data)?;
         create_texture_image_view(&device, &mut data)?;
         create_texture_sampler(&device, &mut data)?;
-        create_scene(&mut data);
-        create_vertex_buffer(&instance, &device, &mut data)?;
-        create_index_buffer(&instance, &device, &mut data)?;
+        app.on_create()?;
+        data.mesh_buffer.create_vertex_buffer(&instance, &device, &mut data)?;
+        data.mesh_buffer.create_index_buffer(&instance, &device, &mut data)?;
         create_uniform_buffers(&instance, &device, &mut data)?;
         create_descriptor_pool(&device, &mut data)?;
         create_descriptor_sets(&device, &mut data)?;
@@ -182,11 +168,11 @@ impl App {
 
         let time = self.start.elapsed().as_secs_f32();
 
-        self.data.camera.set_screen_dimention(self.data.swapchain.swapchain_extent.width, self.data.swapchain.swapchain_extent.height);
+        self.data.scene.camera.set_screen_dimention(self.data.swapchain.swapchain_extent.width, self.data.swapchain.swapchain_extent.height);
 
         let model = Mat4::from_axis_angle(vec3(0.0, 0.0, 1.0), Deg(10.0) * time);
 
-        let ubo = UniformBufferObject { model, view: self.data.camera.get_view(), proj: self.data.camera.get_projection() };
+        let ubo = UniformBufferObject { model, view: self.data.scene.camera.get_view(), proj: self.data.scene.camera.get_projection() };
 
         // Copy
 
@@ -275,5 +261,38 @@ impl App {
         self.device.destroy_pipeline_layout(self.data.pipeline_layout, None);
         self.device.destroy_render_pass(self.data.render_pass, None);
         self.data.swapchain.destroy(&self.device);
+    }
+
+    pub fn run(&mut self, window: &Window, event_loop: EventLoop<()>) ->Result<()> {
+        let mut minimized = false;
+        event_loop.run(move |event, elwt| {
+            match event {
+                // Request a redraw when all events were processed.
+                Event::AboutToWait => window.request_redraw(),
+                Event::WindowEvent { event, .. } => match event {
+                    // Render a frame if our Vulkan app is not being destroyed.
+                    WindowEvent::RedrawRequested if !elwt.exiting() && !minimized => {
+                        unsafe { self.render(&window) }.unwrap();
+                    },
+                    // Mark the window as having been resized.
+                    WindowEvent::Resized(size) => {
+                        if size.width == 0 || size.height == 0 {
+                            minimized = true;
+                        } else {
+                            minimized = false;
+                            self.resized = true;
+                        }
+                    }
+                    // Destroy our Vulkan app.
+                    WindowEvent::CloseRequested => {
+                        elwt.exit();
+                        unsafe { self.destroy(); }
+                    }
+                    _ => {}
+                }
+                _ => {}
+            }
+        })?;
+        Ok(())
     }
 }

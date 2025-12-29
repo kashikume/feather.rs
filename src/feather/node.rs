@@ -83,4 +83,16 @@ impl Node {
     pub fn get_parent(&self) -> Option<usize> {
         self.parent
     }
+
+    pub fn set_mesh(&mut self, mesh: usize) {
+        self.mesh = Some(mesh);
+    }
+
+    pub fn get_mesh(&self) -> Option<usize> {
+        self.mesh
+    }
+
+    pub fn remove_mesh(&mut self) {
+        self.mesh = None;
+    }
 }

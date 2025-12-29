@@ -1,4 +1,4 @@
-use super::bufferdata::BufferData;
+use super::meshbufferdata::MeshBufferData;
 use super::object::Object;
 use super::vertex::Vertex;
 use std::mem::size_of;
@@ -8,9 +8,8 @@ pub struct Mesh {
     handle: usize,
     name: Option<String>,
     pub(crate) vertices: Vec<Vertex>,
-    pub(crate) vertex_buffer_data: Option<BufferData>,
     pub(crate) indices: Vec<u32>,
-    pub(crate) index_buffer_data: Option<BufferData>,
+    pub(crate) mesh_buffer_data: Option<MeshBufferData>,
 }
 
 impl Object for Mesh {
@@ -33,9 +32,8 @@ impl Mesh {
             handle: usize::MAX,
             name: None,
             vertices,
-            vertex_buffer_data: None,
             indices,
-            index_buffer_data: None,
+            mesh_buffer_data: None,
         }
     }
 
@@ -47,16 +45,19 @@ impl Mesh {
         size_of::<u32>() * self.indices.len()
     }
 
-    pub fn set_vertex_buffer_data(&mut self, buffer_data: BufferData) {
-        self.vertex_buffer_data = Some(buffer_data);
+    pub fn gen_num_vertexes(&self) -> usize {
+        self.vertices.len()
     }
 
-    pub fn set_index_buffer_data(&mut self, buffer_data: BufferData) {
-        self.index_buffer_data = Some(buffer_data);
+    pub fn gen_num_indexes(&self) -> usize {
+        self.indices.len()
     }
 
-    pub(crate) fn reset_buffer_data(&mut self) {
-        self.vertex_buffer_data = None;
-        self.index_buffer_data = None;
+    pub fn set_mesh_buffer_data(&mut self, buffer_data: MeshBufferData) {
+        self.mesh_buffer_data = Some(buffer_data);
+    }
+
+    pub fn has_buffers_assigned(&self) -> bool {
+        self.mesh_buffer_data.is_some()
     }
 }

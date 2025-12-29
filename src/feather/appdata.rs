@@ -1,18 +1,11 @@
-use std::rc::Rc;
-
 use vulkanalia::prelude::v1_0::*;
 
-use super::mesh::Mesh;
 use super::meshbuffer::MeshBuffer;
-use super::scene::Scene;
 use super::swapchain::Swapchain;
-use super::perspectivecamera::PerspectiveCamera;
 
 /// The Vulkan handles and associated properties used by our Vulkan app.
 #[derive(Default)]
 pub struct AppData {
-    pub scene: Scene,
-    pub camera: PerspectiveCamera,
     // Debug
     pub messenger: vk::DebugUtilsMessengerEXT,
     // Surface
@@ -47,8 +40,7 @@ pub struct AppData {
     pub texture_image_memory: vk::DeviceMemory,
     pub texture_image_view: vk::ImageView,
     pub texture_sampler: vk::Sampler,
-    // Model
-    pub mesh: usize,
+
     // Buffers
     pub mesh_buffer: MeshBuffer,
     pub uniform_buffers: Vec<vk::Buffer>,

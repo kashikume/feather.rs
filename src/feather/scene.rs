@@ -1,3 +1,6 @@
+use anyhow::Result;
+
+use crate::feather::object::Object;
 
 use super::{mesh::Mesh, meshbuffer::MeshBuffer, node::Node, objdb::ObjDB};
 
@@ -51,6 +54,41 @@ impl Scene {
 
     pub fn get_mesh(&self, handle: usize) -> Option<&Mesh> {
         self.meshes.get(handle)
+    }
+
+    pub fn node_set_mesh(&mut self, node_handle: usize, mesh_handle: usize) -> Result<()> {
+        self.get_node_mut(node_handle)
+            .ok_or(anyhow::anyhow!("Node not found"))?
+            .set_mesh(mesh_handle);
+        Ok(())
+    }
+
+    pub fn create_mesh_buffer(&mut self) -> usize {
+        let mesh_buffer = MeshBuffer::new();
+        self.buffers.add(mesh_buffer)
+    }
+
+    pub fn build_missing_mesh_buffers(&mut self) -> Result<()> {
+        let mut to_build = Vec::new();
+        for mesh in &self.meshes {
+            if !mesh.has_buffers_assigned() {
+                to_build.push(mesh.get_handle());
+            }
+        }
+
+        if to_build.is_empty() {
+            return Ok(());
+        }
+
+        let mesh_buffer_handle = self.create_mesh_buffer();
+        let mesh_buffer = self.buffers.get_mut(mesh_buffer_handle).unwrap();
+
+        for mesh_handle in to_build {
+            let mesh = self.meshes.get_mut(mesh_handle).unwrap();
+            mesh_buffer.add_mesh(mesh);
+        }
+
+        Ok(())
     }
 }
 

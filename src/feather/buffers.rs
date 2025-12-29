@@ -4,6 +4,7 @@ use std::ptr::copy_nonoverlapping as memcpy;
 use anyhow::Result;
 use vulkanalia::prelude::v1_0::*;
 
+use super::mesh::Mesh;
 use super::appdata::AppData;
 use super::other::{begin_single_time_commands, end_single_time_commands, get_memory_type_index};
 use super::uniformbufferobject::UniformBufferObject;
@@ -12,121 +13,7 @@ use super::uniformbufferobject::UniformBufferObject;
 // Buffers
 //================================================
 
-pub unsafe fn create_vertex_buffer(
-    instance: &Instance,
-    device: &Device,
-    data: &mut AppData,
-) -> Result<()> {
-    // Create (staging)
 
-    let mesh = data.scene.get_mesh(data.mesh).unwrap();
-
-    let size = mesh.data_size_for_vertexes() as u64;
-
-    let (staging_buffer, staging_buffer_memory) = create_buffer(
-        instance,
-        device,
-        data,
-        size,
-        vk::BufferUsageFlags::TRANSFER_SRC,
-        vk::MemoryPropertyFlags::HOST_COHERENT | vk::MemoryPropertyFlags::HOST_VISIBLE,
-    )?;
-
-    // Copy (staging)
-
-    let memory = device.map_memory(staging_buffer_memory, 0, size, vk::MemoryMapFlags::empty())?;
-
-    memcpy(
-        mesh.vertices.as_ptr(),
-        memory.cast(),
-        mesh.vertices.len(),
-    );
-
-    device.unmap_memory(staging_buffer_memory);
-
-    // Create (vertex)
-
-    let (vertex_buffer, vertex_buffer_memory) = create_buffer(
-        instance,
-        device,
-        data,
-        size,
-        vk::BufferUsageFlags::TRANSFER_DST | vk::BufferUsageFlags::VERTEX_BUFFER,
-        vk::MemoryPropertyFlags::DEVICE_LOCAL,
-    )?;
-
-    data.mesh_buffer.vertex_buffer = vertex_buffer;
-    data.mesh_buffer.vertex_buffer_memory = vertex_buffer_memory;
-
-    // Copy (vertex)
-
-    copy_buffer(device, &data.command_pool, &data.graphics_queue, staging_buffer, vertex_buffer, size)?;
-
-    // Cleanup
-
-    device.destroy_buffer(staging_buffer, None);
-    device.free_memory(staging_buffer_memory, None);
-
-    Ok(())
-}
-
-pub unsafe fn create_index_buffer(
-    instance: &Instance,
-    device: &Device,
-    data: &mut AppData,
-) -> Result<()> {
-    // Create (staging)
-
-    let mesh = data.scene.get_mesh(data.mesh).unwrap();
-
-    let size = mesh.data_size_for_indexes() as u64;
-
-    let (staging_buffer, staging_buffer_memory) = create_buffer(
-        instance,
-        device,
-        data,
-        size,
-        vk::BufferUsageFlags::TRANSFER_SRC,
-        vk::MemoryPropertyFlags::HOST_COHERENT | vk::MemoryPropertyFlags::HOST_VISIBLE,
-    )?;
-
-    // Copy (staging)
-
-    let memory = device.map_memory(staging_buffer_memory, 0, size, vk::MemoryMapFlags::empty())?;
-
-    memcpy(
-        mesh.indices.as_ptr(),
-        memory.cast(),
-        mesh.indices.len(),
-    );
-
-    device.unmap_memory(staging_buffer_memory);
-
-    // Create (index)
-
-    let (index_buffer, index_buffer_memory) = create_buffer(
-        instance,
-        device,
-        data,
-        size,
-        vk::BufferUsageFlags::TRANSFER_DST | vk::BufferUsageFlags::INDEX_BUFFER,
-        vk::MemoryPropertyFlags::DEVICE_LOCAL,
-    )?;
-
-    data.mesh_buffer.index_buffer = index_buffer;
-    data.mesh_buffer.index_buffer_memory = index_buffer_memory;
-
-    // Copy (index)
-
-    copy_buffer(device, &data.command_pool, &data.graphics_queue, staging_buffer, index_buffer, size)?;
-
-    // Cleanup
-
-    device.destroy_buffer(staging_buffer, None);
-    device.free_memory(staging_buffer_memory, None);
-
-    Ok(())
-}
 
 pub unsafe fn create_uniform_buffers(
     instance: &Instance,
@@ -194,7 +81,7 @@ pub unsafe fn create_buffer(
     Ok((buffer, buffer_memory))
 }
 
-unsafe fn copy_buffer(
+pub unsafe fn copy_buffer(
     device: &Device,
     command_pool: &vk::CommandPool,
     graphics_queue: &vk::Queue,
