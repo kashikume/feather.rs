@@ -1,21 +1,13 @@
 use anyhow::Result;
 use winit::dpi::LogicalSize;
-use winit::event::{Event, WindowEvent};
 use winit::event_loop::EventLoop;
 use winit::window::WindowBuilder;
 
 mod feather;
 use feather::app::App;
 
-use feather::scene::Scene;
-use feather::perspectivecamera::PerspectiveCamera;
-use feather::math::{Point3, Vec3};
-
 mod testapp;
 use testapp::testapp::TestApp;
-
-use crate::feather::model::load_model;
-
 
 #[rustfmt::skip]
 fn main() -> Result<()> {

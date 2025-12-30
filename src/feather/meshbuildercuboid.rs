@@ -1,5 +1,4 @@
 use anyhow::{bail, Result};
-use std::rc::Rc;
 
 use super::math::{Vec2, Vec3};
 use super::mesh::Mesh;

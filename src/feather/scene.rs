@@ -1,3 +1,6 @@
+use anyhow::Result;
+
+use crate::feather::object::Object;
 
 use super::{mesh::Mesh, meshbuffer::MeshBuffer, node::Node, objdb::ObjDB};
 
@@ -51,6 +54,13 @@ impl Scene {
 
     pub fn get_mesh(&self, handle: usize) -> Option<&Mesh> {
         self.meshes.get(handle)
+    }
+
+    pub fn node_set_mesh(&mut self, node_handle: usize, mesh_handle: usize) -> Result<()> {
+        self.get_node_mut(node_handle)
+            .ok_or(anyhow::anyhow!("Node not found"))?
+            .set_mesh(mesh_handle);
+        Ok(())
     }
 }
 

@@ -194,7 +194,7 @@ pub unsafe fn create_buffer(
     Ok((buffer, buffer_memory))
 }
 
-unsafe fn copy_buffer(
+pub unsafe fn copy_buffer(
     device: &Device,
     command_pool: &vk::CommandPool,
     graphics_queue: &vk::Queue,

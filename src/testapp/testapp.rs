@@ -49,7 +49,7 @@ impl TestApp {
         let meshbuilderobjfile = MeshBuilderObjFile::new("resources/viking_room.obj");
         let room_mesh = meshbuilderobjfile.build(&mut scene).unwrap();
 
-        //   scene.node_set_mesh(room_node, room_mesh).unwrap();
+        scene.node_set_mesh(room_node, room_mesh).unwrap();
 
         //let meshbuildercuboid =
         //    meshbuildercuboid::MeshBuilderCuboid::new_same_walls((-0.5, 0.5), (-0.5, 0.5), (-0.5, 0.5));
