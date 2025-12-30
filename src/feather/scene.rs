@@ -50,7 +50,7 @@ impl Scene {
 
     pub fn get_node_mut(&mut self, handle: usize) -> Option<&mut Node> {
         self.nodes.get_mut(handle)
-    }   
+    }
 
     pub fn get_mesh(&self, handle: usize) -> Option<&Mesh> {
         self.meshes.get(handle)
@@ -60,6 +60,34 @@ impl Scene {
         self.get_node_mut(node_handle)
             .ok_or(anyhow::anyhow!("Node not found"))?
             .set_mesh(mesh_handle);
+        Ok(())
+    }
+
+    pub fn create_mesh_buffer(&mut self) -> usize {
+        let mesh_buffer = MeshBuffer::new();
+        self.buffers.add(mesh_buffer)
+    }
+
+    pub fn build_missing_mesh_buffers(&mut self) -> Result<()> {
+        let mut to_build = Vec::new();
+        for mesh in self.meshes.iter() {
+            if !mesh.has_buffers_assigned() {
+                to_build.push(mesh.get_handle());
+            }
+        }
+
+        if to_build.is_empty() {
+            return Ok(());
+        }
+
+        let mesh_buffer_handle = self.create_mesh_buffer();
+        let mesh_buffer = self.buffers.get_mut(mesh_buffer_handle).unwrap();
+
+        for mesh_handle in to_build {
+            let mesh = self.meshes.get_mut(mesh_handle).unwrap();
+            mesh_buffer.add_mesh(mesh);
+        }
+
         Ok(())
     }
 }
