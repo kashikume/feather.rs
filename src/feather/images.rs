@@ -49,7 +49,7 @@ pub unsafe fn create_image(
         .allocation_size(requirements.size)
         .memory_type_index(get_memory_type_index(
             instance,
-            data,
+            &data.physical_device,
             properties,
             requirements,
         )?);
@@ -139,7 +139,12 @@ pub unsafe fn transition_image_layout(
         &[barrier],
     );
 
-    end_single_time_commands(device, &data.command_pool, &data.graphics_queue, command_buffer)?;
+    end_single_time_commands(
+        device,
+        &data.command_pool,
+        &data.graphics_queue,
+        command_buffer,
+    )?;
 
     Ok(())
 }
@@ -180,7 +185,12 @@ pub unsafe fn copy_buffer_to_image(
         &[region],
     );
 
-    end_single_time_commands(device, &data.command_pool, &data.graphics_queue, command_buffer)?;
+    end_single_time_commands(
+        device,
+        &data.command_pool,
+        &data.graphics_queue,
+        command_buffer,
+    )?;
 
     Ok(())
 }

@@ -8,6 +8,7 @@ pub struct Scene {
     pub meshes: ObjDB<Mesh>,
     pub buffers: ObjDB<MeshBuffer>,
     pub nodes: ObjDB<Node>,
+    needs_create_mesh_buffer: bool,
 }
 
 impl Scene {
@@ -16,10 +17,12 @@ impl Scene {
             meshes: ObjDB::new(),
             buffers: ObjDB::new(),
             nodes: ObjDB::new(),
+            needs_create_mesh_buffer: false,
         }
     }
 
     pub fn add_mesh(&mut self, mesh: Mesh) -> usize {
+        self.needs_create_mesh_buffer = true;
         self.meshes.add(mesh)
     }
 
@@ -69,6 +72,9 @@ impl Scene {
     }
 
     pub fn build_missing_mesh_buffers(&mut self) -> Result<()> {
+        if !self.needs_create_mesh_buffer {
+            return Ok(());
+        }
         let mut to_build = Vec::new();
         for mesh in self.meshes.iter() {
             if !mesh.has_buffers_assigned() {
@@ -77,6 +83,7 @@ impl Scene {
         }
 
         if to_build.is_empty() {
+            self.needs_create_mesh_buffer = false;
             return Ok(());
         }
 
@@ -87,7 +94,7 @@ impl Scene {
             let mesh = self.meshes.get_mut(mesh_handle).unwrap();
             mesh_buffer.add_mesh(mesh);
         }
-
+        self.needs_create_mesh_buffer = false;
         Ok(())
     }
 }

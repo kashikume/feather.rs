@@ -13,15 +13,11 @@ use testapp::testapp::TestApp;
 fn main() -> Result<()> {
     pretty_env_logger::init();
 
-    // Window
-
     let event_loop = EventLoop::new()?;
     let window = WindowBuilder::new()
         .with_title("Feather development app")
         .with_inner_size(LogicalSize::new(1024, 768))
         .build(&event_loop)?;
-
-    // App
 
     let mut app = unsafe { App::create(&window, Box::new(TestApp::new()))? };
     app.run(&window, event_loop)?;

@@ -1,10 +1,11 @@
 use anyhow::Result;
 
+use crate::feather::camera::Camera;
 use crate::feather::featherapp::FeatherApp;
-use crate::feather::scene::Scene;
-use crate::feather::perspectivecamera::PerspectiveCamera;
 use crate::feather::math::{Point3, Vec3};
 use crate::feather::meshbuilderobjfile::MeshBuilderObjFile;
+use crate::feather::perspectivecamera::PerspectiveCamera;
+use crate::feather::scene::Scene;
 
 pub struct TestApp {
     scene: Scene,
@@ -32,6 +33,18 @@ impl FeatherApp for TestApp {
     fn on_destroy(&mut self) {
         log::trace!("on_destroy called");
     }
+
+    fn get_num_scenes_to_render(&self) -> usize {
+        1
+    }
+
+    fn get_scene_to_render(&mut self, _scene_index: usize) -> &mut Scene {
+        &mut self.scene
+    }
+
+    fn get_camera_to_render_scene(&mut self, _scene_index: usize) -> &mut dyn Camera {
+        &mut self.camera
+    }
 }
 
 impl TestApp {
@@ -42,10 +55,12 @@ impl TestApp {
 
         let mut camera = PerspectiveCamera::new();
 
-        camera.set_fov(45.0)
-            .set_near_far(0.1, 10.0)
-            .set_view(Point3::new(2.0, 2.0, 2.0), Point3::new(0.0, 0.0, 0.0), Vec3::new(0.0, 0.0, 1.0));
-        
+        camera.set_fov(45.0).set_near_far(0.1, 10.0).set_view(
+            Point3::new(2.0, 2.0, 2.0),
+            Point3::new(0.0, 0.0, 0.0),
+            Vec3::new(0.0, 0.0, 1.0),
+        );
+
         let meshbuilderobjfile = MeshBuilderObjFile::new("resources/viking_room.obj");
         let room_mesh = meshbuilderobjfile.build(&mut scene).unwrap();
 

@@ -7,9 +7,9 @@ use cgmath::{vec3, Deg};
 use vulkanalia::loader::{LibloadingLoader, LIBRARY};
 use vulkanalia::prelude::v1_0::*;
 use vulkanalia::window as vk_window;
-use winit::window::Window;
 use winit::event::{Event, WindowEvent};
 use winit::event_loop::EventLoop;
+use winit::window::Window;
 
 use vulkanalia::vk::ExtDebugUtilsExtension;
 use vulkanalia::vk::KhrSurfaceExtension;
@@ -22,6 +22,7 @@ const VALIDATION_ENABLED: bool = cfg!(debug_assertions);
 const MAX_FRAMES_IN_FLIGHT: usize = 2;
 
 use crate::feather::perspectivecamera::PerspectiveCamera;
+use crate::feather::renderer::Renderer;
 use crate::feather::scene::Scene;
 
 use super::appdata::AppData;
@@ -32,10 +33,12 @@ use super::commandbuffers::create_command_buffers;
 use super::commandpool::create_command_pool;
 use super::dephobjects::create_depth_objects;
 use super::descriptors::{create_descriptor_pool, create_descriptor_sets};
+use super::featherapp::FeatherApp;
 use super::framebuffers::create_framebuffers;
 use super::instance::create_instance;
 use super::logicaldevice::create_logical_device;
 use super::math::*;
+use super::meshbuffer::MeshBuffer;
 use super::model::load_model;
 use super::physicaldevice::pick_physical_device;
 use super::pipeline::{create_descriptor_set_layout, create_pipeline, create_render_pass};
@@ -43,8 +46,6 @@ use super::swapchain::Swapchain;
 use super::syncobjects::create_sync_objects;
 use super::texture::{create_texture_image, create_texture_image_view, create_texture_sampler};
 use super::uniformbufferobject::UniformBufferObject;
-use super::featherapp::FeatherApp;
-use super::meshbuffer::MeshBuffer;
 
 /// Our Vulkan app.
 pub struct App {
@@ -62,12 +63,22 @@ fn create_scene(data: &mut AppData) {
     let _root_node = scene.create_root_node(Some("Scene root".to_string()));
     data.scene = scene;
     let mut camera = PerspectiveCamera::new();
-    camera.set_fov(45.0)
-        .set_near_far(0.1, 10.0)
-        .set_view(Point3::new(2.0, 2.0, 2.0), Point3::new(0.0, 0.0, 0.0), Vec3::new(0.0, 0.0, 1.0));
+    camera.set_fov(45.0).set_near_far(0.1, 10.0).set_view(
+        Point3::new(2.0, 2.0, 2.0),
+        Point3::new(0.0, 0.0, 0.0),
+        Vec3::new(0.0, 0.0, 1.0),
+    );
     data.camera = camera;
-    load_model(data)
-        .expect("Failed to load model");
+    load_model(data).expect("Failed to load model");
+}
+
+impl Renderer for App {
+    fn prepare_scene(&self, scene: &mut Scene) -> Result<()> {
+        scene.build_missing_mesh_buffers()
+    }
+    fn render(&mut self, scene: &mut Scene, camera: &dyn Camera, root_handle: usize) -> Result<()> {
+        Ok(())
+    }
 }
 
 impl App {
@@ -152,8 +163,19 @@ impl App {
         })
     }
 
+    fn prepare_scenes(&mut self) -> Result<()> {
+        for i in 0..self.data.app.get_num_scenes_to_render() {
+            self.data
+                .app
+                .get_scene_to_render(i)
+                .build_missing_mesh_buffers()?;
+        }
+        Ok(())
+    }
+
     /// Renders a frame for our Vulkan app.
     pub unsafe fn render(&mut self, window: &Window) -> Result<()> {
+        self.prepare_scenes()?;
         self.data.app.on_render()?;
         let in_flight_fence = self.data.in_flight_fences[self.frame];
 
@@ -229,11 +251,18 @@ impl App {
         let time = self.start.elapsed().as_secs_f32();
         self.data.app.on_update(time)?;
 
-        self.data.camera.set_screen_dimention(self.data.swapchain.swapchain_extent.width, self.data.swapchain.swapchain_extent.height);
+        self.data.camera.set_screen_dimention(
+            self.data.swapchain.swapchain_extent.width,
+            self.data.swapchain.swapchain_extent.height,
+        );
 
         let model = Mat4::from_axis_angle(vec3(0.0, 0.0, 1.0), Deg(10.0) * time);
 
-        let ubo = UniformBufferObject { model, view: self.data.camera.get_view(), proj: self.data.camera.get_projection() };
+        let ubo = UniformBufferObject {
+            model,
+            view: self.data.camera.get_view(),
+            proj: self.data.camera.get_projection(),
+        };
 
         // Copy
 
@@ -328,33 +357,35 @@ impl App {
     pub fn run(&mut self, window: &Window, event_loop: EventLoop<()>) -> Result<()> {
         let mut minimized = false;
         event_loop.run(move |event, elwt| {
-        match event {
-            // Request a redraw when all events were processed.
-            Event::AboutToWait => window.request_redraw(),
-            Event::WindowEvent { event, .. } => match event {
-                // Render a frame if our Vulkan app is not being destroyed.
-                WindowEvent::RedrawRequested if !elwt.exiting() && !minimized => {
-                    unsafe { self.render(&window) }.unwrap();
-                },
-                // Mark the window as having been resized.
-                WindowEvent::Resized(size) => {
-                    if size.width == 0 || size.height == 0 {
-                        minimized = true;
-                    } else {
-                        minimized = false;
-                        self.resized = true;
+            match event {
+                // Request a redraw when all events were processed.
+                Event::AboutToWait => window.request_redraw(),
+                Event::WindowEvent { event, .. } => match event {
+                    // Render a frame if our Vulkan app is not being destroyed.
+                    WindowEvent::RedrawRequested if !elwt.exiting() && !minimized => {
+                        unsafe { self.render(&window) }.unwrap();
                     }
-                }
-                // Destroy our Vulkan app.
-                WindowEvent::CloseRequested => {
-                    elwt.exit();
-                    unsafe { self.destroy(); }
-                }
+                    // Mark the window as having been resized.
+                    WindowEvent::Resized(size) => {
+                        if size.width == 0 || size.height == 0 {
+                            minimized = true;
+                        } else {
+                            minimized = false;
+                            self.resized = true;
+                        }
+                    }
+                    // Destroy our Vulkan app.
+                    WindowEvent::CloseRequested => {
+                        elwt.exit();
+                        unsafe {
+                            self.destroy();
+                        }
+                    }
+                    _ => {}
+                },
                 _ => {}
             }
-            _ => {}
-        }
-    })?;
-    Ok(())
+        })?;
+        Ok(())
     }
 }

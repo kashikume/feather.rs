@@ -72,6 +72,14 @@ impl MeshBuffer {
         self.num_indexes += mesh.gen_num_indexes();
     }
 
+    pub unsafe fn data_size_for_vertexes(&self) -> usize {
+        self.num_vertexes * size_of::<Vertex>()
+    }
+
+    pub unsafe fn data_size_for_indexes(&self) -> usize {
+        self.num_indexes * size_of::<u32>()
+    }
+
     pub unsafe fn create_vertex_buffer(
         &mut self,
         instance: &Instance,
@@ -86,7 +94,7 @@ impl MeshBuffer {
         let (staging_buffer, staging_buffer_memory) = create_buffer(
             instance,
             device,
-            data,
+            &data.physical_device,
             size,
             vk::BufferUsageFlags::TRANSFER_SRC,
             vk::MemoryPropertyFlags::HOST_COHERENT | vk::MemoryPropertyFlags::HOST_VISIBLE,
@@ -115,7 +123,7 @@ impl MeshBuffer {
         let (vertex_buffer, vertex_buffer_memory) = create_buffer(
             instance,
             device,
-            data,
+            &data.physical_device,
             size,
             vk::BufferUsageFlags::TRANSFER_DST | vk::BufferUsageFlags::VERTEX_BUFFER,
             vk::MemoryPropertyFlags::DEVICE_LOCAL,
@@ -143,14 +151,6 @@ impl MeshBuffer {
         Ok(())
     }
 
-    pub unsafe fn data_size_for_vertexes(&self) -> usize {
-        self.num_vertexes * size_of::<Vertex>()
-    }
-
-    pub unsafe fn data_size_for_indexes(&self) -> usize {
-        self.num_indexes * size_of::<u32>()
-    }
-
     pub unsafe fn create_index_buffer(
         &mut self,
         instance: &Instance,
@@ -165,7 +165,7 @@ impl MeshBuffer {
         let (staging_buffer, staging_buffer_memory) = create_buffer(
             instance,
             device,
-            data,
+            &data.physical_device,
             size,
             vk::BufferUsageFlags::TRANSFER_SRC,
             vk::MemoryPropertyFlags::HOST_COHERENT | vk::MemoryPropertyFlags::HOST_VISIBLE,
@@ -194,7 +194,7 @@ impl MeshBuffer {
         let (index_buffer, index_buffer_memory) = create_buffer(
             instance,
             device,
-            data,
+            &data.physical_device,
             size,
             vk::BufferUsageFlags::TRANSFER_DST | vk::BufferUsageFlags::INDEX_BUFFER,
             vk::MemoryPropertyFlags::DEVICE_LOCAL,
@@ -220,5 +220,12 @@ impl MeshBuffer {
         device.free_memory(staging_buffer_memory, None);
 
         Ok(())
+    }
+
+    pub unsafe fn cleanup(&mut self, device: &Device) {
+        device.destroy_buffer(self.vertex_buffer, None);
+        device.free_memory(self.vertex_buffer_memory, None);
+        device.destroy_buffer(self.index_buffer, None);
+        device.free_memory(self.index_buffer_memory, None);
     }
 }

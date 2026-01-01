@@ -3,6 +3,7 @@ use std::ptr::copy_nonoverlapping as memcpy;
 
 use anyhow::Result;
 use vulkanalia::prelude::v1_0::*;
+use vulkanalia::vk::PhysicalDevice;
 
 use super::appdata::AppData;
 use super::other::{begin_single_time_commands, end_single_time_commands, get_memory_type_index};
@@ -26,7 +27,7 @@ pub unsafe fn create_vertex_buffer(
     let (staging_buffer, staging_buffer_memory) = create_buffer(
         instance,
         device,
-        data,
+        &data.physical_device,
         size,
         vk::BufferUsageFlags::TRANSFER_SRC,
         vk::MemoryPropertyFlags::HOST_COHERENT | vk::MemoryPropertyFlags::HOST_VISIBLE,
@@ -36,11 +37,7 @@ pub unsafe fn create_vertex_buffer(
 
     let memory = device.map_memory(staging_buffer_memory, 0, size, vk::MemoryMapFlags::empty())?;
 
-    memcpy(
-        mesh.vertices.as_ptr(),
-        memory.cast(),
-        mesh.vertices.len(),
-    );
+    memcpy(mesh.vertices.as_ptr(), memory.cast(), mesh.vertices.len());
 
     device.unmap_memory(staging_buffer_memory);
 
@@ -49,7 +46,7 @@ pub unsafe fn create_vertex_buffer(
     let (vertex_buffer, vertex_buffer_memory) = create_buffer(
         instance,
         device,
-        data,
+        &data.physical_device,
         size,
         vk::BufferUsageFlags::TRANSFER_DST | vk::BufferUsageFlags::VERTEX_BUFFER,
         vk::MemoryPropertyFlags::DEVICE_LOCAL,
@@ -60,7 +57,14 @@ pub unsafe fn create_vertex_buffer(
 
     // Copy (vertex)
 
-    copy_buffer(device, &data.command_pool, &data.graphics_queue, staging_buffer, vertex_buffer, size)?;
+    copy_buffer(
+        device,
+        &data.command_pool,
+        &data.graphics_queue,
+        staging_buffer,
+        vertex_buffer,
+        size,
+    )?;
 
     // Cleanup
 
@@ -84,7 +88,7 @@ pub unsafe fn create_index_buffer(
     let (staging_buffer, staging_buffer_memory) = create_buffer(
         instance,
         device,
-        data,
+        &data.physical_device,
         size,
         vk::BufferUsageFlags::TRANSFER_SRC,
         vk::MemoryPropertyFlags::HOST_COHERENT | vk::MemoryPropertyFlags::HOST_VISIBLE,
@@ -94,11 +98,7 @@ pub unsafe fn create_index_buffer(
 
     let memory = device.map_memory(staging_buffer_memory, 0, size, vk::MemoryMapFlags::empty())?;
 
-    memcpy(
-        mesh.indices.as_ptr(),
-        memory.cast(),
-        mesh.indices.len(),
-    );
+    memcpy(mesh.indices.as_ptr(), memory.cast(), mesh.indices.len());
 
     device.unmap_memory(staging_buffer_memory);
 
@@ -107,7 +107,7 @@ pub unsafe fn create_index_buffer(
     let (index_buffer, index_buffer_memory) = create_buffer(
         instance,
         device,
-        data,
+        &data.physical_device,
         size,
         vk::BufferUsageFlags::TRANSFER_DST | vk::BufferUsageFlags::INDEX_BUFFER,
         vk::MemoryPropertyFlags::DEVICE_LOCAL,
@@ -118,7 +118,14 @@ pub unsafe fn create_index_buffer(
 
     // Copy (index)
 
-    copy_buffer(device, &data.command_pool, &data.graphics_queue, staging_buffer, index_buffer, size)?;
+    copy_buffer(
+        device,
+        &data.command_pool,
+        &data.graphics_queue,
+        staging_buffer,
+        index_buffer,
+        size,
+    )?;
 
     // Cleanup
 
@@ -140,7 +147,7 @@ pub unsafe fn create_uniform_buffers(
         let (uniform_buffer, uniform_buffer_memory) = create_buffer(
             instance,
             device,
-            data,
+            &data.physical_device,
             size_of::<UniformBufferObject>() as u64,
             vk::BufferUsageFlags::UNIFORM_BUFFER,
             vk::MemoryPropertyFlags::HOST_COHERENT | vk::MemoryPropertyFlags::HOST_VISIBLE,
@@ -160,7 +167,7 @@ pub unsafe fn create_uniform_buffers(
 pub unsafe fn create_buffer(
     instance: &Instance,
     device: &Device,
-    data: &AppData,
+    physical_device: &PhysicalDevice,
     size: vk::DeviceSize,
     usage: vk::BufferUsageFlags,
     properties: vk::MemoryPropertyFlags,
@@ -182,7 +189,7 @@ pub unsafe fn create_buffer(
         .allocation_size(requirements.size)
         .memory_type_index(get_memory_type_index(
             instance,
-            data,
+            physical_device,
             properties,
             requirements,
         )?);
