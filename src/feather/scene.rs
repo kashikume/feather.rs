@@ -1,4 +1,5 @@
 use anyhow::Result;
+use vulkanalia::Device;
 
 use crate::feather::object::Object;
 
@@ -96,6 +97,12 @@ impl Scene {
         }
         self.needs_create_mesh_buffer = false;
         Ok(())
+    }
+
+    pub fn destroy(&mut self, device: &Device) {
+        for mesh_buffer in self.buffers.iter_mut() {
+            mesh_buffer.cleanup(device);
+        }
     }
 }
 

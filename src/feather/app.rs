@@ -22,7 +22,6 @@ const VALIDATION_ENABLED: bool = cfg!(debug_assertions);
 const MAX_FRAMES_IN_FLIGHT: usize = 2;
 
 use crate::feather::perspectivecamera::PerspectiveCamera;
-use crate::feather::renderer::Renderer;
 use crate::feather::scene::Scene;
 
 use super::appdata::AppData;
@@ -70,15 +69,6 @@ fn create_scene(data: &mut AppData) {
     );
     data.camera = camera;
     load_model(data).expect("Failed to load model");
-}
-
-impl Renderer for App {
-    fn prepare_scene(&self, scene: &mut Scene) -> Result<()> {
-        scene.build_missing_mesh_buffers()
-    }
-    fn render(&mut self, scene: &mut Scene, camera: &dyn Camera, root_handle: usize) -> Result<()> {
-        Ok(())
-    }
 }
 
 impl App {
@@ -144,14 +134,12 @@ impl App {
         create_texture_sampler(&device, &mut data)?;
         create_scene(&mut data);
         data.app.on_create()?;
-        create_vertex_buffer(&instance, &device, &mut data)?;
-        create_index_buffer(&instance, &device, &mut data)?;
+        App::create_mesh_buffers(&instance, &device, &mut data)?;
         create_uniform_buffers(&instance, &device, &mut data)?;
         create_descriptor_pool(&device, &mut data)?;
         create_descriptor_sets(&device, &mut data)?;
         create_command_buffers(&device, &mut data)?;
         create_sync_objects(&device, &mut data)?;
-
         Ok(Self {
             _entry: entry,
             instance,
@@ -169,6 +157,29 @@ impl App {
                 .app
                 .get_scene_to_render(i)
                 .build_missing_mesh_buffers()?;
+        }
+        Ok(())
+    }
+
+    unsafe fn create_mesh_buffers(
+        instance: &Instance,
+        device: &Device,
+        data: &mut AppData,
+    ) -> Result<()> {
+        create_vertex_buffer(&instance, &device, data)?;
+        create_index_buffer(&instance, &device, data)?;
+        for i in 0..data.app.get_num_scenes_to_render() {
+            let scene = data.app.get_scene_to_render(i);
+            for buffer in scene.buffers.iter_mut() {
+                buffer.prepare(
+                    &instance,
+                    &device,
+                    &data.physical_device,
+                    &data.command_pool,
+                    &data.graphics_queue,
+                    &scene.meshes,
+                )?;
+            }
         }
         Ok(())
     }
@@ -314,10 +325,7 @@ impl App {
         self.data.in_flight_fences.iter().for_each(|f| self.device.destroy_fence(*f, None));
         self.data.render_finished_semaphores.iter().for_each(|s| self.device.destroy_semaphore(*s, None));
         self.data.image_available_semaphores.iter().for_each(|s| self.device.destroy_semaphore(*s, None));
-        self.device.free_memory(self.data.mesh_buffer.index_buffer_memory, None);
-        self.device.destroy_buffer(self.data.mesh_buffer.index_buffer, None);
-        self.device.free_memory(self.data.mesh_buffer.vertex_buffer_memory, None);
-        self.device.destroy_buffer(self.data.mesh_buffer.vertex_buffer, None);
+        self.data.mesh_buffer.cleanup(&self.device);
         self.device.destroy_sampler(self.data.texture_sampler, None);
         self.device.destroy_image_view(self.data.texture_image_view, None);
         self.device.free_memory(self.data.texture_image_memory, None);
@@ -338,6 +346,7 @@ impl App {
     #[rustfmt::skip]
     unsafe fn destroy_swapchain(&mut self) {
         self.device.free_command_buffers(self.data.command_pool, &self.data.command_buffers);
+        self.data.command_buffers.clear();
         self.device.destroy_descriptor_pool(self.data.descriptor_pool, None);
         self.data.uniform_buffers_memory.iter().for_each(|m| self.device.free_memory(*m, None));
         self.data.uniform_buffers.iter().for_each(|b| self.device.destroy_buffer(*b, None));

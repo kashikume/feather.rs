@@ -30,7 +30,6 @@ pub mod perspectivecamera;
 pub mod physicaldevice;
 pub mod pipeline;
 pub mod queuefamilyindices;
-pub mod renderer;
 pub mod scene;
 pub mod shader;
 pub mod swapchain;

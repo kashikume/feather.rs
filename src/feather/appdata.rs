@@ -1,13 +1,10 @@
-use std::rc::Rc;
-
 use vulkanalia::prelude::v1_0::*;
 
-use super::mesh::Mesh;
+use super::featherapp::FeatherApp;
 use super::meshbuffer::MeshBuffer;
+use super::perspectivecamera::PerspectiveCamera;
 use super::scene::Scene;
 use super::swapchain::Swapchain;
-use super::perspectivecamera::PerspectiveCamera;
-use super::featherapp::FeatherApp;
 
 /// The Vulkan handles and associated properties used by our Vulkan app.
 pub struct AppData {

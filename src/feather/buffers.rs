@@ -20,6 +20,10 @@ pub unsafe fn create_vertex_buffer(
 ) -> Result<()> {
     // Create (staging)
 
+    if data.mesh_buffer.vertex_buffer.is_some() {
+        return Ok(());
+    }
+
     let mesh = data.scene.get_mesh(data.mesh).unwrap();
 
     let size = mesh.data_size_for_vertexes() as u64;
@@ -52,8 +56,8 @@ pub unsafe fn create_vertex_buffer(
         vk::MemoryPropertyFlags::DEVICE_LOCAL,
     )?;
 
-    data.mesh_buffer.vertex_buffer = vertex_buffer;
-    data.mesh_buffer.vertex_buffer_memory = vertex_buffer_memory;
+    data.mesh_buffer.vertex_buffer = Some(vertex_buffer);
+    data.mesh_buffer.vertex_buffer_memory = Some(vertex_buffer_memory);
 
     // Copy (vertex)
 
@@ -80,6 +84,10 @@ pub unsafe fn create_index_buffer(
     data: &mut AppData,
 ) -> Result<()> {
     // Create (staging)
+
+    if data.mesh_buffer.index_buffer.is_some() {
+        return Ok(());
+    }
 
     let mesh = data.scene.get_mesh(data.mesh).unwrap();
 
@@ -113,8 +121,8 @@ pub unsafe fn create_index_buffer(
         vk::MemoryPropertyFlags::DEVICE_LOCAL,
     )?;
 
-    data.mesh_buffer.index_buffer = index_buffer;
-    data.mesh_buffer.index_buffer_memory = index_buffer_memory;
+    data.mesh_buffer.index_buffer = Some(index_buffer);
+    data.mesh_buffer.index_buffer_memory = Some(index_buffer_memory);
 
     // Copy (index)
 

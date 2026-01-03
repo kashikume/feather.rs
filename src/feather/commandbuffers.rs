@@ -10,6 +10,11 @@ use super::appdata::AppData;
 pub unsafe fn create_command_buffers(device: &Device, data: &mut AppData) -> Result<()> {
     // Allocate
 
+    if !data.command_buffers.is_empty() {
+        device.free_command_buffers(data.command_pool, &data.command_buffers);
+        data.command_buffers.clear();
+    }
+
     let allocate_info = vk::CommandBufferAllocateInfo::builder()
         .command_pool(data.command_pool)
         .level(vk::CommandBufferLevel::PRIMARY)
@@ -54,8 +59,18 @@ pub unsafe fn create_command_buffers(device: &Device, data: &mut AppData) -> Res
             vk::PipelineBindPoint::GRAPHICS,
             data.pipeline,
         );
-        device.cmd_bind_vertex_buffers(*command_buffer, 0, &[data.mesh_buffer.vertex_buffer], &[0]);
-        device.cmd_bind_index_buffer(*command_buffer, data.mesh_buffer.index_buffer, 0, vk::IndexType::UINT32);
+        device.cmd_bind_vertex_buffers(
+            *command_buffer,
+            0,
+            &[data.mesh_buffer.vertex_buffer.unwrap()],
+            &[0],
+        );
+        device.cmd_bind_index_buffer(
+            *command_buffer,
+            data.mesh_buffer.index_buffer.unwrap(),
+            0,
+            vk::IndexType::UINT32,
+        );
         device.cmd_bind_descriptor_sets(
             *command_buffer,
             vk::PipelineBindPoint::GRAPHICS,
