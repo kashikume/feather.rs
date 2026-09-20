@@ -1,0 +1,7 @@
+{
+    "recommendations": [
+        "rust-lang.rust-analyzer",
+        "anysphere.cpptools",
+        "reznikdi.windbg-debug"
+    ]
+}

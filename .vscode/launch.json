@@ -1,16 +1,71 @@
 {
+    // cppvsdbg ignores Ctrl+F5 "Run Without Debugging" and always starts a debugger.
+    // Use the "Run feather-rs" configs (or the cargo run task) to run without debugging.
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Debug Feather",
+            "name": "Run feather-rs",
+            "type": "node-terminal",
+            "request": "launch",
+            "command": "cargo run",
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "RUST_BACKTRACE": "1",
+                "RUST_LOG": "debug"
+            }
+        },
+        {
+            "name": "Run feather-rs (release)",
+            "type": "node-terminal",
+            "request": "launch",
+            "command": "cargo run --release",
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "RUST_BACKTRACE": "1",
+                "RUST_LOG": "info"
+            }
+        },
+        {
+            "name": "Debug feather-rs",
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${workspaceFolder}/target/debug/feather-rs.exe",
             "args": [],
-            "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
-            "environment": [],
-            "console": "integratedTerminal"
+            "stopAtEntry": false,
+            "console": "integratedTerminal",
+            "preLaunchTask": "cargo build",
+            "environment": [
+                {
+                    "name": "RUST_BACKTRACE",
+                    "value": "1"
+                },
+                {
+                    "name": "RUST_LOG",
+                    "value": "debug"
+                }
+            ]
+        },
+        {
+            "name": "Debug feather-rs (release)",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/target/release/feather-rs.exe",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "stopAtEntry": false,
+            "console": "integratedTerminal",
+            "preLaunchTask": "cargo build --release",
+            "environment": [
+                {
+                    "name": "RUST_BACKTRACE",
+                    "value": "1"
+                },
+                {
+                    "name": "RUST_LOG",
+                    "value": "info"
+                }
+            ]
         }
     ]
-} 
+}
