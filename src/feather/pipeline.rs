@@ -131,8 +131,9 @@ pub unsafe fn create_descriptor_set_layout(device: &Device, data: &mut AppData) 
 pub unsafe fn create_pipeline(device: &Device, data: &mut AppData) -> Result<()> {
     // Stages
 
-    let vert = include_bytes!("../../shaders/26/vert.spv");
-    let frag = include_bytes!("../../shaders/26/frag.spv");
+    // Compiled from shaders/ by build.rs.
+    let vert = include_bytes!(concat!(env!("OUT_DIR"), "/shaders/shader.vert.spv"));
+    let frag = include_bytes!(concat!(env!("OUT_DIR"), "/shaders/shader.frag.spv"));
 
     let vert_shader_module = create_shader_module(device, &vert[..])?;
     let frag_shader_module = create_shader_module(device, &frag[..])?;

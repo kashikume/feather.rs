@@ -1,1 +1,4 @@
 /target
+
+# Shaders are compiled into OUT_DIR by build.rs
+*.spv

@@ -23,25 +23,12 @@ What works today:
 
 - **Rust** (stable, edition 2021): <https://rustup.rs>
 - **Vulkan SDK**: <https://vulkan.lunarg.com>. You need it for:
-  - `glslc`, which compiles the GLSL shaders to SPIR-V
+  - `glslc`, which the build uses to compile the GLSL shaders to SPIR-V
   - `VK_LAYER_KHRONOS_validation`, which debug builds **require**. Without it, start-up fails with
     `Validation layer requested but not supported.`
 - A GPU and driver that support Vulkan
 
 ## Building
-
-### 1. Compile the shaders
-
-The SPIR-V binaries are embedded into the executable at compile time (`include_bytes!` in
-`src/feather/pipeline.rs`) and are not committed. Build them before the first `cargo build`, and
-again whenever you change a shader:
-
-```powershell
-glslc shaders/26/shader.vert -o shaders/26/vert.spv
-glslc shaders/26/shader.frag -o shaders/26/frag.spv
-```
-
-### 2. Build and run
 
 Run from the repository root, because assets are loaded from `resources/` using relative paths.
 
@@ -52,6 +39,21 @@ cargo run --release    # release build, validation layers off
 
 The development app (`src/testapp`) opens a 1024×768 window and renders the model in
 `resources/viking_room.obj`.
+
+### Shaders
+
+`build.rs` compiles every shader in `shaders/` (`.vert`, `.frag`, `.comp`, `.geom`, `.tesc`,
+`.tese`) with `glslc` during `cargo build`, and recompiles whenever anything in `shaders/` changes.
+Release builds pass `-O` to `glslc`. The output goes to Cargo's `OUT_DIR`, keeps the same relative
+path and adds `.spv`, so `shaders/shader.vert` becomes `shaders/shader.vert.spv`. Embed a
+compiled shader with:
+
+```rust
+include_bytes!(concat!(env!("OUT_DIR"), "/shaders/shader.vert.spv"))
+```
+
+`build.rs` looks for `glslc` in this order: the `GLSLC` environment variable,
+`$VULKAN_SDK/Bin/glslc`, then `glslc` on `PATH`.
 
 ## Logging
 
@@ -101,7 +103,8 @@ src/
     instance.rs, physicaldevice.rs, logicaldevice.rs, swapchain.rs, pipeline.rs, ...
                      Vulkan object wrappers
   testapp/           development application used to exercise the engine
-shaders/26/          GLSL sources (shader.vert, shader.frag) and the compiled .spv files
+shaders/             GLSL sources (shader.vert, shader.frag), compiled by build.rs
+build.rs             compiles shaders to SPIR-V at build time
 resources/           models and textures
 ```
 
