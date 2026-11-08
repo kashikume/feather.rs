@@ -3,7 +3,7 @@ use vulkanalia::Device;
 
 use crate::feather::{atlas::Atlas, object::Object, texture::Texture};
 
-use super::{mesh::Mesh, meshbuffer::MeshBuffer, node::Node, objdb::ObjDB};
+use super::{mesh::Mesh, meshbuffer::MeshBuffer, node::Node, objdb::ObjDB, uniforms::Uniforms};
 
 pub struct Scene {
     pub meshes: ObjDB<Mesh>,
@@ -81,6 +81,50 @@ impl Scene {
             .ok_or(anyhow::anyhow!("Node not found"))?
             .set_mesh(mesh_handle);
         Ok(())
+    }
+
+    /// Recomputes dynamic uniforms of every node, starting from the root nodes.
+    pub fn update_dynamic_uniforms(&mut self) {
+        let roots: Vec<usize> = self
+            .nodes
+            .iter()
+            .filter(|n| n.is_root())
+            .map(|n| n.get_handle())
+            .collect();
+        for root in roots {
+            self.update_subtree_dynamic_uniforms(root, &Uniforms::new());
+        }
+    }
+
+    /// Recomputes dynamic uniforms of a node and all its descendants. Use it after changing
+    /// uniforms of one node; the node's parent must already be up to date.
+    pub fn update_node_dynamic_uniforms(&mut self, node_handle: usize) -> Result<()> {
+        let node = self
+            .nodes
+            .get(node_handle)
+            .ok_or_else(|| anyhow::anyhow!("Node {node_handle} not found"))?;
+        let inherited = node
+            .get_parent()
+            .and_then(|p| self.nodes.get(p))
+            .map(|p| p.dynamic_uniforms().clone())
+            .unwrap_or_default();
+        self.update_subtree_dynamic_uniforms(node_handle, &inherited);
+        Ok(())
+    }
+
+    fn update_subtree_dynamic_uniforms(&mut self, node_handle: usize, inherited: &Uniforms) {
+        // Depth-first, without recursion: (node, uniforms inherited from its parent).
+        let mut stack = vec![(node_handle, inherited.clone())];
+        while let Some((handle, inherited)) = stack.pop() {
+            let Some(node) = self.nodes.get_mut(handle) else {
+                continue;
+            };
+            node.update_dynamic_uniforms(&inherited);
+            let dynamic = node.dynamic_uniforms();
+            for &child in node.get_children() {
+                stack.push((child, dynamic.clone()));
+            }
+        }
     }
 
     pub fn add_atlas(&mut self, atlas: Atlas) -> usize {
@@ -183,6 +227,7 @@ impl Default for Scene {
 mod tests {
     use super::*;
     use crate::feather::math::{Vec2, Vec3};
+    use crate::feather::uniform::UniformValue;
     use crate::feather::vertex::Vertex;
 
     /// Mesh with `num_vertices` dummy vertices and `num_indices` indices.
@@ -410,6 +455,175 @@ mod tests {
         scene.nodes.remove(root);
 
         assert!(scene.node_set_mesh(root, 0).is_err());
+    }
+
+    // --- dynamic uniforms ---
+
+    #[test]
+    fn dynamic_uniforms_are_inherited_through_hierarchy() {
+        let mut scene = Scene::new();
+        let root = scene.create_root_node(None);
+        let child = scene.create_node(None, root).unwrap();
+        let grandchild = scene.create_node(None, child).unwrap();
+        scene
+            .get_node_mut(root)
+            .unwrap()
+            .uniforms_mut()
+            .set("a", 1u32);
+        scene
+            .get_node_mut(child)
+            .unwrap()
+            .uniforms_mut()
+            .set("b", 2u32);
+
+        scene.update_dynamic_uniforms();
+
+        let dynamic = scene.get_node(grandchild).unwrap().dynamic_uniforms();
+        assert_eq!(dynamic.get("a"), Some(&UniformValue::UInt(1)));
+        assert_eq!(dynamic.get("b"), Some(&UniformValue::UInt(2)));
+        assert_eq!(dynamic.len(), 2);
+
+        // A parent does not see its children's uniforms.
+        assert_eq!(
+            scene.get_node(root).unwrap().dynamic_uniforms().get("b"),
+            None
+        );
+    }
+
+    #[test]
+    fn own_uniforms_override_inherited_ones() {
+        let mut scene = Scene::new();
+        let root = scene.create_root_node(None);
+        let child = scene.create_node(None, root).unwrap();
+        let grandchild = scene.create_node(None, child).unwrap();
+        scene
+            .get_node_mut(root)
+            .unwrap()
+            .uniforms_mut()
+            .set("a", 1u32);
+        scene
+            .get_node_mut(child)
+            .unwrap()
+            .uniforms_mut()
+            .set("a", 10u32);
+
+        scene.update_dynamic_uniforms();
+
+        assert_eq!(
+            scene.get_node(root).unwrap().dynamic_uniforms().get("a"),
+            Some(&UniformValue::UInt(1))
+        );
+        assert_eq!(
+            scene.get_node(child).unwrap().dynamic_uniforms().get("a"),
+            Some(&UniformValue::UInt(10))
+        );
+        // The override is passed further down.
+        assert_eq!(
+            scene
+                .get_node(grandchild)
+                .unwrap()
+                .dynamic_uniforms()
+                .get("a"),
+            Some(&UniformValue::UInt(10))
+        );
+    }
+
+    #[test]
+    fn siblings_do_not_affect_each_other() {
+        let mut scene = Scene::new();
+        let root = scene.create_root_node(None);
+        let a = scene.create_node(None, root).unwrap();
+        let b = scene.create_node(None, root).unwrap();
+        scene
+            .get_node_mut(root)
+            .unwrap()
+            .uniforms_mut()
+            .set("x", 1u32);
+        scene.get_node_mut(a).unwrap().uniforms_mut().set("x", 2u32);
+
+        scene.update_dynamic_uniforms();
+
+        assert_eq!(
+            scene.get_node(a).unwrap().dynamic_uniforms().get("x"),
+            Some(&UniformValue::UInt(2))
+        );
+        assert_eq!(
+            scene.get_node(b).unwrap().dynamic_uniforms().get("x"),
+            Some(&UniformValue::UInt(1))
+        );
+    }
+
+    #[test]
+    fn separate_roots_do_not_share_uniforms() {
+        let mut scene = Scene::new();
+        let r1 = scene.create_root_node(None);
+        let r2 = scene.create_root_node(None);
+        scene
+            .get_node_mut(r1)
+            .unwrap()
+            .uniforms_mut()
+            .set("x", 1u32);
+
+        scene.update_dynamic_uniforms();
+
+        assert!(scene.get_node(r2).unwrap().dynamic_uniforms().is_empty());
+    }
+
+    #[test]
+    fn update_node_dynamic_uniforms_updates_subtree_only() {
+        let mut scene = Scene::new();
+        let root = scene.create_root_node(None);
+        let a = scene.create_node(None, root).unwrap();
+        let a_child = scene.create_node(None, a).unwrap();
+        let b = scene.create_node(None, root).unwrap();
+        scene
+            .get_node_mut(root)
+            .unwrap()
+            .uniforms_mut()
+            .set("x", 1u32);
+        scene.update_dynamic_uniforms();
+
+        scene.get_node_mut(a).unwrap().uniforms_mut().set("y", 2u32);
+        scene.get_node_mut(b).unwrap().uniforms_mut().set("y", 3u32);
+        scene.update_node_dynamic_uniforms(a).unwrap();
+
+        // `a` and its child are updated and still inherit from the root.
+        let a_child_dynamic = scene.get_node(a_child).unwrap().dynamic_uniforms();
+        assert_eq!(a_child_dynamic.get("x"), Some(&UniformValue::UInt(1)));
+        assert_eq!(a_child_dynamic.get("y"), Some(&UniformValue::UInt(2)));
+        // `b` is outside the subtree, so it is not updated yet.
+        assert_eq!(scene.get_node(b).unwrap().dynamic_uniforms().get("y"), None);
+    }
+
+    #[test]
+    fn update_node_dynamic_uniforms_with_invalid_handle_fails() {
+        let mut scene = Scene::new();
+        assert!(scene.update_node_dynamic_uniforms(42).is_err());
+    }
+
+    #[test]
+    fn disconnected_node_stops_inheriting() {
+        let mut scene = Scene::new();
+        let root = scene.create_root_node(None);
+        let child = scene.create_node(None, root).unwrap();
+        scene
+            .get_node_mut(root)
+            .unwrap()
+            .uniforms_mut()
+            .set("x", 1u32);
+        scene
+            .get_node_mut(child)
+            .unwrap()
+            .uniforms_mut()
+            .set("y", 2u32);
+        scene.update_dynamic_uniforms();
+
+        scene.disconnect_node(child).unwrap();
+        scene.update_dynamic_uniforms();
+
+        let dynamic = scene.get_node(child).unwrap().dynamic_uniforms();
+        assert_eq!(dynamic.get("x"), None);
+        assert_eq!(dynamic.get("y"), Some(&UniformValue::UInt(2)));
     }
 
     // --- atlases and textures ---

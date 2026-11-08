@@ -36,5 +36,7 @@ pub mod swapchain;
 pub mod swapchainsupport;
 pub mod syncobjects;
 pub mod texture;
+pub mod uniform;
+pub mod uniforms;
 pub mod uniformbufferobject;
 pub mod vertex;
