@@ -1,11 +1,11 @@
-use anyhow::{bail, Result};
+use anyhow::Result;
 use vulkanalia::bytecode::Bytecode;
 use vulkanalia::prelude::v1_0::*;
 
 use super::appdata::AppData;
 use super::dephobjects::get_depth_format;
 use super::shader::Shader;
-use super::shaderlayout::{ShaderStages, UniformLocation};
+use super::shaderlayout::{ShaderLayout, ShaderStages};
 use super::vertex::Vertex;
 
 //================================================
@@ -109,66 +109,76 @@ pub unsafe fn create_render_pass(
     Ok(())
 }
 
-pub unsafe fn create_descriptor_set_layout(device: &Device, data: &mut AppData) -> Result<()> {
-    let ubo_binding = vk::DescriptorSetLayoutBinding::builder()
-        .binding(0)
-        .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-        .descriptor_count(1)
-        .stage_flags(vk::ShaderStageFlags::VERTEX);
-
-    let sampler_binding = vk::DescriptorSetLayoutBinding::builder()
-        .binding(1)
-        .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-        .descriptor_count(1)
-        .stage_flags(vk::ShaderStageFlags::FRAGMENT);
-
-    let bindings = &[ubo_binding, sampler_binding];
-    let info = vk::DescriptorSetLayoutCreateInfo::builder().bindings(bindings);
-
-    data.descriptor_set_layout = device.create_descriptor_set_layout(&info, None)?;
-
-    Ok(())
-}
-
 /// What a pipeline renders into. Pipelines must be recreated when any of it changes (i.e.
 /// with the swapchain).
 pub struct PipelineTarget {
     pub render_pass: vk::RenderPass,
     pub msaa_samples: vk::SampleCountFlags,
     pub extent: vk::Extent2D,
+    /// Number of swapchain images; the pipeline gets a set of descriptor sets for each.
+    pub image_count: usize,
 }
 
-/// The Vulkan pipeline of one `Shader`, with layouts created from the shader's reflected
-/// `ShaderLayout`.
+/// The Vulkan pipeline of one `Shader`, with layouts and descriptor sets created from the
+/// shader's reflected `ShaderLayout`.
+///
+/// Every uniform block is a `UNIFORM_BUFFER_DYNAMIC` descriptor: all blocks of a frame live in
+/// one buffer, and each draw passes the offsets of its own blocks.
 pub struct ShaderPipeline {
+    pub layout_info: ShaderLayout,
     /// One per descriptor set the shader uses (`ShaderLayout::set_count`).
     pub set_layouts: Vec<vk::DescriptorSetLayout>,
     pub layout: vk::PipelineLayout,
     pub pipeline: vk::Pipeline,
-    /// Where the node's model matrix goes, if the shader's model uniform is a push constant.
-    pub model_push_constant: Option<PushConstantSlot>,
-}
-
-/// A push constant the renderer writes.
-#[derive(Clone, Copy)]
-pub struct PushConstantSlot {
-    pub offset: u32,
-    pub stages: vk::ShaderStageFlags,
+    /// Stages that read the push constants (empty if the shader has none).
+    pub push_constant_stages: vk::ShaderStageFlags,
+    /// `None` when the shader uses no descriptor sets.
+    descriptor_pool: Option<vk::DescriptorPool>,
+    /// For each swapchain image, the shader's descriptor sets (set 0, 1, ...).
+    pub descriptor_sets: Vec<Vec<vk::DescriptorSet>>,
 }
 
 impl ShaderPipeline {
     pub unsafe fn create(device: &Device, target: &PipelineTarget, shader: &Shader) -> Result<Self> {
         let shader_layout = shader.get_layout();
+        let mut pipeline = Self {
+            layout_info: shader_layout.clone(),
+            set_layouts: Vec::new(),
+            layout: vk::PipelineLayout::null(),
+            pipeline: vk::Pipeline::null(),
+            push_constant_stages: shader_layout
+                .push_constants
+                .as_ref()
+                .map_or(vk::ShaderStageFlags::empty(), |p| stage_flags(p.stages)),
+            descriptor_pool: None,
+            descriptor_sets: Vec::new(),
+        };
+        // On error, destroy whatever was created so far.
+        match pipeline.create_objects(device, target, shader) {
+            Ok(()) => Ok(pipeline),
+            Err(e) => {
+                pipeline.destroy(device);
+                Err(e)
+            }
+        }
+    }
+
+    unsafe fn create_objects(
+        &mut self,
+        device: &Device,
+        target: &PipelineTarget,
+        shader: &Shader,
+    ) -> Result<()> {
+        let shader_layout = shader.get_layout();
 
         // Descriptor set layouts
 
-        let mut set_layouts = Vec::new();
         for set in 0..shader_layout.set_count() {
             let blocks = shader_layout
                 .uniform_blocks
                 .iter()
                 .filter(|b| b.set == set)
-                .map(|b| (b.binding, vk::DescriptorType::UNIFORM_BUFFER, b.stages));
+                .map(|b| (b.binding, vk::DescriptorType::UNIFORM_BUFFER_DYNAMIC, b.stages));
             let samplers = shader_layout
                 .samplers
                 .iter()
@@ -186,7 +196,8 @@ impl ShaderPipeline {
                 })
                 .collect();
             let info = vk::DescriptorSetLayoutCreateInfo::builder().bindings(&bindings);
-            set_layouts.push(device.create_descriptor_set_layout(&info, None)?);
+            self.set_layouts
+                .push(device.create_descriptor_set_layout(&info, None)?);
         }
 
         // Pipeline layout
@@ -203,83 +214,123 @@ impl ShaderPipeline {
             })
             .collect();
         let layout_info = vk::PipelineLayoutCreateInfo::builder()
-            .set_layouts(&set_layouts)
+            .set_layouts(&self.set_layouts)
             .push_constant_ranges(&push_constant_ranges);
-        let layout = device.create_pipeline_layout(&layout_info, None)?;
+        self.layout = device.create_pipeline_layout(&layout_info, None)?;
 
-        let model_push_constant = shader.get_uniform_model_name().and_then(|name| {
-            match shader_layout.find(name) {
-                Some(UniformLocation::PushConstant(member)) => Some(PushConstantSlot {
-                    offset: member.offset,
-                    stages: stage_flags(shader_layout.push_constants.as_ref()?.stages),
-                }),
-                _ => None,
-            }
-        });
+        // Descriptor sets: the shader's sets for every swapchain image
 
-        let pipeline = create_graphics_pipeline(device, target, shader, layout);
-        match pipeline {
-            Ok(pipeline) => Ok(Self {
-                set_layouts,
-                layout,
-                pipeline,
-                model_push_constant,
-            }),
-            Err(e) => {
-                device.destroy_pipeline_layout(layout, None);
-                set_layouts
-                    .iter()
-                    .for_each(|l| device.destroy_descriptor_set_layout(*l, None));
-                Err(e)
+        if !self.set_layouts.is_empty() {
+            let images = target.image_count as u32;
+            let pool_sizes: Vec<_> = [
+                (
+                    vk::DescriptorType::UNIFORM_BUFFER_DYNAMIC,
+                    shader_layout.uniform_blocks.len() as u32,
+                ),
+                (
+                    vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+                    shader_layout.samplers.len() as u32,
+                ),
+            ]
+            .into_iter()
+            .filter(|(_, count)| *count > 0)
+            .map(|(type_, count)| {
+                vk::DescriptorPoolSize::builder()
+                    .type_(type_)
+                    .descriptor_count(count * images)
+                    .build()
+            })
+            .collect();
+            let info = vk::DescriptorPoolCreateInfo::builder()
+                .pool_sizes(&pool_sizes)
+                .max_sets(self.set_layouts.len() as u32 * images);
+            let pool = device.create_descriptor_pool(&info, None)?;
+            self.descriptor_pool = Some(pool);
+
+            for _ in 0..images {
+                let info = vk::DescriptorSetAllocateInfo::builder()
+                    .descriptor_pool(pool)
+                    .set_layouts(&self.set_layouts);
+                self.descriptor_sets
+                    .push(device.allocate_descriptor_sets(&info)?);
             }
         }
+
+        self.pipeline = create_graphics_pipeline(device, target, shader, self.layout)?;
+        Ok(())
+    }
+
+    /// Points the descriptor sets of swapchain image `image` at `uniform_buffer` (each block
+    /// at offset 0 with its size; draws add their dynamic offsets) and every sampler at the
+    /// given texture. The sets must not be in use by the GPU.
+    pub unsafe fn update_descriptor_sets(
+        &self,
+        device: &Device,
+        image: usize,
+        uniform_buffer: vk::Buffer,
+        texture_view: vk::ImageView,
+        texture_sampler: vk::Sampler,
+    ) {
+        let Some(sets) = self.descriptor_sets.get(image) else {
+            return;
+        };
+        let buffer_infos: Vec<_> = self
+            .layout_info
+            .uniform_blocks
+            .iter()
+            .map(|b| {
+                [vk::DescriptorBufferInfo::builder()
+                    .buffer(uniform_buffer)
+                    .offset(0)
+                    .range(b.size as u64)
+                    .build()]
+            })
+            .collect();
+        let image_info = [vk::DescriptorImageInfo::builder()
+            .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+            .image_view(texture_view)
+            .sampler(texture_sampler)
+            .build()];
+
+        let block_writes = self
+            .layout_info
+            .uniform_blocks
+            .iter()
+            .zip(&buffer_infos)
+            .map(|(b, info)| {
+                vk::WriteDescriptorSet::builder()
+                    .dst_set(sets[b.set as usize])
+                    .dst_binding(b.binding)
+                    .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER_DYNAMIC)
+                    .buffer_info(info)
+                    .build()
+            });
+        let sampler_writes = self.layout_info.samplers.iter().map(|s| {
+            vk::WriteDescriptorSet::builder()
+                .dst_set(sets[s.set as usize])
+                .dst_binding(s.binding)
+                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                .image_info(&image_info)
+                .build()
+        });
+        let writes: Vec<_> = block_writes.chain(sampler_writes).collect();
+        device.update_descriptor_sets(&writes, &[] as &[vk::CopyDescriptorSet]);
     }
 
     pub unsafe fn destroy(&self, device: &Device) {
-        device.destroy_pipeline(self.pipeline, None);
-        device.destroy_pipeline_layout(self.layout, None);
+        if self.pipeline != vk::Pipeline::null() {
+            device.destroy_pipeline(self.pipeline, None);
+        }
+        if let Some(pool) = self.descriptor_pool {
+            device.destroy_descriptor_pool(pool, None);
+        }
+        if self.layout != vk::PipelineLayout::null() {
+            device.destroy_pipeline_layout(self.layout, None);
+        }
         self.set_layouts
             .iter()
             .for_each(|l| device.destroy_descriptor_set_layout(*l, None));
     }
-}
-
-/// Checks that the renderer can feed `shader`. Until uniform data and textures come from the
-/// scene (steps 3 and 4 in `doc/todo/node-uniforms-rendering.md`), every shader shares one
-/// fixed descriptor set (`create_descriptor_set_layout`): binding 0 = uniform buffer with the
-/// view and projection matrices at offsets 0 and 64 (vertex stage), binding 1 = the texture
-/// (fragment stage).
-pub fn check_renderer_support(shader: &Shader) -> Result<()> {
-    let layout = shader.get_layout();
-    let blocks: Vec<_> = layout
-        .uniform_blocks
-        .iter()
-        .map(|b| (b.set, b.binding, b.stages))
-        .collect();
-    let samplers: Vec<_> = layout
-        .samplers
-        .iter()
-        .map(|s| (s.set, s.binding, s.stages))
-        .collect();
-    if blocks != [(0, 0, ShaderStages::VERTEX)] || samplers != [(0, 1, ShaderStages::FRAGMENT)] {
-        bail!(
-            "the renderer only supports one uniform block at set 0 binding 0 (vertex stage) \
-             and one sampler2D at set 0 binding 1 (fragment stage)"
-        );
-    }
-    for (what, name, offset) in [
-        ("view", shader.get_uniform_view_name(), 0),
-        ("projection", shader.get_uniform_proj_name(), 64),
-    ] {
-        let Some(name) = name else {
-            bail!("the shader has no {what} matrix uniform name");
-        };
-        match layout.find(name) {
-            Some(UniformLocation::Block { member, .. }) if member.offset == offset => {}
-            _ => bail!("the {what} matrix `{name}` must be in the uniform block at offset {offset}"),
-        }
-    }
-    Ok(())
 }
 
 fn stage_flags(stages: ShaderStages) -> vk::ShaderStageFlags {

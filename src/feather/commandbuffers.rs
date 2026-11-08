@@ -1,12 +1,7 @@
-use std::mem::size_of;
-use std::slice;
-
 use anyhow::Result;
 use vulkanalia::prelude::v1_0::*;
 
 use super::appdata::AppData;
-use super::math::Mat4;
-use super::pipeline::PushConstantSlot;
 
 //================================================
 // Command Buffers
@@ -16,11 +11,14 @@ use super::pipeline::PushConstantSlot;
 pub struct GpuDraw {
     pub pipeline: vk::Pipeline,
     pub pipeline_layout: vk::PipelineLayout,
-    /// Where to push the model matrix; `None` if the shader doesn't take it as a push constant.
-    pub model_push_constant: Option<PushConstantSlot>,
+    /// The pipeline's descriptor sets for this frame (set 0, 1, ...).
+    pub descriptor_sets: Vec<vk::DescriptorSet>,
+    /// Offsets of the draw's uniform blocks in the frame's uniform buffer.
+    pub dynamic_offsets: Vec<u32>,
+    pub push_constants: Vec<u8>,
+    pub push_constant_stages: vk::ShaderStageFlags,
     pub vertex_buffer: vk::Buffer,
     pub index_buffer: vk::Buffer,
-    pub model: Mat4,
     pub first_index: u32,
     pub index_count: u32,
     pub vertex_offset: i32,
@@ -96,15 +94,28 @@ pub unsafe fn record_command_buffer(
                 vk::PipelineBindPoint::GRAPHICS,
                 draw.pipeline,
             );
+            bound_pipeline = Some(draw.pipeline);
+        }
+
+        if !draw.descriptor_sets.is_empty() {
             device.cmd_bind_descriptor_sets(
                 command_buffer,
                 vk::PipelineBindPoint::GRAPHICS,
                 draw.pipeline_layout,
                 0,
-                &[data.descriptor_sets[image_index]],
-                &[],
+                &draw.descriptor_sets,
+                &draw.dynamic_offsets,
             );
-            bound_pipeline = Some(draw.pipeline);
+        }
+
+        if !draw.push_constants.is_empty() {
+            device.cmd_push_constants(
+                command_buffer,
+                draw.pipeline_layout,
+                draw.push_constant_stages,
+                0,
+                &draw.push_constants,
+            );
         }
 
         // Meshes sharing a mesh buffer don't need the buffers bound again.
@@ -117,20 +128,6 @@ pub unsafe fn record_command_buffer(
                 vk::IndexType::UINT32,
             );
             bound_buffers = Some((draw.vertex_buffer, draw.index_buffer));
-        }
-
-        if let Some(slot) = draw.model_push_constant {
-            let model_bytes = slice::from_raw_parts(
-                (&draw.model as *const Mat4).cast::<u8>(),
-                size_of::<Mat4>(),
-            );
-            device.cmd_push_constants(
-                command_buffer,
-                draw.pipeline_layout,
-                slot.stages,
-                slot.offset,
-                model_bytes,
-            );
         }
 
         device.cmd_draw_indexed(

@@ -2,8 +2,10 @@ use std::collections::{HashMap, HashSet};
 
 use vulkanalia::prelude::v1_0::*;
 
+use super::buffers::FrameUniformBuffer;
 use super::featherapp::FeatherApp;
 use super::pipeline::ShaderPipeline;
+use super::uniformdata::UniformIssue;
 use super::swapchain::Swapchain;
 
 /// The Vulkan handles and associated properties used by our Vulkan app.
@@ -22,12 +24,16 @@ pub struct AppData {
     pub swapchain: Swapchain,
     // Pipeline
     pub render_pass: vk::RenderPass,
-    pub descriptor_set_layout: vk::DescriptorSetLayout,
     /// Pipelines of the rendered scene's shaders, by shader handle. Created when first
     /// needed; destroyed with the swapchain.
     pub shader_pipelines: HashMap<usize, ShaderPipeline>,
     /// Shaders whose pipeline could not be created; their nodes are not drawn.
     pub failed_shaders: HashSet<usize>,
+    /// Uniform problems already logged, per shader handle, so each is logged once.
+    pub reported_uniform_issues: HashSet<(usize, UniformIssue)>,
+    /// `minUniformBufferOffsetAlignment` of the device: uniform blocks of a frame start at
+    /// multiples of it.
+    pub min_uniform_alignment: u64,
     // Framebuffers
     pub framebuffers: Vec<vk::Framebuffer>,
     // Command Pool
@@ -47,11 +53,8 @@ pub struct AppData {
     pub texture_image_view: vk::ImageView,
     pub texture_sampler: vk::Sampler,
     // Buffers
-    pub uniform_buffers: Vec<vk::Buffer>,
-    pub uniform_buffers_memory: Vec<vk::DeviceMemory>,
-    // Descriptors
-    pub descriptor_pool: vk::DescriptorPool,
-    pub descriptor_sets: Vec<vk::DescriptorSet>,
+    /// Uniform data of each swapchain image's frame; created and grown when needed.
+    pub frame_uniforms: Vec<Option<FrameUniformBuffer>>,
     // Command Buffers
     pub command_buffers: Vec<vk::CommandBuffer>,
     // Sync Objects

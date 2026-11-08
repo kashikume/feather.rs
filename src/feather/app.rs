@@ -1,6 +1,4 @@
 use std::collections::{HashMap, HashSet};
-use std::mem::size_of;
-use std::ptr::copy_nonoverlapping as memcpy;
 use std::time::Instant;
 
 use anyhow::{anyhow, Result};
@@ -22,26 +20,23 @@ const VALIDATION_ENABLED: bool = cfg!(debug_assertions);
 const MAX_FRAMES_IN_FLIGHT: usize = 2;
 
 use super::appdata::AppData;
-use super::buffers::create_uniform_buffers;
+use super::buffers::FrameUniformBuffer;
 use super::colorobjects::create_color_objects;
 use super::commandbuffers::{create_command_buffers, record_command_buffer, GpuDraw};
 use super::commandpool::create_command_pool;
 use super::dephobjects::create_depth_objects;
-use super::descriptors::{create_descriptor_pool, create_descriptor_sets};
 use super::featherapp::FeatherApp;
 use super::object::Object;
 use super::framebuffers::create_framebuffers;
 use super::instance::create_instance;
 use super::logicaldevice::create_logical_device;
 use super::physicaldevice::pick_physical_device;
-use super::pipeline::{
-    check_renderer_support, create_descriptor_set_layout, create_render_pass, PipelineTarget,
-    ShaderPipeline,
-};
+use super::pipeline::{create_render_pass, PipelineTarget, ShaderPipeline};
 use super::swapchain::Swapchain;
 use super::syncobjects::create_sync_objects;
 use super::texture::{create_texture_image, create_texture_image_view, create_texture_sampler};
-use super::uniformbufferobject::UniformBufferObject;
+use super::uniform::UniformValue;
+use super::uniformdata::{pack_draw, UniformArena, UniformValues};
 
 /// Our Vulkan app.
 pub struct App {
@@ -69,9 +64,10 @@ impl App {
             present_queue: vk::Queue::default(),
             swapchain: Swapchain::default(),
             render_pass: vk::RenderPass::default(),
-            descriptor_set_layout: vk::DescriptorSetLayout::default(),
             shader_pipelines: HashMap::new(),
             failed_shaders: HashSet::new(),
+            reported_uniform_issues: HashSet::new(),
+            min_uniform_alignment: 1,
             framebuffers: Vec::new(),
             command_pool: vk::CommandPool::default(),
             color_image: vk::Image::default(),
@@ -85,10 +81,7 @@ impl App {
             texture_image_memory: vk::DeviceMemory::default(),
             texture_image_view: vk::ImageView::default(),
             texture_sampler: vk::Sampler::default(),
-            uniform_buffers: Vec::new(),
-            uniform_buffers_memory: Vec::new(),
-            descriptor_pool: vk::DescriptorPool::default(),
-            descriptor_sets: Vec::new(),
+            frame_uniforms: Vec::new(),
             command_buffers: Vec::new(),
             image_available_semaphores: Vec::new(),
             render_finished_semaphores: Vec::new(),
@@ -98,11 +91,14 @@ impl App {
         let instance = create_instance(window, &entry, &mut data)?;
         data.surface = vk_window::create_surface(&instance, &window, &window)?;
         pick_physical_device(&instance, &mut data)?;
+        data.min_uniform_alignment = instance
+            .get_physical_device_properties(data.physical_device)
+            .limits
+            .min_uniform_buffer_offset_alignment;
         let device = create_logical_device(&entry, &instance, &mut data)?;
         data.swapchain = Swapchain::create(window, &instance, &device, &data)?;
         data.swapchain.create_image_views(&device)?;
         create_render_pass(&instance, &device, &mut data)?;
-        create_descriptor_set_layout(&device, &mut data)?;
         create_command_pool(&instance, &device, &mut data)?;
         create_color_objects(&instance, &device, &mut data)?;
         create_depth_objects(&instance, &device, &mut data)?;
@@ -111,10 +107,8 @@ impl App {
         create_texture_image_view(&device, &mut data)?;
         create_texture_sampler(&device, &mut data)?;
         data.app.on_create()?;
-        create_uniform_buffers(&instance, &device, &mut data)?;
-        create_descriptor_pool(&device, &mut data)?;
-        create_descriptor_sets(&device, &mut data)?;
         create_command_buffers(&device, &mut data)?;
+        data.frame_uniforms.resize_with(data.swapchain.swapchain_images.len(), || None);
         create_sync_objects(&device, &mut data)?;
         Ok(Self {
             _entry: entry,
@@ -150,20 +144,26 @@ impl App {
         Ok(())
     }
 
-    /// Collects the draw calls of the rendered scene, sorted by shader, creating the pipelines
-    /// of shaders drawn for the first time.
+    /// Collects the draw calls of the rendered scene for swapchain image `image_index`, sorted
+    /// by shader, and packs their uniforms into the returned arena. Creates the pipelines of
+    /// shaders drawn for the first time.
     ///
-    /// Only the first scene is drawn for now: there is one view/projection uniform buffer per
-    /// frame, filled from the first scene's camera.
-    unsafe fn collect_draws(&mut self) -> Result<Vec<GpuDraw>> {
+    /// Only the first scene is drawn for now.
+    unsafe fn collect_draws(&mut self, image_index: usize) -> Result<(Vec<GpuDraw>, UniformArena)> {
+        let mut arena = UniformArena::new(self.data.min_uniform_alignment as usize);
         let num_scenes = self.data.app.get_num_scenes_to_render();
         if num_scenes == 0 {
-            return Ok(Vec::new());
+            return Ok((Vec::new(), arena));
         }
         if num_scenes > 1 {
             static WARN: std::sync::Once = std::sync::Once::new();
             WARN.call_once(|| log::warn!("Only the first of {num_scenes} scenes is rendered"));
         }
+
+        let extent = self.data.swapchain.swapchain_extent;
+        let camera = self.data.app.get_camera_to_render_scene(0);
+        camera.set_screen_dimention(extent.width, extent.height);
+        let (view, proj) = (camera.get_view(), camera.get_projection());
 
         let scene = self.data.app.get_scene_to_render(0);
 
@@ -192,18 +192,18 @@ impl App {
         let target = PipelineTarget {
             render_pass: self.data.render_pass,
             msaa_samples: self.data.msaa_samples,
-            extent: self.data.swapchain.swapchain_extent,
+            extent,
+            image_count: self.data.swapchain.swapchain_images.len(),
         };
         let mut draws = Vec::with_capacity(items.len());
+        let mut issues = Vec::new();
         for item in items {
             if self.data.failed_shaders.contains(&item.shader) {
                 continue;
             }
+            let shader = scene.get_shader(item.shader).unwrap();
             if !self.data.shader_pipelines.contains_key(&item.shader) {
-                let shader = scene.get_shader(item.shader).unwrap();
-                let pipeline = check_renderer_support(shader)
-                    .and_then(|_| ShaderPipeline::create(&self.device, &target, shader));
-                match pipeline {
+                match ShaderPipeline::create(&self.device, &target, shader) {
                     Ok(pipeline) => {
                         self.data.shader_pipelines.insert(item.shader, pipeline);
                     }
@@ -226,19 +226,90 @@ impl App {
             else {
                 continue;
             };
+            let Some(node) = scene.get_node(item.node) else {
+                continue;
+            };
+
+            // Uniforms: the node's dynamic uniforms, plus the matrices the engine provides
+            // under the names the shader gave them.
+            let engine: Vec<(&str, UniformValue)> = [
+                (shader.get_uniform_model_name(), item.model),
+                (shader.get_uniform_view_name(), view),
+                (shader.get_uniform_proj_name(), proj),
+            ]
+            .into_iter()
+            .filter_map(|(name, matrix)| Some((name?, UniformValue::Mat4(matrix))))
+            .collect();
+            let values = UniformValues {
+                engine: &engine,
+                node: node.dynamic_uniforms(),
+            };
+            issues.clear();
+            let packed = pack_draw(shader.get_layout(), &values, &mut arena, &mut issues);
+            for issue in issues.drain(..) {
+                if self
+                    .data
+                    .reported_uniform_issues
+                    .insert((item.shader, issue.clone()))
+                {
+                    log::warn!(
+                        "Shader {}: {issue}",
+                        shader.get_name().unwrap_or_else(|| item.shader.to_string())
+                    );
+                }
+            }
+
             draws.push(GpuDraw {
                 pipeline: pipeline.pipeline,
                 pipeline_layout: pipeline.layout,
-                model_push_constant: pipeline.model_push_constant,
+                descriptor_sets: pipeline
+                    .descriptor_sets
+                    .get(image_index)
+                    .cloned()
+                    .unwrap_or_default(),
+                dynamic_offsets: packed.block_offsets,
+                push_constants: packed.push_constants,
+                push_constant_stages: pipeline.push_constant_stages,
                 vertex_buffer,
                 index_buffer,
-                model: item.model,
                 first_index: item.first_index,
                 index_count: item.index_count,
                 vertex_offset: item.vertex_offset,
             });
         }
-        Ok(draws)
+        Ok((draws, arena))
+    }
+
+    /// Copies the frame's uniform data to the uniform buffer of swapchain image `image_index`
+    /// (growing it if needed) and points every pipeline's descriptor sets for that image at it.
+    /// The image's previous frame must be finished.
+    unsafe fn upload_uniforms(&mut self, image_index: usize, arena: &UniformArena) -> Result<()> {
+        let needed = arena.bytes().len() as u64;
+        let slot = &mut self.data.frame_uniforms[image_index];
+        if slot.as_ref().map_or(true, |b| b.size < needed) {
+            if let Some(old) = slot.take() {
+                old.destroy(&self.device);
+            }
+            *slot = Some(FrameUniformBuffer::create(
+                &self.instance,
+                &self.device,
+                &self.data.physical_device,
+                needed,
+            )?);
+        }
+        let buffer = slot.as_ref().unwrap();
+        buffer.write(arena.bytes());
+
+        for pipeline in self.data.shader_pipelines.values() {
+            pipeline.update_descriptor_sets(
+                &self.device,
+                image_index,
+                buffer.buffer,
+                self.data.texture_image_view,
+                self.data.texture_sampler,
+            );
+        }
+        Ok(())
     }
 
     /// Renders a frame for our Vulkan app.
@@ -273,8 +344,8 @@ impl App {
 
         self.data.images_in_flight[image_index] = in_flight_fence;
 
-        self.update_uniform_buffer(image_index)?;
-        let draws = self.collect_draws()?;
+        let (draws, arena) = self.collect_draws(image_index)?;
+        self.upload_uniforms(image_index, &arena)?;
         record_command_buffer(&self.device, &self.data, image_index, &draws)?;
 
         let wait_semaphores = &[self.data.image_available_semaphores[self.frame]];
@@ -316,39 +387,6 @@ impl App {
         Ok(())
     }
 
-    /// Fills the uniform buffer of swapchain image `image_index` with the view and projection
-    /// of the first scene's camera.
-    unsafe fn update_uniform_buffer(&mut self, image_index: usize) -> Result<()> {
-        if self.data.app.get_num_scenes_to_render() == 0 {
-            return Ok(());
-        }
-
-        let extent = self.data.swapchain.swapchain_extent;
-        let camera = self.data.app.get_camera_to_render_scene(0);
-        camera.set_screen_dimention(extent.width, extent.height);
-
-        let ubo = UniformBufferObject {
-            view: camera.get_view(),
-            proj: camera.get_projection(),
-        };
-
-        // Copy
-
-        let memory = self.device.map_memory(
-            self.data.uniform_buffers_memory[image_index],
-            0,
-            size_of::<UniformBufferObject>() as u64,
-            vk::MemoryMapFlags::empty(),
-        )?;
-
-        memcpy(&ubo, memory.cast(), 1);
-
-        self.device
-            .unmap_memory(self.data.uniform_buffers_memory[image_index]);
-
-        Ok(())
-    }
-
     /// Recreates the swapchain for our Vulkan app.
     unsafe fn recreate_swapchain(&mut self, window: &Window) -> Result<()> {
         self.device.device_wait_idle()?;
@@ -359,10 +397,8 @@ impl App {
         create_color_objects(&self.instance, &self.device, &mut self.data)?;
         create_depth_objects(&self.instance, &self.device, &mut self.data)?;
         create_framebuffers(&self.device, &mut self.data)?;
-        create_uniform_buffers(&self.instance, &self.device, &mut self.data)?;
-        create_descriptor_pool(&self.device, &mut self.data)?;
-        create_descriptor_sets(&self.device, &mut self.data)?;
         create_command_buffers(&self.device, &mut self.data)?;
+        self.data.frame_uniforms.resize_with(self.data.swapchain.swapchain_images.len(), || None);
         self.data.images_in_flight.resize(
             self.data.swapchain.swapchain_images.len(),
             vk::Fence::null(),
@@ -389,7 +425,6 @@ impl App {
         self.device.free_memory(self.data.texture_image_memory, None);
         self.device.destroy_image(self.data.texture_image, None);
         self.device.destroy_command_pool(self.data.command_pool, None);
-        self.device.destroy_descriptor_set_layout(self.data.descriptor_set_layout, None);
         self.device.destroy_device(None);
         self.instance.destroy_surface_khr(self.data.surface, None);
 
@@ -405,9 +440,7 @@ impl App {
     unsafe fn destroy_swapchain(&mut self) {
         self.device.free_command_buffers(self.data.command_pool, &self.data.command_buffers);
         self.data.command_buffers.clear();
-        self.device.destroy_descriptor_pool(self.data.descriptor_pool, None);
-        self.data.uniform_buffers_memory.iter().for_each(|m| self.device.free_memory(*m, None));
-        self.data.uniform_buffers.iter().for_each(|b| self.device.destroy_buffer(*b, None));
+        self.data.frame_uniforms.drain(..).flatten().for_each(|b| b.destroy(&self.device));
         self.device.destroy_image_view(self.data.depth_image_view, None);
         self.device.free_memory(self.data.depth_image_memory, None);
         self.device.destroy_image(self.data.depth_image, None);

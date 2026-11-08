@@ -13,25 +13,29 @@ names.
   `Scene::draw_items`.
 - Step 2 is done: `Shader::new` reflects the SPIR-V into a `ShaderLayout` (uniform blocks, push
   constants, samplers; `shaderlayout.rs`, using `spirq`). Each shader gets its own Vulkan pipeline
-  (`ShaderPipeline`), created when first drawn and recreated with the swapchain. The model matrix
-  is pushed at the offset of the shader's model uniform.
+  (`ShaderPipeline`), created when first drawn and recreated with the swapchain.
+- Step 3 is done: each draw's uniform blocks and push constants are filled from the node's
+  `dynamic_uniforms()` plus model/view/proj (`uniformdata.rs`), stored in one uniform buffer per
+  swapchain image, and bound with dynamic offsets through each shader's own descriptor sets.
 - Still hard-coded in the renderer:
-  - one descriptor set shared by all shaders: binding 0 = `UniformBufferObject { view, proj }`,
-    binding 1 = the texture (`create_descriptor_set_layout`, `descriptors.rs`).
-    `check_renderer_support` refuses shaders with another layout (their nodes are not drawn);
-  - view/proj come from the first scene's camera; only the first scene is drawn;
-  - one texture loaded directly from `resources/viking_room.png` (`texture.rs`);
-  - material and node uniform values are not sent to the GPU.
+  - every sampler is bound to one texture loaded directly from `resources/viking_room.png`
+    (`texture.rs`); `Texture` uniform values are not used yet;
+  - only the first scene is drawn, with the first scene's camera.
 
 ## Design
 
-### Descriptor set layout convention
+### Descriptor sets
 
-| Set | Changes             | Contents                                                     |
-| --- | ------------------- | ------------------------------------------------------------ |
-| 0   | once per frame      | camera (view, proj); later lights, time                      |
-| 1   | per material/textures | samplers                                                   |
-| 2   | per node (dynamic offset) | model matrix and all other non-texture uniforms        |
+The renderer imposes no set layout on shaders: sets and bindings come from reflection.
+
+- Every uniform block is a `UNIFORM_BUFFER_DYNAMIC` filled per draw. Camera matrices are just
+  values injected by name, so they are copied for every node.
+- Push constant blocks are filled the same way, from the same values.
+- Each shader pipeline owns a descriptor pool with its sets for every swapchain image. Before a
+  frame is recorded, the sets of that image are pointed at the frame's uniform buffer.
+
+A convention such as set 0 = per-frame camera data (filled once per frame), set 1 = textures,
+set 2 = per-node data would save copying and binding; see "Later".
 
 ### Uniform name → GPU location
 
@@ -50,11 +54,14 @@ For each node with a mesh and a material, each frame:
 1. take `dynamic_uniforms()`;
 2. add engine-provided values under the names stored in `Shader`: node global transform →
    `uniform_model_name`, camera view → `uniform_view_name`, camera projection → `uniform_proj_name`;
-3. pack non-texture values into bytes at the reflected offsets using std140 rules
-   (`vec3` aligned to 16, `mat3` columns padded to `vec4`, `bool` as 4 bytes, ...);
+3. pack non-texture values into bytes at the reflected offsets and matrix strides
+   (`UniformValue::write_bytes`; `bool` as 4 bytes);
 4. append to one large per-frame uniform buffer, each node's block aligned to
    `minUniformBufferOffsetAlignment` (usually 256 on desktop, 16–256 on Android);
-5. bind as `UNIFORM_BUFFER_DYNAMIC` and pass the node's offset at draw time.
+5. bind as `UNIFORM_BUFFER_DYNAMIC` and pass the node's offsets at draw time.
+
+Problems (a uniform without value, a value of the wrong type, a value the shader doesn't use)
+are logged once per shader and uniform; the uniform keeps zero bytes.
 
 ### Textures
 
@@ -118,14 +125,20 @@ Each step should leave the app running.
 
 ### 3. Uniform values on the GPU
 
-- [ ] `UniformValue::write_std140(&self, buf, offset)` with tests for every variant
-- [ ] Per-frame dynamic uniform buffer (one per frame in flight), growing when needed
-- [ ] Fill each node's block from `dynamic_uniforms()` plus model/view/proj by name
-- [ ] Set 0 for per-frame camera data; set 2 with `UNIFORM_BUFFER_DYNAMIC` per node
-- [ ] Warn (once) about uniforms that the shader doesn't use, and about shader uniforms with no
-      value
-- [ ] Allocate descriptor sets from each shader's own set layouts; remove the fixed
-      `create_descriptor_set_layout` and `check_renderer_support`
+- [x] `UniformValue::write_bytes(&self, buf, offset, matrix_stride)` with tests for every
+      variant (the matrix stride comes from reflection: 16 in std140 blocks, 8 for a `mat2` in
+      std430 push constants)
+- [x] Per-frame dynamic uniform buffer (one per swapchain image), growing when needed
+      (`FrameUniformBuffer`)
+- [x] Fill each node's blocks from `dynamic_uniforms()` plus model/view/proj by name
+      (`uniformdata::pack_draw`); push constants too
+- [x] Every uniform block bound as `UNIFORM_BUFFER_DYNAMIC` per node (instead of a set
+      convention; see "Descriptor sets")
+- [x] Warn (once) about uniforms that the shader doesn't use, about shader uniforms with no
+      value, and about values of the wrong type
+- [x] Allocate descriptor sets from each shader's own set layouts; remove the fixed
+      `create_descriptor_set_layout`, `check_renderer_support`, `UniformBufferObject` and
+      `descriptors.rs`
 
 ### 4. Textures from atlases
 
@@ -143,3 +156,4 @@ Each step should leave the app running.
 - [ ] Sort draws by shader and material; skip redundant binds
 - [ ] Transparent nodes drawn after opaque ones, back to front
 - [ ] Re-upload uniforms only for nodes that changed
+- [ ] Per-frame data (camera) in its own set, filled once per frame instead of per node

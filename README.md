@@ -29,8 +29,8 @@ What works today:
 - Vulkan validation layers turned on automatically in debug builds
 
 > The renderer draws every visible node that has a mesh and a material, with the material's
-> shader and the node's global transform. It does not send uniform values or atlases to the GPU
-> yet: all shaders share one descriptor set with the camera matrices and one hard-coded texture.
+> shader and the node's uniforms. Textures don't come from atlases yet: every sampler gets one
+> hard-coded texture.
 > See [doc/todo](doc/todo/node-uniforms-rendering.md) for the plan.
 
 ## Requirements
@@ -154,6 +154,7 @@ src/
     shaderlayout.rs  uniform blocks, push constants and samplers read from a shader's SPIR-V
     uniform.rs, uniforms.rs
                      uniform values and named uniform lists
+    uniformdata.rs   packing uniform values into the bytes a shader reads
     assetsprovider.rs, windowsassetsprovider.rs
                      platform-independent asset access and its Windows implementation
     camera.rs, perspectivecamera.rs
@@ -228,9 +229,14 @@ node's final (dynamic) uniforms in three layers, each overriding the previous on
 
 A node's own uniforms are passed down to its children; its material's uniforms are not.
 
+When drawing, the engine adds the node's global transform and the camera's view and projection
+under the names given to `create_shader`, then writes every value into the shader's uniform
+blocks and push constants by name, at the offsets read from the shader's SPIR-V. A uniform with
+no value, a value of the wrong type, or a value the shader doesn't use is logged once as a
+warning.
+
 ## Roadmap
 
-- Drive rendering from the scene graph: per-node meshes, model matrices, materials and uniforms
-- GPU textures created from atlases
+- GPU textures created from atlases, bound by `Texture` uniforms
 - Android support (including an Android `AssetsProvider`)
 - Separate the engine into a library crate

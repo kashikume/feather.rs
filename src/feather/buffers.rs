@@ -1,40 +1,70 @@
-use std::mem::size_of;
+use std::ptr::copy_nonoverlapping as memcpy;
 
 use anyhow::Result;
 use vulkanalia::prelude::v1_0::*;
 use vulkanalia::vk::PhysicalDevice;
 
-use super::appdata::AppData;
 use super::other::{begin_single_time_commands, end_single_time_commands, get_memory_type_index};
-use super::uniformbufferobject::UniformBufferObject;
 
 //================================================
 // Buffers
 //================================================
 
-pub unsafe fn create_uniform_buffers(
-    instance: &Instance,
-    device: &Device,
-    data: &mut AppData,
-) -> Result<()> {
-    data.uniform_buffers.clear();
-    data.uniform_buffers_memory.clear();
+/// A host-visible uniform buffer, mapped for its whole life. Each swapchain image has one,
+/// holding the uniform blocks of every draw of its frame.
+pub struct FrameUniformBuffer {
+    pub buffer: vk::Buffer,
+    memory: vk::DeviceMemory,
+    pub size: u64,
+    mapped: *mut u8,
+}
 
-    for _ in 0..data.swapchain.swapchain_images.len() {
-        let (uniform_buffer, uniform_buffer_memory) = create_buffer(
+impl FrameUniformBuffer {
+    /// Smallest buffer created, so that small scenes don't regrow it frame after frame.
+    const MIN_SIZE: u64 = 64 * 1024;
+
+    pub unsafe fn create(
+        instance: &Instance,
+        device: &Device,
+        physical_device: &PhysicalDevice,
+        min_size: u64,
+    ) -> Result<Self> {
+        let size = min_size.max(Self::MIN_SIZE).next_power_of_two();
+        let (buffer, memory) = create_buffer(
             instance,
             device,
-            &data.physical_device,
-            size_of::<UniformBufferObject>() as u64,
+            physical_device,
+            size,
             vk::BufferUsageFlags::UNIFORM_BUFFER,
             vk::MemoryPropertyFlags::HOST_COHERENT | vk::MemoryPropertyFlags::HOST_VISIBLE,
         )?;
-
-        data.uniform_buffers.push(uniform_buffer);
-        data.uniform_buffers_memory.push(uniform_buffer_memory);
+        let mapped = match device.map_memory(memory, 0, size, vk::MemoryMapFlags::empty()) {
+            Ok(mapped) => mapped.cast(),
+            Err(e) => {
+                device.destroy_buffer(buffer, None);
+                device.free_memory(memory, None);
+                return Err(e.into());
+            }
+        };
+        Ok(Self {
+            buffer,
+            memory,
+            size,
+            mapped,
+        })
     }
 
-    Ok(())
+    /// Copies `bytes` to the start of the buffer. Must fit, and the buffer must not be in use.
+    pub unsafe fn write(&self, bytes: &[u8]) {
+        assert!(bytes.len() as u64 <= self.size);
+        memcpy(bytes.as_ptr(), self.mapped, bytes.len());
+    }
+
+    pub unsafe fn destroy(&self, device: &Device) {
+        device.unmap_memory(self.memory);
+        device.destroy_buffer(self.buffer, None);
+        device.free_memory(self.memory, None);
+    }
 }
 
 //================================================

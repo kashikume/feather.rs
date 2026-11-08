@@ -9,7 +9,6 @@ pub mod colorobjects;
 pub mod commandbuffers;
 pub mod commandpool;
 pub mod dephobjects;
-pub mod descriptors;
 pub mod featherapp;
 pub mod framebuffers;
 pub mod images;
@@ -38,8 +37,8 @@ pub mod swapchainsupport;
 pub mod syncobjects;
 pub mod texture;
 pub mod uniform;
+pub mod uniformdata;
 pub mod uniforms;
-pub mod uniformbufferobject;
 pub mod vertex;
 #[cfg(windows)]
 pub mod windowsassetsprovider;

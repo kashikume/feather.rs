@@ -11,7 +11,7 @@ use spirq::ty::{MatrixAxisOrder, ScalarType, Type};
 use super::uniform::UniformValue;
 
 /// Type of a uniform as declared in a shader. Each variant matches a `UniformValue` variant.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum UniformType {
     Float,
     Int,
