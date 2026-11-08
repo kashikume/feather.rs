@@ -171,7 +171,7 @@ mod tests {
         assert_eq!(node.get_parent(), None);
         assert_eq!(node.get_handle(), root);
         assert_eq!(node.get_name(), Some("root".to_string()));
-        assert!(node.get_childreen().is_empty());
+        assert!(node.get_children().is_empty());
         assert_eq!(node.get_mesh(), None);
     }
 
@@ -189,8 +189,8 @@ mod tests {
         assert_eq!(child_node.get_handle(), child);
 
         let root_node = scene.get_node(root).unwrap();
-        assert!(root_node.get_childreen().contains(&child));
-        assert_eq!(root_node.get_childreen().len(), 1);
+        assert!(root_node.get_children().contains(&child));
+        assert_eq!(root_node.get_children().len(), 1);
     }
 
     #[test]
@@ -201,7 +201,7 @@ mod tests {
         let b = scene.create_node(Some("b".to_string()), root).unwrap();
         let c = scene.create_node(None, root).unwrap();
 
-        let children = scene.get_node(root).unwrap().get_childreen();
+        let children = scene.get_node(root).unwrap().get_children();
         assert_eq!(children.len(), 3);
         assert!(children.contains(&a));
         assert!(children.contains(&b));
@@ -225,12 +225,12 @@ mod tests {
         assert!(scene
             .get_node(child)
             .unwrap()
-            .get_childreen()
+            .get_children()
             .contains(&grandchild));
         assert!(!scene
             .get_node(root)
             .unwrap()
-            .get_childreen()
+            .get_children()
             .contains(&grandchild));
     }
 
@@ -252,7 +252,7 @@ mod tests {
 
         scene.disconnect_node(a).unwrap();
 
-        let children = scene.get_node(root).unwrap().get_childreen();
+        let children = scene.get_node(root).unwrap().get_children();
         assert!(!children.contains(&a));
         assert!(children.contains(&b));
         // The node itself still exists in the scene, now without a parent.
@@ -284,14 +284,14 @@ mod tests {
         let second = scene.create_node(Some("a".to_string()), root).unwrap();
 
         assert_ne!(first, second);
-        assert_eq!(scene.get_node(root).unwrap().get_childreen().len(), 2);
+        assert_eq!(scene.get_node(root).unwrap().get_children().len(), 2);
         // The first node keeps its own child.
         assert!(scene
             .get_node(first)
             .unwrap()
-            .get_childreen()
+            .get_children()
             .contains(&grandchild));
-        assert!(scene.get_node(second).unwrap().get_childreen().is_empty());
+        assert!(scene.get_node(second).unwrap().get_children().is_empty());
     }
 
     #[test]
@@ -319,7 +319,7 @@ mod tests {
         assert!(scene
             .get_node(root)
             .unwrap()
-            .get_childreen()
+            .get_children()
             .contains(&child));
     }
 
