@@ -1,7 +1,7 @@
 use anyhow::Result;
 use vulkanalia::Device;
 
-use crate::feather::object::Object;
+use crate::feather::{atlas::Atlas, object::Object, texture::Texture};
 
 use super::{mesh::Mesh, meshbuffer::MeshBuffer, node::Node, objdb::ObjDB};
 
@@ -9,6 +9,8 @@ pub struct Scene {
     pub meshes: ObjDB<Mesh>,
     pub buffers: ObjDB<MeshBuffer>,
     pub nodes: ObjDB<Node>,
+    pub atlases: ObjDB<Atlas>,
+    pub textures: ObjDB<Texture>,
     needs_create_mesh_buffer: bool,
 }
 
@@ -18,6 +20,8 @@ impl Scene {
             meshes: ObjDB::new(),
             buffers: ObjDB::new(),
             nodes: ObjDB::new(),
+            atlases: ObjDB::new(),
+            textures: ObjDB::new(),
             needs_create_mesh_buffer: false,
         }
     }
@@ -77,6 +81,46 @@ impl Scene {
             .ok_or(anyhow::anyhow!("Node not found"))?
             .set_mesh(mesh_handle);
         Ok(())
+    }
+
+    pub fn add_atlas(&mut self, atlas: Atlas) -> usize {
+        self.atlases.add(atlas)
+    }
+
+    pub fn get_atlas(&self, handle: usize) -> Option<&Atlas> {
+        self.atlases.get(handle)
+    }
+
+    pub fn get_texture(&self, handle: usize) -> Option<&Texture> {
+        self.textures.get(handle)
+    }
+
+    /// Adds a texture and registers it with its atlas. Fails if the atlas does not exist.
+    pub fn add_texture(&mut self, texture: Texture) -> Result<usize> {
+        let atlas_handle = texture.get_atlas();
+        if self.atlases.get(atlas_handle).is_none() {
+            anyhow::bail!("Atlas {atlas_handle} not found");
+        }
+        let texture_handle = self.textures.add(texture);
+        self.atlases
+            .get_mut(atlas_handle)
+            .unwrap()
+            .add_texture(texture_handle);
+        Ok(texture_handle)
+    }
+
+    /// Creates a texture covering the whole atlas and makes it the atlas's full texture.
+    pub fn create_full_atlas_texture(
+        &mut self,
+        name: Option<String>,
+        atlas_handle: usize,
+    ) -> Result<usize> {
+        let texture_handle = self.add_texture(Texture::full_atlas(name, atlas_handle))?;
+        self.atlases
+            .get_mut(atlas_handle)
+            .unwrap()
+            .set_full_texture(texture_handle);
+        Ok(texture_handle)
     }
 
     pub fn create_mesh_buffer(&mut self) -> usize {
@@ -355,6 +399,66 @@ mod tests {
         scene.nodes.remove(root);
 
         assert!(scene.node_set_mesh(root, 0).is_err());
+    }
+
+    // --- atlases and textures ---
+
+    #[test]
+    fn add_texture_registers_it_with_atlas() {
+        let mut scene = Scene::new();
+        let atlas = scene.add_atlas(Atlas::new(None));
+        let t1 = scene
+            .add_texture(Texture::full_atlas(Some("t1".to_string()), atlas))
+            .unwrap();
+        let t2 = scene.add_texture(Texture::full_atlas(None, atlas)).unwrap();
+
+        assert_ne!(t1, t2);
+        assert_eq!(scene.get_texture(t1).unwrap().get_handle(), t1);
+        assert_eq!(scene.get_texture(t1).unwrap().get_atlas(), atlas);
+        assert_eq!(scene.get_atlas(atlas).unwrap().get_textures(), &[t1, t2]);
+        // Plain textures do not become the full texture.
+        assert_eq!(scene.get_atlas(atlas).unwrap().get_full_texture(), None);
+    }
+
+    #[test]
+    fn add_texture_with_invalid_atlas_fails() {
+        let mut scene = Scene::new();
+        assert!(scene.add_texture(Texture::full_atlas(None, 42)).is_err());
+        assert_eq!(scene.textures.iter().count(), 0);
+    }
+
+    #[test]
+    fn create_full_atlas_texture() {
+        let mut scene = Scene::new();
+        let atlas = scene.add_atlas(Atlas::new(None));
+        let other = scene.add_texture(Texture::full_atlas(None, atlas)).unwrap();
+        let full = scene.create_full_atlas_texture(None, atlas).unwrap();
+
+        let atlas_obj = scene.get_atlas(atlas).unwrap();
+        assert_eq!(atlas_obj.get_full_texture(), Some(full));
+        assert_eq!(atlas_obj.get_textures(), &[other, full]);
+        assert_eq!(scene.get_texture(full).unwrap().get_atlas(), atlas);
+    }
+
+    #[test]
+    fn create_full_atlas_texture_with_invalid_atlas_fails() {
+        let mut scene = Scene::new();
+        assert!(scene.create_full_atlas_texture(None, 42).is_err());
+        assert_eq!(scene.textures.iter().count(), 0);
+    }
+
+    #[test]
+    fn textures_stay_with_their_own_atlas() {
+        let mut scene = Scene::new();
+        let a = scene.add_atlas(Atlas::new(Some("a".to_string())));
+        let b = scene.add_atlas(Atlas::new(Some("b".to_string())));
+        let ta = scene.create_full_atlas_texture(None, a).unwrap();
+        let tb = scene.create_full_atlas_texture(None, b).unwrap();
+
+        assert_eq!(scene.get_atlas(a).unwrap().get_textures(), &[ta]);
+        assert_eq!(scene.get_atlas(b).unwrap().get_textures(), &[tb]);
+        assert_eq!(scene.get_atlas(a).unwrap().get_full_texture(), Some(ta));
+        assert_eq!(scene.get_atlas(b).unwrap().get_full_texture(), Some(tb));
     }
 
     // --- mesh buffers ---
