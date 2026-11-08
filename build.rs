@@ -14,7 +14,7 @@
 //!
 //! Everything under `resources/` is copied to an `assets/` directory next to the built
 //! executable (e.g. `target/debug/assets/`), where `AssetsProvider` reads it at runtime.
-//! Compiled shaders are copied there too, as `assets/shaders/<name>.spv`.
+//! Compiled shaders are copied there too, directly into `assets/`, e.g. `assets/shader.vert.spv`.
 
 use std::env;
 use std::fs;
@@ -72,7 +72,7 @@ fn main() {
             );
         }
 
-        let asset = assets_dir.join(output.strip_prefix(&out_dir).unwrap());
+        let asset = assets_dir.join(output.strip_prefix(out_dir.join(SHADER_DIR)).unwrap());
         fs::create_dir_all(asset.parent().unwrap()).expect("failed to create shader asset dir");
         fs::copy(&output, &asset).unwrap_or_else(|e| {
             panic!("failed to copy {} to {}: {e}", output.display(), asset.display())

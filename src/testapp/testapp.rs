@@ -76,8 +76,8 @@ impl TestApp {
         let shader = scene
             .create_shader(
                 Some("Basic".to_string()),
-                &assets.get_asset("shaders/shader.vert.spv").unwrap(),
-                &assets.get_asset("shaders/shader.frag.spv").unwrap(),
+                &assets.get_asset("shader.vert.spv").unwrap(),
+                &assets.get_asset("shader.frag.spv").unwrap(),
                 Some("model".to_string()),
                 Some("view".to_string()),
                 Some("proj".to_string()),

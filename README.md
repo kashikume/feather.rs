@@ -13,11 +13,20 @@ What works today:
 
 - Vulkan renderer (via [`vulkanalia`](https://github.com/KyleMayes/vulkanalia)) with swapchain recreation on resize
 - Windowing and event loop via [`winit`](https://github.com/rust-windowing/winit)
-- Scene graph made of nodes, with meshes attached to nodes
+- Scene graph made of nodes, with meshes and materials attached to nodes
+- Scene objects (meshes, nodes, atlases, textures, shaders, materials) stored in the scene and
+  referenced by handle
 - Mesh builders: Wavefront `.obj` loading (via `tobj`) and procedural cuboids
+- Atlases loaded from PNG (any color type, converted to 8-bit RGBA), with textures cut from them
+- Shaders (SPIR-V) and materials (a shader plus uniform values, textures included)
+- Uniforms on materials and nodes, inherited down the scene graph
+- Assets loaded through a platform-specific `AssetsProvider`
 - Perspective camera
-- Textures (PNG) with mipmaps and MSAA
+- Textures with mipmaps and MSAA
 - Vulkan validation layers turned on automatically in debug builds
+
+> The renderer does not use materials, uniforms or atlases yet: it still draws one mesh with one
+> hard-coded uniform buffer and texture.
 
 ## Requirements
 
@@ -30,30 +39,61 @@ What works today:
 
 ## Building
 
-Run from the repository root, because assets are loaded from `resources/` using relative paths.
-
 ```powershell
 cargo run              # debug build, validation layers on
 cargo run --release    # release build, validation layers off
+cargo test             # unit tests
 ```
 
 The development app (`src/testapp`) opens a 1024×768 window and renders the model in
 `resources/viking_room.obj`.
 
+Run from the repository root for now: the renderer's texture is still loaded from
+`resources/viking_room.png` using a relative path. Everything else is loaded from the `assets/`
+directory next to the executable.
+
 ### Shaders
 
 `build.rs` compiles every shader in `shaders/` (`.vert`, `.frag`, `.comp`, `.geom`, `.tesc`,
 `.tese`) with `glslc` during `cargo build`, and recompiles whenever anything in `shaders/` changes.
-Release builds pass `-O` to `glslc`. The output goes to Cargo's `OUT_DIR`, keeps the same relative
-path and adds `.spv`, so `shaders/shader.vert` becomes `shaders/shader.vert.spv`. Embed a
-compiled shader with:
+Release builds pass `-O` to `glslc`. A compiled shader keeps its path relative to `shaders/` and
+gets `.spv` added, so `shaders/shader.vert` becomes `shader.vert.spv`. It is written to:
 
-```rust
-include_bytes!(concat!(env!("OUT_DIR"), "/shaders/shader.vert.spv"))
-```
+- the `assets/` directory next to the executable (`assets/shader.vert.spv`), where applications
+  load it through the assets provider as `"shader.vert.spv"` (see [Assets](#assets)),
+- `$OUT_DIR/shaders/`, for embedding with
+  `include_bytes!(concat!(env!("OUT_DIR"), "/shaders/shader.vert.spv"))`.
 
 `build.rs` looks for `glslc` in this order: the `GLSLC` environment variable,
 `$VULKAN_SDK/Bin/glslc`, then `glslc` on `PATH`.
+
+## Assets
+
+`build.rs` copies everything in `resources/` to an `assets/` directory next to the executable
+(e.g. `target/debug/assets/`), together with the compiled shaders. It copies
+again whenever anything in `resources/` changes.
+
+At runtime assets are read through the `AssetsProvider` trait, which has one implementation per
+platform:
+
+| Platform | Implementation          | Reads assets from                        |
+| -------- | ----------------------- | ---------------------------------------- |
+| Windows  | `WindowsAssetsProvider` | a directory relative to the executable   |
+| Android  | not implemented yet     | will read from the APK's assets          |
+
+`create_assets_provider` returns the provider for the current platform. Asset names are relative to
+the assets root and use `/`, e.g. `"textures/wall.png"`.
+
+```rust
+let assets = create_assets_provider("assets")?;
+
+let bytes = assets.get_asset("shader.vert.spv")?;
+let mesh = MeshBuilderObjFile::new(&*assets, "viking_room.obj")?.build(&mut scene)?;
+let atlas = scene.create_atlas_from_png(&*assets, "viking_room.png", None)?;
+```
+
+Atlases and meshes can also be built from bytes already in memory (`Atlas::new_from_png_bytes`,
+`MeshBuilderObjFile::from_bytes`).
 
 ## Logging
 
@@ -97,15 +137,25 @@ src/
   feather/           the engine
     app.rs           Vulkan setup, main loop, frame rendering
     featherapp.rs    FeatherApp trait implemented by applications
-    scene.rs         scene graph (nodes, meshes, mesh buffers)
+    scene.rs         scene: owns all objects and the node graph
+    objdb.rs         handle-based object storage used by the scene
+    node.rs          scene graph node (mesh, material, uniforms)
     mesh*.rs         meshes and mesh builders (.obj file, cuboid)
+    atlas.rs, texture.rs
+                     images loaded from PNG and textures cut from them
+    shader.rs, material.rs
+                     SPIR-V shaders and materials
+    uniform.rs, uniforms.rs
+                     uniform values and named uniform lists
+    assetsprovider.rs, windowsassetsprovider.rs
+                     platform-independent asset access and its Windows implementation
     camera.rs, perspectivecamera.rs
     instance.rs, physicaldevice.rs, logicaldevice.rs, swapchain.rs, pipeline.rs, ...
                      Vulkan object wrappers
   testapp/           development application used to exercise the engine
 shaders/             GLSL sources (shader.vert, shader.frag), compiled by build.rs
-build.rs             compiles shaders to SPIR-V at build time
-resources/           models and textures
+build.rs             compiles shaders to SPIR-V and copies assets next to the executable
+resources/           models and textures, copied to assets/ by build.rs
 ```
 
 ## Writing an application
@@ -127,16 +177,52 @@ pub trait FeatherApp {
 ```
 
 `src/testapp/testapp.rs` is a minimal example. It builds a scene with a root node and a room node,
-loads a mesh from an `.obj` file and sets up a perspective camera. `main.rs` passes it to the engine:
+loads the room mesh, shader and atlas through the assets provider, creates a material using the
+atlas as its `texSampler` texture, and sets up a perspective camera:
+
+```rust
+let assets = create_assets_provider("assets")?;
+
+let shader = scene.create_shader(
+    Some("Basic".to_string()),
+    &assets.get_asset("shader.vert.spv")?,
+    &assets.get_asset("shader.frag.spv")?,
+    Some("model".to_string()), // uniform names for the model, view and projection matrices
+    Some("view".to_string()),
+    Some("proj".to_string()),
+)?;
+let atlas = scene.create_atlas_from_png(&*assets, "viking_room.png", None)?;
+let texture = scene.create_full_atlas_texture(Some("Room texture".to_string()), atlas)?;
+let material = scene.create_material(Some("Room".to_string()), shader)?;
+scene
+    .get_material_mut(material)
+    .unwrap()
+    .uniforms_mut()
+    .set("texSampler", UniformValue::Texture(texture));
+scene.node_set_material(room_node, material)?;
+```
+
+`main.rs` passes it to the engine:
 
 ```rust
 let mut app = unsafe { App::create(&window, Box::new(TestApp::new()))? };
 app.run(&window, event_loop)?;
 ```
 
+### Uniforms
+
+Materials and nodes each have a list of named uniforms. Before rendering, the engine computes each
+node's final (dynamic) uniforms in three layers, each overriding the previous one by name:
+
+1. the uniforms of the node's material,
+2. the uniforms inherited from its ancestor nodes,
+3. the node's own uniforms.
+
+A node's own uniforms are passed down to its children; its material's uniforms are not.
+
 ## Roadmap
 
-- Finish moving rendering onto the scene graph (per-node meshes and mesh buffers)
-- Materials and multiple textures
-- Android support
+- Drive rendering from the scene graph: per-node meshes, model matrices, materials and uniforms
+- GPU textures created from atlases
+- Android support (including an Android `AssetsProvider`)
 - Separate the engine into a library crate
