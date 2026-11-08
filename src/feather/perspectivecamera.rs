@@ -18,6 +18,10 @@ pub struct PerspectiveCamera {
 }
 
 impl Camera for PerspectiveCamera {
+    fn set_screen_dimention(&mut self, width: u32, height: u32) {
+        PerspectiveCamera::set_screen_dimention(self, width, height);
+    }
+
     fn get_projection(&self) -> Mat4 {
         match self.projection.get() {
             Some(projection) => projection,

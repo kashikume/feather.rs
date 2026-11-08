@@ -13,7 +13,8 @@ What works today:
 
 - Vulkan renderer (via [`vulkanalia`](https://github.com/KyleMayes/vulkanalia)) with swapchain recreation on resize
 - Windowing and event loop via [`winit`](https://github.com/rust-windowing/winit)
-- Scene graph made of nodes, with meshes and materials attached to nodes
+- Scene graph made of nodes with transforms, visibility, meshes and materials; every visible node
+  with a mesh is drawn
 - Scene objects (meshes, nodes, atlases, textures, shaders, materials) stored in the scene and
   referenced by handle
 - Mesh builders: Wavefront `.obj` loading (via `tobj`) and procedural cuboids
@@ -25,8 +26,9 @@ What works today:
 - Textures with mipmaps and MSAA
 - Vulkan validation layers turned on automatically in debug builds
 
-> The renderer does not use materials, uniforms or atlases yet: it still draws one mesh with one
-> hard-coded uniform buffer and texture.
+> The renderer draws every visible node with a mesh, using the node's global transform, but it
+> does not use materials, uniforms or atlases yet: it has one hard-coded pipeline and texture.
+> See [doc/todo](doc/todo/node-uniforms-rendering.md) for the plan.
 
 ## Requirements
 

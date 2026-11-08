@@ -1,9 +1,10 @@
 use anyhow::Result;
+use cgmath::Deg;
 
 use crate::feather::assetsprovider::create_assets_provider;
 use crate::feather::camera::Camera;
 use crate::feather::featherapp::FeatherApp;
-use crate::feather::math::{Point3, Vec3};
+use crate::feather::math::{Mat4, Point3, Vec3};
 use crate::feather::meshbuilderobjfile::MeshBuilderObjFile;
 use crate::feather::perspectivecamera::PerspectiveCamera;
 use crate::feather::scene::Scene;
@@ -29,6 +30,11 @@ impl FeatherApp for TestApp {
 
     fn on_update(&mut self, time: f32) -> Result<()> {
         log::trace!("on_update called with time: {}", time);
+        // Spin the room around the Z axis, 10 degrees per second.
+        self.scene
+            .get_node_mut(self.room_node)
+            .unwrap()
+            .set_transform(Mat4::from_angle_z(Deg(10.0 * time)));
         Ok(())
     }
 

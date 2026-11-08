@@ -1,16 +1,11 @@
 use vulkanalia::prelude::v1_0::*;
 
 use super::featherapp::FeatherApp;
-use super::meshbuffer::MeshBuffer;
-use super::perspectivecamera::PerspectiveCamera;
-use super::scene::Scene;
 use super::swapchain::Swapchain;
 
 /// The Vulkan handles and associated properties used by our Vulkan app.
 pub struct AppData {
     pub app: Box<dyn FeatherApp>,
-    pub scene: Scene,
-    pub camera: PerspectiveCamera,
     // Debug
     pub messenger: vk::DebugUtilsMessengerEXT,
     // Surface
@@ -45,10 +40,7 @@ pub struct AppData {
     pub texture_image_memory: vk::DeviceMemory,
     pub texture_image_view: vk::ImageView,
     pub texture_sampler: vk::Sampler,
-    // Model
-    pub mesh: usize,
     // Buffers
-    pub mesh_buffer: MeshBuffer,
     pub uniform_buffers: Vec<vk::Buffer>,
     pub uniform_buffers_memory: Vec<vk::DeviceMemory>,
     // Descriptors

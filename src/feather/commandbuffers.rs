@@ -1,15 +1,29 @@
+use std::mem::size_of;
+use std::slice;
+
 use anyhow::Result;
 use vulkanalia::prelude::v1_0::*;
 
 use super::appdata::AppData;
+use super::math::Mat4;
 
 //================================================
 // Command Buffers
 //================================================
 
-pub unsafe fn create_command_buffers(device: &Device, data: &mut AppData) -> Result<()> {
-    // Allocate
+/// One draw call with the Vulkan buffers it uses.
+pub struct GpuDraw {
+    pub vertex_buffer: vk::Buffer,
+    pub index_buffer: vk::Buffer,
+    pub model: Mat4,
+    pub first_index: u32,
+    pub index_count: u32,
+    pub vertex_offset: i32,
+}
 
+/// Allocates one command buffer per framebuffer. They are recorded every frame by
+/// `record_command_buffer`.
+pub unsafe fn create_command_buffers(device: &Device, data: &mut AppData) -> Result<()> {
     if !data.command_buffers.is_empty() {
         device.free_command_buffers(data.command_pool, &data.command_buffers);
         data.command_buffers.clear();
@@ -22,71 +36,97 @@ pub unsafe fn create_command_buffers(device: &Device, data: &mut AppData) -> Res
 
     data.command_buffers = device.allocate_command_buffers(&allocate_info)?;
 
-    // Commands
+    Ok(())
+}
 
-    for (i, command_buffer) in data.command_buffers.iter().enumerate() {
-        let info = vk::CommandBufferBeginInfo::builder();
+/// Records the command buffer of swapchain image `image_index`: clears the image and issues
+/// `draws`. The command buffer must not be in use by the GPU.
+pub unsafe fn record_command_buffer(
+    device: &Device,
+    data: &AppData,
+    image_index: usize,
+    draws: &[GpuDraw],
+) -> Result<()> {
+    let command_buffer = data.command_buffers[image_index];
 
-        device.begin_command_buffer(*command_buffer, &info)?;
+    device.reset_command_buffer(command_buffer, vk::CommandBufferResetFlags::empty())?;
 
-        let render_area = vk::Rect2D::builder()
-            .offset(vk::Offset2D::default())
-            .extent(data.swapchain.swapchain_extent);
+    let info = vk::CommandBufferBeginInfo::builder()
+        .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
 
-        let color_clear_value = vk::ClearValue {
-            color: vk::ClearColorValue {
-                float32: [0.0, 0.0, 0.0, 1.0],
-            },
-        };
+    device.begin_command_buffer(command_buffer, &info)?;
 
-        let depth_clear_value = vk::ClearValue {
-            depth_stencil: vk::ClearDepthStencilValue {
-                depth: 1.0,
-                stencil: 0,
-            },
-        };
+    let render_area = vk::Rect2D::builder()
+        .offset(vk::Offset2D::default())
+        .extent(data.swapchain.swapchain_extent);
 
-        let clear_values = &[color_clear_value, depth_clear_value];
-        let info = vk::RenderPassBeginInfo::builder()
-            .render_pass(data.render_pass)
-            .framebuffer(data.framebuffers[i])
-            .render_area(render_area)
-            .clear_values(clear_values);
+    let color_clear_value = vk::ClearValue {
+        color: vk::ClearColorValue {
+            float32: [0.0, 0.0, 0.0, 1.0],
+        },
+    };
 
-        device.cmd_begin_render_pass(*command_buffer, &info, vk::SubpassContents::INLINE);
-        device.cmd_bind_pipeline(
-            *command_buffer,
-            vk::PipelineBindPoint::GRAPHICS,
-            data.pipeline,
-        );
-        device.cmd_bind_vertex_buffers(
-            *command_buffer,
-            0,
-            &[data.mesh_buffer.vertex_buffer.unwrap()],
-            &[0],
-        );
-        device.cmd_bind_index_buffer(
-            *command_buffer,
-            data.mesh_buffer.index_buffer.unwrap(),
-            0,
-            vk::IndexType::UINT32,
-        );
-        device.cmd_bind_descriptor_sets(
-            *command_buffer,
-            vk::PipelineBindPoint::GRAPHICS,
+    let depth_clear_value = vk::ClearValue {
+        depth_stencil: vk::ClearDepthStencilValue {
+            depth: 1.0,
+            stencil: 0,
+        },
+    };
+
+    let clear_values = &[color_clear_value, depth_clear_value];
+    let info = vk::RenderPassBeginInfo::builder()
+        .render_pass(data.render_pass)
+        .framebuffer(data.framebuffers[image_index])
+        .render_area(render_area)
+        .clear_values(clear_values);
+
+    device.cmd_begin_render_pass(command_buffer, &info, vk::SubpassContents::INLINE);
+    device.cmd_bind_pipeline(command_buffer, vk::PipelineBindPoint::GRAPHICS, data.pipeline);
+    device.cmd_bind_descriptor_sets(
+        command_buffer,
+        vk::PipelineBindPoint::GRAPHICS,
+        data.pipeline_layout,
+        0,
+        &[data.descriptor_sets[image_index]],
+        &[],
+    );
+
+    let mut bound_buffers = None;
+    for draw in draws {
+        // Meshes sharing a mesh buffer don't need the buffers bound again.
+        if bound_buffers != Some((draw.vertex_buffer, draw.index_buffer)) {
+            device.cmd_bind_vertex_buffers(command_buffer, 0, &[draw.vertex_buffer], &[0]);
+            device.cmd_bind_index_buffer(
+                command_buffer,
+                draw.index_buffer,
+                0,
+                vk::IndexType::UINT32,
+            );
+            bound_buffers = Some((draw.vertex_buffer, draw.index_buffer));
+        }
+
+        let model_bytes =
+            slice::from_raw_parts((&draw.model as *const Mat4).cast::<u8>(), size_of::<Mat4>());
+        device.cmd_push_constants(
+            command_buffer,
             data.pipeline_layout,
+            vk::ShaderStageFlags::VERTEX,
             0,
-            &[data.descriptor_sets[i]],
-            &[],
+            model_bytes,
         );
 
-        let mesh = data.scene.get_mesh(data.mesh).unwrap();
-
-        device.cmd_draw_indexed(*command_buffer, mesh.indices.len() as u32, 1, 0, 0, 0);
-        device.cmd_end_render_pass(*command_buffer);
-
-        device.end_command_buffer(*command_buffer)?;
+        device.cmd_draw_indexed(
+            command_buffer,
+            draw.index_count,
+            1,
+            draw.first_index,
+            draw.vertex_offset,
+            0,
+        );
     }
+
+    device.cmd_end_render_pass(command_buffer);
+    device.end_command_buffer(command_buffer)?;
 
     Ok(())
 }

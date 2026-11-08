@@ -11,7 +11,10 @@ pub struct Node {
     handle: usize,
     parent: Option<usize>,
     children: HashSet<usize>,
+    /// Transform relative to the parent node.
     transform: Mat4,
+    /// Transform relative to the scene (parent's global transform × `transform`).
+    /// Computed by `Scene::update_nodes`.
     global_transform: Option<Mat4>,
     transparent: bool,
     visible: bool,
@@ -20,10 +23,10 @@ pub struct Node {
     /// Uniforms set on this node.
     uniforms: Uniforms,
     /// Uniforms inherited from ancestor nodes (their own uniforms, not their materials').
-    /// Computed by `Scene::update_dynamic_uniforms`.
+    /// Computed by `Scene::update_nodes`.
     inherited_uniforms: Uniforms,
     /// Final uniforms of this node: material, then `inherited_uniforms`, then `uniforms`,
-    /// each overriding the previous. Computed by `Scene::update_dynamic_uniforms`.
+    /// each overriding the previous. Computed by `Scene::update_nodes`.
     dynamic_uniforms: Uniforms,
 }
 
@@ -96,6 +99,29 @@ impl Node {
         self.parent
     }
 
+    /// Sets the transform relative to the parent node.
+    pub fn set_transform(&mut self, transform: Mat4) {
+        self.transform = transform;
+    }
+
+    pub fn get_transform(&self) -> Mat4 {
+        self.transform
+    }
+
+    /// Transform relative to the scene. `None` until `Scene::update_nodes` has run.
+    pub fn get_global_transform(&self) -> Option<Mat4> {
+        self.global_transform
+    }
+
+    /// Sets whether the node and its descendants are drawn.
+    pub fn set_visible(&mut self, visible: bool) {
+        self.visible = visible;
+    }
+
+    pub fn is_visible(&self) -> bool {
+        self.visible
+    }
+
     pub fn set_mesh(&mut self, mesh: usize) {
         self.mesh = Some(mesh);
     }
@@ -131,13 +157,13 @@ impl Node {
 
     /// Final uniforms of this node: its material's uniforms, overridden by uniforms inherited
     /// from ancestor nodes, overridden by the node's own uniforms.
-    /// Valid after `Scene::update_dynamic_uniforms`.
+    /// Valid after `Scene::update_nodes`.
     pub fn dynamic_uniforms(&self) -> &Uniforms {
         &self.dynamic_uniforms
     }
 
     /// Uniforms inherited from ancestor nodes. Materials of ancestors are not included.
-    /// Valid after `Scene::update_dynamic_uniforms`.
+    /// Valid after `Scene::update_nodes`.
     pub fn inherited_uniforms(&self) -> &Uniforms {
         &self.inherited_uniforms
     }
@@ -159,6 +185,14 @@ impl Node {
             dynamic.set(uniform.name.clone(), uniform.value);
         }
         self.dynamic_uniforms = dynamic;
+    }
+
+    /// Recomputes the global transform from the parent's global transform (`None` for a root).
+    pub(crate) fn update_global_transform(&mut self, parent: Option<&Mat4>) {
+        self.global_transform = Some(match parent {
+            Some(parent) => parent * self.transform,
+            None => self.transform,
+        });
     }
 
     /// Uniforms this node passes to its children: inherited ones overridden by its own.
@@ -370,6 +404,51 @@ mod tests {
 
         node.remove_material();
         assert_eq!(node.get_material(), None);
+    }
+
+    #[test]
+    fn set_transform() {
+        use cgmath::{vec3, Matrix4};
+
+        let mut node = Node::new_root(None);
+        let t = Matrix4::from_translation(vec3(1.0, 2.0, 3.0));
+        node.set_transform(t);
+        assert_eq!(node.get_transform(), t);
+        assert_eq!(node.get_global_transform(), None);
+    }
+
+    #[test]
+    fn global_transform_of_root_is_its_transform() {
+        use cgmath::{vec3, Matrix4};
+
+        let mut node = Node::new_root(None);
+        let t = Matrix4::from_translation(vec3(1.0, 0.0, 0.0));
+        node.set_transform(t);
+        node.update_global_transform(None);
+        assert_eq!(node.get_global_transform(), Some(t));
+    }
+
+    #[test]
+    fn global_transform_applies_parent_first() {
+        use cgmath::{vec3, vec4, Deg, Matrix4};
+
+        // Parent moves by +X; child rotates 90° around Z. A point at +X in the child ends up
+        // at (1, 1): rotated by the child, then moved by the parent.
+        let parent = Matrix4::from_translation(vec3(1.0, 0.0, 0.0));
+        let mut node = Node::new(None, 0);
+        node.set_transform(Matrix4::from_angle_z(Deg(90.0)));
+        node.update_global_transform(Some(&parent));
+
+        let p = node.get_global_transform().unwrap() * vec4(1.0, 0.0, 0.0, 1.0);
+        assert!((p.x - 1.0).abs() < 1e-6 && (p.y - 1.0).abs() < 1e-6, "{p:?}");
+    }
+
+    #[test]
+    fn visibility() {
+        let mut node = Node::new_root(None);
+        assert!(node.is_visible());
+        node.set_visible(false);
+        assert!(!node.is_visible());
     }
 
     #[test]

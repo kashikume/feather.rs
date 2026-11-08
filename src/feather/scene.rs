@@ -5,7 +5,23 @@ use crate::feather::{
     assetsprovider::AssetsProvider, atlas::Atlas, material::Material, object::Object, shader::Shader, texture::Texture,
 };
 
-use super::{mesh::Mesh, meshbuffer::MeshBuffer, node::Node, objdb::ObjDB, uniforms::Uniforms};
+use super::{
+    math::Mat4, mesh::Mesh, meshbuffer::MeshBuffer, node::Node, objdb::ObjDB, uniforms::Uniforms,
+};
+
+/// One draw call: a node's mesh, located in a mesh buffer, with the node's model matrix.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DrawItem {
+    pub node: usize,
+    /// Handle of the mesh buffer (in `Scene::buffers`) holding the mesh.
+    pub mesh_buffer: usize,
+    pub model: Mat4,
+    /// First index of the mesh in the buffer's index buffer.
+    pub first_index: u32,
+    pub index_count: u32,
+    /// Added to every index: where the mesh's vertices start in the buffer's vertex buffer.
+    pub vertex_offset: i32,
+}
 
 pub struct Scene {
     pub meshes: ObjDB<Mesh>,
@@ -168,39 +184,47 @@ impl Scene {
         Ok(())
     }
 
-    /// Recomputes dynamic uniforms of every node, starting from the root nodes.
-    pub fn update_dynamic_uniforms(&mut self) {
-        let roots: Vec<usize> = self
-            .nodes
+    fn root_nodes(&self) -> Vec<usize> {
+        self.nodes
             .iter()
             .filter(|n| n.is_root())
             .map(|n| n.get_handle())
-            .collect();
-        for root in roots {
-            self.update_subtree_dynamic_uniforms(root, &Uniforms::new());
+            .collect()
+    }
+
+    /// Recomputes the dynamic uniforms and global transforms of every node, starting from the
+    /// root nodes.
+    pub fn update_nodes(&mut self) {
+        for root in self.root_nodes() {
+            self.update_subtree(root, &Uniforms::new(), None);
         }
     }
 
-    /// Recomputes dynamic uniforms of a node and all its descendants. Use it after changing
-    /// uniforms of one node or of its material; the node's parent must already be up to date.
-    pub fn update_node_dynamic_uniforms(&mut self, node_handle: usize) -> Result<()> {
+    /// Recomputes the dynamic uniforms and global transforms of a node and all its
+    /// descendants. Use it after changing one node (its transform, uniforms or material);
+    /// the node's parent must already be up to date.
+    pub fn update_node(&mut self, node_handle: usize) -> Result<()> {
         let node = self
             .nodes
             .get(node_handle)
             .ok_or_else(|| anyhow::anyhow!("Node {node_handle} not found"))?;
-        let inherited = node
-            .get_parent()
-            .and_then(|p| self.nodes.get(p))
-            .map(|p| p.uniforms_for_children())
-            .unwrap_or_default();
-        self.update_subtree_dynamic_uniforms(node_handle, &inherited);
+        let parent = node.get_parent().and_then(|p| self.nodes.get(p));
+        let inherited = parent.map(|p| p.uniforms_for_children()).unwrap_or_default();
+        let parent_transform = parent.map(|p| p.get_global_transform().unwrap_or(p.get_transform()));
+        self.update_subtree(node_handle, &inherited, parent_transform);
         Ok(())
     }
 
-    fn update_subtree_dynamic_uniforms(&mut self, node_handle: usize, inherited: &Uniforms) {
-        // Depth-first, without recursion: (node, uniforms inherited from its parent).
-        let mut stack = vec![(node_handle, inherited.clone())];
-        while let Some((handle, inherited)) = stack.pop() {
+    fn update_subtree(
+        &mut self,
+        node_handle: usize,
+        inherited: &Uniforms,
+        parent_transform: Option<Mat4>,
+    ) {
+        // Depth-first, without recursion:
+        // (node, uniforms inherited from its parent, parent's global transform).
+        let mut stack = vec![(node_handle, inherited.clone(), parent_transform)];
+        while let Some((handle, inherited, parent_transform)) = stack.pop() {
             let Some(node) = self.nodes.get_mut(handle) else {
                 continue;
             };
@@ -209,11 +233,48 @@ impl Scene {
                 .and_then(|m| self.materials.get(m))
                 .map(|m| m.uniforms());
             node.update_dynamic_uniforms(&inherited, material);
+            node.update_global_transform(parent_transform.as_ref());
+
             let for_children = node.uniforms_for_children();
+            let global = node.get_global_transform();
             for &child in node.get_children() {
-                stack.push((child, for_children.clone()));
+                stack.push((child, for_children.clone(), global));
             }
         }
+    }
+
+    /// Lists what to draw: every visible node that has a mesh already placed in a mesh
+    /// buffer. A hidden node hides its descendants too. Uses the global transforms computed
+    /// by `update_nodes`.
+    pub fn draw_items(&self) -> Vec<DrawItem> {
+        let mut items = Vec::new();
+        let mut stack = self.root_nodes();
+        while let Some(handle) = stack.pop() {
+            let Some(node) = self.nodes.get(handle) else {
+                continue;
+            };
+            if !node.is_visible() {
+                continue;
+            }
+            stack.extend(node.get_children());
+
+            let Some(data) = node
+                .get_mesh()
+                .and_then(|m| self.meshes.get(m))
+                .and_then(|m| m.mesh_buffer_data.as_ref())
+            else {
+                continue;
+            };
+            items.push(DrawItem {
+                node: handle,
+                mesh_buffer: data.buffer_handle,
+                model: node.get_global_transform().unwrap_or(node.get_transform()),
+                first_index: data.index_begin_index as u32,
+                index_count: data.index_size as u32,
+                vertex_offset: data.vertex_begin_index as i32,
+            });
+        }
+        items
     }
 
     pub fn add_atlas(&mut self, atlas: Atlas) -> usize {
@@ -719,7 +780,7 @@ mod tests {
             .uniforms_mut()
             .set("b", 2u32);
 
-        scene.update_dynamic_uniforms();
+        scene.update_nodes();
 
         let dynamic = scene.get_node(grandchild).unwrap().dynamic_uniforms();
         assert_eq!(dynamic.get("a"), Some(&UniformValue::UInt(1)));
@@ -750,7 +811,7 @@ mod tests {
             .uniforms_mut()
             .set("a", 10u32);
 
-        scene.update_dynamic_uniforms();
+        scene.update_nodes();
 
         assert_eq!(
             scene.get_node(root).unwrap().dynamic_uniforms().get("a"),
@@ -784,7 +845,7 @@ mod tests {
             .set("x", 1u32);
         scene.get_node_mut(a).unwrap().uniforms_mut().set("x", 2u32);
 
-        scene.update_dynamic_uniforms();
+        scene.update_nodes();
 
         assert_eq!(
             scene.get_node(a).unwrap().dynamic_uniforms().get("x"),
@@ -807,13 +868,13 @@ mod tests {
             .uniforms_mut()
             .set("x", 1u32);
 
-        scene.update_dynamic_uniforms();
+        scene.update_nodes();
 
         assert!(scene.get_node(r2).unwrap().dynamic_uniforms().is_empty());
     }
 
     #[test]
-    fn update_node_dynamic_uniforms_updates_subtree_only() {
+    fn update_node_updates_subtree_only() {
         let mut scene = Scene::new();
         let root = scene.create_root_node(None);
         let a = scene.create_node(None, root).unwrap();
@@ -824,11 +885,11 @@ mod tests {
             .unwrap()
             .uniforms_mut()
             .set("x", 1u32);
-        scene.update_dynamic_uniforms();
+        scene.update_nodes();
 
         scene.get_node_mut(a).unwrap().uniforms_mut().set("y", 2u32);
         scene.get_node_mut(b).unwrap().uniforms_mut().set("y", 3u32);
-        scene.update_node_dynamic_uniforms(a).unwrap();
+        scene.update_node(a).unwrap();
 
         // `a` and its child are updated and still inherit from the root.
         let a_child_dynamic = scene.get_node(a_child).unwrap().dynamic_uniforms();
@@ -839,9 +900,9 @@ mod tests {
     }
 
     #[test]
-    fn update_node_dynamic_uniforms_with_invalid_handle_fails() {
+    fn update_node_with_invalid_handle_fails() {
         let mut scene = Scene::new();
-        assert!(scene.update_node_dynamic_uniforms(42).is_err());
+        assert!(scene.update_node(42).is_err());
     }
 
     #[test]
@@ -859,10 +920,10 @@ mod tests {
             .unwrap()
             .uniforms_mut()
             .set("y", 2u32);
-        scene.update_dynamic_uniforms();
+        scene.update_nodes();
 
         scene.disconnect_node(child).unwrap();
-        scene.update_dynamic_uniforms();
+        scene.update_nodes();
 
         let dynamic = scene.get_node(child).unwrap().dynamic_uniforms();
         assert_eq!(dynamic.get("x"), None);
@@ -890,7 +951,7 @@ mod tests {
         let material = material_with(&mut scene, "m", 1);
         scene.node_set_material(node, material).unwrap();
 
-        scene.update_dynamic_uniforms();
+        scene.update_nodes();
 
         assert_eq!(
             scene.get_node(node).unwrap().dynamic_uniforms().get("m"),
@@ -913,7 +974,7 @@ mod tests {
             .uniforms_mut()
             .set("x", 2u32);
 
-        scene.update_dynamic_uniforms();
+        scene.update_nodes();
 
         assert_eq!(
             scene.get_node(root).unwrap().dynamic_uniforms().get("x"),
@@ -936,7 +997,7 @@ mod tests {
         scene.node_set_material(child, child_material).unwrap();
         let grandchild = scene.create_node(None, child).unwrap();
 
-        scene.update_dynamic_uniforms();
+        scene.update_nodes();
 
         // The child uses its own material, not the root's.
         assert_eq!(
@@ -959,7 +1020,7 @@ mod tests {
     }
 
     #[test]
-    fn update_node_dynamic_uniforms_picks_up_material_change() {
+    fn update_node_picks_up_material_change() {
         let mut scene = Scene::new();
         let root = scene.create_root_node(None);
         let child = scene.create_node(None, root).unwrap();
@@ -970,14 +1031,14 @@ mod tests {
             .set("a", 1u32);
         let material = material_with(&mut scene, "m", 1);
         scene.node_set_material(child, material).unwrap();
-        scene.update_dynamic_uniforms();
+        scene.update_nodes();
 
         scene
             .get_material_mut(material)
             .unwrap()
             .uniforms_mut()
             .set("m", 5u32);
-        scene.update_node_dynamic_uniforms(child).unwrap();
+        scene.update_node(child).unwrap();
 
         let dynamic = scene.get_node(child).unwrap().dynamic_uniforms();
         assert_eq!(dynamic.get("m"), Some(&UniformValue::UInt(5)));
@@ -986,15 +1047,15 @@ mod tests {
     }
 
     #[test]
-    fn update_node_dynamic_uniforms_does_not_inherit_parent_material() {
+    fn update_node_does_not_inherit_parent_material() {
         let mut scene = Scene::new();
         let root = scene.create_root_node(None);
         let child = scene.create_node(None, root).unwrap();
         let material = material_with(&mut scene, "m", 1);
         scene.node_set_material(root, material).unwrap();
-        scene.update_dynamic_uniforms();
+        scene.update_nodes();
 
-        scene.update_node_dynamic_uniforms(child).unwrap();
+        scene.update_node(child).unwrap();
 
         assert_eq!(
             scene.get_node(child).unwrap().dynamic_uniforms().get("m"),
@@ -1236,5 +1297,125 @@ mod tests {
         let new_buffer = scene.buffers.get(d1.buffer_handle).unwrap();
         assert_eq!(new_buffer.data_size_for_vertexes(), 5 * size_of::<Vertex>());
         assert_eq!(new_buffer.data_size_for_indexes(), 6 * size_of::<u32>());
+    }
+
+    // --- transforms and drawing ---
+
+    fn translation(x: f32, y: f32, z: f32) -> Mat4 {
+        Mat4::from_translation(Vec3::new(x, y, z))
+    }
+
+    #[test]
+    fn update_nodes_computes_global_transforms() {
+        let mut scene = Scene::new();
+        let root = scene.create_root_node(None);
+        let child = scene.create_node(None, root).unwrap();
+        let grandchild = scene.create_node(None, child).unwrap();
+        scene.get_node_mut(root).unwrap().set_transform(translation(1.0, 0.0, 0.0));
+        scene.get_node_mut(child).unwrap().set_transform(translation(0.0, 2.0, 0.0));
+        scene.get_node_mut(grandchild).unwrap().set_transform(translation(0.0, 0.0, 3.0));
+
+        scene.update_nodes();
+
+        let global = |h| scene.get_node(h).unwrap().get_global_transform();
+        assert_eq!(global(root), Some(translation(1.0, 0.0, 0.0)));
+        assert_eq!(global(child), Some(translation(1.0, 2.0, 0.0)));
+        assert_eq!(global(grandchild), Some(translation(1.0, 2.0, 3.0)));
+    }
+
+    #[test]
+    fn update_node_recomputes_subtree_transforms() {
+        let mut scene = Scene::new();
+        let root = scene.create_root_node(None);
+        let child = scene.create_node(None, root).unwrap();
+        let grandchild = scene.create_node(None, child).unwrap();
+        scene.get_node_mut(root).unwrap().set_transform(translation(1.0, 0.0, 0.0));
+        scene.update_nodes();
+
+        scene.get_node_mut(child).unwrap().set_transform(translation(0.0, 5.0, 0.0));
+        scene.update_node(child).unwrap();
+
+        let global = |h| scene.get_node(h).unwrap().get_global_transform();
+        assert_eq!(global(child), Some(translation(1.0, 5.0, 0.0)));
+        assert_eq!(global(grandchild), Some(translation(1.0, 5.0, 0.0)));
+    }
+
+    #[test]
+    fn draw_items_list_nodes_with_meshes() {
+        let mut scene = Scene::new();
+        let root = scene.create_root_node(None);
+        let a = scene.create_node(None, root).unwrap();
+        let b = scene.create_node(None, a).unwrap();
+        let _no_mesh = scene.create_node(None, root).unwrap();
+        let mesh_a = scene.add_mesh(test_mesh(4, 6));
+        let mesh_b = scene.add_mesh(test_mesh(3, 3));
+        scene.node_set_mesh(a, mesh_a).unwrap();
+        scene.node_set_mesh(b, mesh_b).unwrap();
+        scene.get_node_mut(a).unwrap().set_transform(translation(1.0, 0.0, 0.0));
+        scene.get_node_mut(b).unwrap().set_transform(translation(0.0, 1.0, 0.0));
+        scene.build_missing_mesh_buffers().unwrap();
+        scene.update_nodes();
+
+        let mut items = scene.draw_items();
+        items.sort_by_key(|i| i.node);
+        assert_eq!(items.len(), 2);
+
+        let buffer = scene.buffers.iter().next().unwrap().get_handle();
+        let data_a = scene.get_mesh(mesh_a).unwrap().mesh_buffer_data.as_ref().unwrap();
+        let data_b = scene.get_mesh(mesh_b).unwrap().mesh_buffer_data.as_ref().unwrap();
+        let item = |node| *items.iter().find(|i| i.node == node).unwrap();
+
+        assert_eq!(
+            item(a),
+            DrawItem {
+                node: a,
+                mesh_buffer: buffer,
+                model: translation(1.0, 0.0, 0.0),
+                first_index: data_a.index_begin_index as u32,
+                index_count: 6,
+                vertex_offset: data_a.vertex_begin_index as i32,
+            }
+        );
+        assert_eq!(
+            item(b),
+            DrawItem {
+                node: b,
+                mesh_buffer: buffer,
+                model: translation(1.0, 1.0, 0.0),
+                first_index: data_b.index_begin_index as u32,
+                index_count: 3,
+                vertex_offset: data_b.vertex_begin_index as i32,
+            }
+        );
+    }
+
+    #[test]
+    fn draw_items_skip_meshes_without_buffers() {
+        let mut scene = Scene::new();
+        let root = scene.create_root_node(None);
+        let mesh = scene.add_mesh(test_mesh(3, 3));
+        scene.node_set_mesh(root, mesh).unwrap();
+        scene.update_nodes();
+
+        assert!(scene.draw_items().is_empty());
+    }
+
+    #[test]
+    fn hidden_node_hides_its_subtree() {
+        let mut scene = Scene::new();
+        let root = scene.create_root_node(None);
+        let hidden = scene.create_node(None, root).unwrap();
+        let below_hidden = scene.create_node(None, hidden).unwrap();
+        let shown = scene.create_node(None, root).unwrap();
+        let mesh = scene.add_mesh(test_mesh(3, 3));
+        for node in [hidden, below_hidden, shown] {
+            scene.node_set_mesh(node, mesh).unwrap();
+        }
+        scene.get_node_mut(hidden).unwrap().set_visible(false);
+        scene.build_missing_mesh_buffers().unwrap();
+        scene.update_nodes();
+
+        let nodes: Vec<usize> = scene.draw_items().iter().map(|i| i.node).collect();
+        assert_eq!(nodes, [shown]);
     }
 }

@@ -15,7 +15,10 @@ pub unsafe fn create_command_pool(
 ) -> Result<()> {
     let indices = QueueFamilyIndices::get(instance, data.surface, data.physical_device)?;
 
-    let info = vk::CommandPoolCreateInfo::builder().queue_family_index(indices.graphics);
+    // Command buffers are re-recorded every frame, so they must be resettable one by one.
+    let info = vk::CommandPoolCreateInfo::builder()
+        .flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER)
+        .queue_family_index(indices.graphics);
 
     data.command_pool = device.create_command_pool(&info, None)?;
 

@@ -1,9 +1,12 @@
+use std::mem::size_of;
+
 use anyhow::Result;
 use vulkanalia::bytecode::Bytecode;
 use vulkanalia::prelude::v1_0::*;
 
 use super::appdata::AppData;
 use super::dephobjects::get_depth_format;
+use super::math::Mat4;
 use super::vertex::Vertex;
 
 //================================================
@@ -224,8 +227,17 @@ pub unsafe fn create_pipeline(device: &Device, data: &mut AppData) -> Result<()>
 
     // Layout
 
+    // The model matrix of each draw is a push constant (see `shader.vert`).
+    let push_constant_range = vk::PushConstantRange::builder()
+        .stage_flags(vk::ShaderStageFlags::VERTEX)
+        .offset(0)
+        .size(size_of::<Mat4>() as u32);
+
     let set_layouts = &[data.descriptor_set_layout];
-    let layout_info = vk::PipelineLayoutCreateInfo::builder().set_layouts(set_layouts);
+    let push_constant_ranges = &[push_constant_range];
+    let layout_info = vk::PipelineLayoutCreateInfo::builder()
+        .set_layouts(set_layouts)
+        .push_constant_ranges(push_constant_ranges);
 
     data.pipeline_layout = device.create_pipeline_layout(&layout_info, None)?;
 

@@ -7,16 +7,15 @@ names.
 ## Where we are
 
 - Scene, nodes, materials, shaders, atlases, textures and uniforms exist on the CPU side.
-  `Scene::update_dynamic_uniforms` computes the final uniforms of each node.
-- The renderer ignores all of that. It has:
-  - one hard-coded descriptor set layout: binding 0 = `UniformBufferObject { model, view, proj }`,
+  `Scene::update_nodes` computes the final uniforms and the global transform of each node.
+- Step 1 is done: every visible node with a mesh is drawn with its global transform as the model
+  matrix (push constant). Command buffers are recorded every frame from `Scene::draw_items`.
+- Still hard-coded in the renderer:
+  - one pipeline and descriptor set layout: binding 0 = `UniformBufferObject { view, proj }`,
     binding 1 = `texSampler` (`pipeline.rs`, `descriptors.rs`);
-  - one uniform buffer per swapchain image, filled in `App::update_uniform_buffer` with a
-    hard-coded spinning model matrix;
+  - view/proj come from the first scene's camera; only the first scene is drawn;
   - one texture loaded directly from `resources/viking_room.png` (`texture.rs`);
-  - command buffers recorded once at start-up (and on resize) that draw a single mesh
-    (`commandbuffers.rs`).
-- `Node::transform` and `Node::global_transform` exist but are never computed.
+  - materials, shaders and node uniforms are not used by the renderer.
 
 ## Design
 
@@ -83,17 +82,19 @@ Each step should leave the app running.
 
 ### 1. Draw nodes with their own model matrix
 
-- [ ] Compute node global transforms (parent global × local), in the same pass as
-      `update_dynamic_uniforms`
-- [ ] Add a push constant range for the model matrix to the pipeline layout; change `shader.vert`
+- [x] Compute node global transforms (parent global × local), in the same pass as the dynamic
+      uniforms (`Scene::update_nodes` / `Scene::update_node`)
+- [x] Add a push constant range for the model matrix to the pipeline layout; change `shader.vert`
       to read `model` from it
-- [ ] Re-record command buffers every frame
-- [ ] Walk the scene: for each visible node with a mesh, bind its mesh buffers, push its model
-      matrix, draw
-- [ ] Remove the hard-coded spinning model matrix from `App::update_uniform_buffer`; spin the room
+- [x] Re-record command buffers every frame
+- [x] Walk the scene: for each visible node with a mesh, bind its mesh buffers, push its model
+      matrix, draw (`Scene::draw_items`; a hidden node hides its subtree)
+- [x] Upload mesh buffers of the app's scenes when they are created
+- [x] Remove the hard-coded spinning model matrix from `App::update_uniform_buffer`; spin the room
       node from `TestApp::on_update` instead
-- [ ] Remove `AppData::mesh` / `AppData::mesh_buffer` and `model.rs` `load_model`
-- [ ] Tests for global transforms
+- [x] Remove the engine's internal scene and camera (`AppData::scene`, `AppData::camera`,
+      `AppData::mesh`, `AppData::mesh_buffer`, `model.rs`); render the app's scene and camera
+- [x] Tests for global transforms and draw items
 
 ### 2. Shader reflection and a pipeline per shader
 
@@ -126,6 +127,7 @@ Each step should leave the app running.
 
 ### Later
 
+- [ ] Render more than one scene (per-scene camera data instead of one uniform buffer per frame)
 - [ ] Sort draws by shader and material; skip redundant binds
 - [ ] Transparent nodes drawn after opaque ones, back to front
 - [ ] Re-upload uniforms only for nodes that changed

@@ -3,7 +3,6 @@ use std::ptr::copy_nonoverlapping as memcpy;
 use std::time::Instant;
 
 use anyhow::{anyhow, Result};
-use cgmath::{vec3, Deg};
 use vulkanalia::loader::{LibloadingLoader, LIBRARY};
 use vulkanalia::prelude::v1_0::*;
 use vulkanalia::window as vk_window;
@@ -21,14 +20,10 @@ const VALIDATION_ENABLED: bool = cfg!(debug_assertions);
 /// The maximum number of frames that can be processed concurrently.
 const MAX_FRAMES_IN_FLIGHT: usize = 2;
 
-use crate::feather::perspectivecamera::PerspectiveCamera;
-use crate::feather::scene::Scene;
-
 use super::appdata::AppData;
-use super::buffers::{create_index_buffer, create_uniform_buffers, create_vertex_buffer};
-use super::camera::Camera;
+use super::buffers::create_uniform_buffers;
 use super::colorobjects::create_color_objects;
-use super::commandbuffers::create_command_buffers;
+use super::commandbuffers::{create_command_buffers, record_command_buffer, GpuDraw};
 use super::commandpool::create_command_pool;
 use super::dephobjects::create_depth_objects;
 use super::descriptors::{create_descriptor_pool, create_descriptor_sets};
@@ -36,9 +31,6 @@ use super::featherapp::FeatherApp;
 use super::framebuffers::create_framebuffers;
 use super::instance::create_instance;
 use super::logicaldevice::create_logical_device;
-use super::math::*;
-use super::meshbuffer::MeshBuffer;
-use super::model::load_model;
 use super::physicaldevice::pick_physical_device;
 use super::pipeline::{create_descriptor_set_layout, create_pipeline, create_render_pass};
 use super::swapchain::Swapchain;
@@ -57,20 +49,6 @@ pub struct App {
     start: Instant,
 }
 
-fn create_scene(data: &mut AppData) {
-    let mut scene = Scene::new();
-    let _root_node = scene.create_root_node(Some("Scene root".to_string()));
-    data.scene = scene;
-    let mut camera = PerspectiveCamera::new();
-    camera.set_fov(45.0).set_near_far(0.1, 10.0).set_view(
-        Point3::new(2.0, 2.0, 2.0),
-        Point3::new(0.0, 0.0, 0.0),
-        Vec3::new(0.0, 0.0, 1.0),
-    );
-    data.camera = camera;
-    load_model(data).expect("Failed to load model");
-}
-
 impl App {
     /// Creates our Vulkan app.
     pub unsafe fn create(window: &Window, app: Box<dyn FeatherApp>) -> Result<Self> {
@@ -78,8 +56,6 @@ impl App {
         let entry = Entry::new(loader).map_err(|b| anyhow!("{}", b))?;
         let mut data = AppData {
             app,
-            scene: Scene::default(),
-            camera: PerspectiveCamera::default(),
             messenger: vk::DebugUtilsMessengerEXT::default(),
             surface: vk::SurfaceKHR::default(),
             physical_device: vk::PhysicalDevice::default(),
@@ -104,8 +80,6 @@ impl App {
             texture_image_memory: vk::DeviceMemory::default(),
             texture_image_view: vk::ImageView::default(),
             texture_sampler: vk::Sampler::default(),
-            mesh: 0,
-            mesh_buffer: MeshBuffer::default(),
             uniform_buffers: Vec::new(),
             uniform_buffers_memory: Vec::new(),
             descriptor_pool: vk::DescriptorPool::default(),
@@ -132,9 +106,7 @@ impl App {
         create_texture_image(&instance, &device, &mut data)?;
         create_texture_image_view(&device, &mut data)?;
         create_texture_sampler(&device, &mut data)?;
-        create_scene(&mut data);
         data.app.on_create()?;
-        App::create_mesh_buffers(&instance, &device, &mut data)?;
         create_uniform_buffers(&instance, &device, &mut data)?;
         create_descriptor_pool(&device, &mut data)?;
         create_descriptor_sets(&device, &mut data)?;
@@ -151,40 +123,65 @@ impl App {
         })
     }
 
+    /// Gets the scenes ready for drawing: places new meshes in mesh buffers, uploads mesh
+    /// buffers that are not on the GPU yet, and updates node uniforms and transforms.
     fn prepare_scenes(&mut self) -> Result<()> {
         for i in 0..self.data.app.get_num_scenes_to_render() {
             let scene = self.data.app.get_scene_to_render(i);
             scene.build_missing_mesh_buffers()?;
-            scene.update_dynamic_uniforms();
+            for buffer in scene.buffers.iter_mut() {
+                if !buffer.is_prepared() {
+                    buffer.prepare(
+                        &self.instance,
+                        &self.device,
+                        &self.data.physical_device,
+                        &self.data.command_pool,
+                        &self.data.graphics_queue,
+                        &scene.meshes,
+                    )?;
+                }
+            }
+            scene.update_nodes();
         }
         Ok(())
     }
 
-    unsafe fn create_mesh_buffers(
-        instance: &Instance,
-        device: &Device,
-        data: &mut AppData,
-    ) -> Result<()> {
-        create_vertex_buffer(&instance, &device, data)?;
-        create_index_buffer(&instance, &device, data)?;
-        for i in 0..data.app.get_num_scenes_to_render() {
-            let scene = data.app.get_scene_to_render(i);
-            for buffer in scene.buffers.iter_mut() {
-                buffer.prepare(
-                    &instance,
-                    &device,
-                    &data.physical_device,
-                    &data.command_pool,
-                    &data.graphics_queue,
-                    &scene.meshes,
-                )?;
-            }
+    /// Collects the draw calls of the rendered scene.
+    ///
+    /// Only the first scene is drawn for now: there is one view/projection uniform buffer per
+    /// frame, filled from the first scene's camera.
+    fn collect_draws(&mut self) -> Vec<GpuDraw> {
+        let num_scenes = self.data.app.get_num_scenes_to_render();
+        if num_scenes == 0 {
+            return Vec::new();
         }
-        Ok(())
+        if num_scenes > 1 {
+            static WARN: std::sync::Once = std::sync::Once::new();
+            WARN.call_once(|| log::warn!("Only the first of {num_scenes} scenes is rendered"));
+        }
+
+        let scene = self.data.app.get_scene_to_render(0);
+        scene
+            .draw_items()
+            .into_iter()
+            .filter_map(|item| {
+                let buffer = scene.buffers.get(item.mesh_buffer)?;
+                Some(GpuDraw {
+                    vertex_buffer: buffer.vertex_buffer?,
+                    index_buffer: buffer.index_buffer?,
+                    model: item.model,
+                    first_index: item.first_index,
+                    index_count: item.index_count,
+                    vertex_offset: item.vertex_offset,
+                })
+            })
+            .collect()
     }
 
     /// Renders a frame for our Vulkan app.
     pub unsafe fn render(&mut self, window: &Window) -> Result<()> {
+        let time = self.start.elapsed().as_secs_f32();
+        self.data.app.on_update(time)?;
         self.prepare_scenes()?;
         self.data.app.on_render()?;
         let in_flight_fence = self.data.in_flight_fences[self.frame];
@@ -214,6 +211,8 @@ impl App {
         self.data.images_in_flight[image_index] = in_flight_fence;
 
         self.update_uniform_buffer(image_index)?;
+        let draws = self.collect_draws();
+        record_command_buffer(&self.device, &self.data, image_index, &draws)?;
 
         let wait_semaphores = &[self.data.image_available_semaphores[self.frame]];
         let wait_stages = &[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
@@ -254,24 +253,20 @@ impl App {
         Ok(())
     }
 
-    /// Updates the uniform buffer object for our Vulkan app.
+    /// Fills the uniform buffer of swapchain image `image_index` with the view and projection
+    /// of the first scene's camera.
     unsafe fn update_uniform_buffer(&mut self, image_index: usize) -> Result<()> {
-        // MVP
+        if self.data.app.get_num_scenes_to_render() == 0 {
+            return Ok(());
+        }
 
-        let time = self.start.elapsed().as_secs_f32();
-        self.data.app.on_update(time)?;
-
-        self.data.camera.set_screen_dimention(
-            self.data.swapchain.swapchain_extent.width,
-            self.data.swapchain.swapchain_extent.height,
-        );
-
-        let model = Mat4::from_axis_angle(vec3(0.0, 0.0, 1.0), Deg(10.0) * time);
+        let extent = self.data.swapchain.swapchain_extent;
+        let camera = self.data.app.get_camera_to_render_scene(0);
+        camera.set_screen_dimention(extent.width, extent.height);
 
         let ubo = UniformBufferObject {
-            model,
-            view: self.data.camera.get_view(),
-            proj: self.data.camera.get_projection(),
+            view: camera.get_view(),
+            proj: camera.get_projection(),
         };
 
         // Copy
@@ -324,7 +319,9 @@ impl App {
         self.data.in_flight_fences.iter().for_each(|f| self.device.destroy_fence(*f, None));
         self.data.render_finished_semaphores.iter().for_each(|s| self.device.destroy_semaphore(*s, None));
         self.data.image_available_semaphores.iter().for_each(|s| self.device.destroy_semaphore(*s, None));
-        self.data.mesh_buffer.cleanup(&self.device);
+        for i in 0..self.data.app.get_num_scenes_to_render() {
+            self.data.app.get_scene_to_render(i).destroy(&self.device);
+        }
         self.device.destroy_sampler(self.data.texture_sampler, None);
         self.device.destroy_image_view(self.data.texture_image_view, None);
         self.device.free_memory(self.data.texture_image_memory, None);
