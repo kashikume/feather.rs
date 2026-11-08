@@ -19,8 +19,11 @@ pub struct Node {
     material: Option<usize>,
     /// Uniforms set on this node.
     uniforms: Uniforms,
-    /// Uniforms inherited from the parent, overridden by `uniforms`. Computed by
-    /// `Scene::update_dynamic_uniforms`.
+    /// Uniforms inherited from ancestor nodes (their own uniforms, not their materials').
+    /// Computed by `Scene::update_dynamic_uniforms`.
+    inherited_uniforms: Uniforms,
+    /// Final uniforms of this node: material, then `inherited_uniforms`, then `uniforms`,
+    /// each overriding the previous. Computed by `Scene::update_dynamic_uniforms`.
     dynamic_uniforms: Uniforms,
 }
 
@@ -52,6 +55,7 @@ impl Node {
             mesh: None,
             material: None,
             uniforms: Uniforms::new(),
+            inherited_uniforms: Uniforms::new(),
             dynamic_uniforms: Uniforms::new(),
         }
     }
@@ -104,6 +108,19 @@ impl Node {
         self.mesh = None;
     }
 
+    /// Sets the handle of the node's material (in `Scene::materials`).
+    pub fn set_material(&mut self, material: usize) {
+        self.material = Some(material);
+    }
+
+    pub fn get_material(&self) -> Option<usize> {
+        self.material
+    }
+
+    pub fn remove_material(&mut self) {
+        self.material = None;
+    }
+
     pub fn uniforms(&self) -> &Uniforms {
         &self.uniforms
     }
@@ -112,20 +129,46 @@ impl Node {
         &mut self.uniforms
     }
 
-    /// Uniforms inherited from the parent, overridden by this node's own uniforms.
+    /// Final uniforms of this node: its material's uniforms, overridden by uniforms inherited
+    /// from ancestor nodes, overridden by the node's own uniforms.
     /// Valid after `Scene::update_dynamic_uniforms`.
     pub fn dynamic_uniforms(&self) -> &Uniforms {
         &self.dynamic_uniforms
     }
 
-    /// Recomputes `dynamic_uniforms`: starts from `inherited` (the parent's dynamic uniforms)
-    /// and applies this node's own uniforms on top, replacing ones with the same name.
-    pub(crate) fn update_dynamic_uniforms(&mut self, inherited: &Uniforms) {
-        let mut dynamic = inherited.clone();
-        for uniform in &self.uniforms {
+    /// Uniforms inherited from ancestor nodes. Materials of ancestors are not included.
+    /// Valid after `Scene::update_dynamic_uniforms`.
+    pub fn inherited_uniforms(&self) -> &Uniforms {
+        &self.inherited_uniforms
+    }
+
+    /// Recomputes `inherited_uniforms` and `dynamic_uniforms`.
+    ///
+    /// `inherited` comes from the parent (`uniforms_for_children` of the parent), `material`
+    /// is the uniforms of this node's material, if it has one. Later layers override earlier
+    /// ones with the same name: material, then inherited, then own.
+    pub(crate) fn update_dynamic_uniforms(
+        &mut self,
+        inherited: &Uniforms,
+        material: Option<&Uniforms>,
+    ) {
+        self.inherited_uniforms = inherited.clone();
+
+        let mut dynamic = material.cloned().unwrap_or_default();
+        for uniform in inherited.iter().chain(self.uniforms.iter()) {
             dynamic.set(uniform.name.clone(), uniform.value);
         }
         self.dynamic_uniforms = dynamic;
+    }
+
+    /// Uniforms this node passes to its children: inherited ones overridden by its own.
+    /// The node's material is not passed down; it applies to this node only.
+    pub(crate) fn uniforms_for_children(&self) -> Uniforms {
+        let mut result = self.inherited_uniforms.clone();
+        for uniform in &self.uniforms {
+            result.set(uniform.name.clone(), uniform.value);
+        }
+        result
     }
 }
 
@@ -166,7 +209,7 @@ mod tests {
         assert_eq!(node.get_handle(), usize::MAX);
         assert!(node.get_children().is_empty());
         assert_eq!(node.get_mesh(), None);
-        assert_eq!(node.material, None);
+        assert_eq!(node.get_material(), None);
         assert_eq!(node.transform, Mat4::identity());
         assert_eq!(node.global_transform, None);
         assert!(node.visible);
@@ -251,7 +294,7 @@ mod tests {
 
         let mut node = Node::new_root(None);
         node.uniforms_mut().set("b", 20u32).set("c", 30u32);
-        node.update_dynamic_uniforms(&inherited);
+        node.update_dynamic_uniforms(&inherited, None);
 
         let dynamic = node.dynamic_uniforms();
         assert_eq!(dynamic.get("a"), Some(&UniformValue::UInt(1)));
@@ -270,10 +313,63 @@ mod tests {
         first.set("old", 1u32);
 
         let mut node = Node::new_root(None);
-        node.update_dynamic_uniforms(&first);
-        node.update_dynamic_uniforms(&Uniforms::new());
+        node.update_dynamic_uniforms(&first, None);
+        node.update_dynamic_uniforms(&Uniforms::new(), None);
 
         assert!(node.dynamic_uniforms().is_empty());
+        assert!(node.inherited_uniforms().is_empty());
+    }
+
+    #[test]
+    fn dynamic_uniforms_layer_material_inherited_and_own() {
+        use crate::feather::uniform::UniformValue;
+
+        let mut material = Uniforms::new();
+        material.set("m", 1u32).set("x", 1u32).set("y", 1u32);
+        let mut inherited = Uniforms::new();
+        inherited.set("x", 2u32).set("y", 2u32);
+
+        let mut node = Node::new_root(None);
+        node.uniforms_mut().set("y", 3u32);
+        node.update_dynamic_uniforms(&inherited, Some(&material));
+
+        let dynamic = node.dynamic_uniforms();
+        assert_eq!(dynamic.get("m"), Some(&UniformValue::UInt(1))); // material only
+        assert_eq!(dynamic.get("x"), Some(&UniformValue::UInt(2))); // inherited beats material
+        assert_eq!(dynamic.get("y"), Some(&UniformValue::UInt(3))); // own beats both
+        assert_eq!(node.inherited_uniforms(), &inherited);
+    }
+
+    #[test]
+    fn uniforms_for_children_exclude_material() {
+        use crate::feather::uniform::UniformValue;
+
+        let mut material = Uniforms::new();
+        material.set("m", 1u32);
+        let mut inherited = Uniforms::new();
+        inherited.set("a", 1u32).set("b", 1u32);
+
+        let mut node = Node::new_root(None);
+        node.uniforms_mut().set("b", 2u32);
+        node.update_dynamic_uniforms(&inherited, Some(&material));
+
+        let for_children = node.uniforms_for_children();
+        assert_eq!(for_children.get("m"), None);
+        assert_eq!(for_children.get("a"), Some(&UniformValue::UInt(1)));
+        assert_eq!(for_children.get("b"), Some(&UniformValue::UInt(2)));
+    }
+
+    #[test]
+    fn set_replace_and_remove_material() {
+        let mut node = Node::new_root(None);
+        node.set_material(2);
+        assert_eq!(node.get_material(), Some(2));
+
+        node.set_material(5);
+        assert_eq!(node.get_material(), Some(5));
+
+        node.remove_material();
+        assert_eq!(node.get_material(), None);
     }
 
     #[test]

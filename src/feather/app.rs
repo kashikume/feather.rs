@@ -153,10 +153,9 @@ impl App {
 
     fn prepare_scenes(&mut self) -> Result<()> {
         for i in 0..self.data.app.get_num_scenes_to_render() {
-            self.data
-                .app
-                .get_scene_to_render(i)
-                .build_missing_mesh_buffers()?;
+            let scene = self.data.app.get_scene_to_render(i);
+            scene.build_missing_mesh_buffers()?;
+            scene.update_dynamic_uniforms();
         }
         Ok(())
     }

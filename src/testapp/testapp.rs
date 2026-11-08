@@ -6,6 +6,7 @@ use crate::feather::math::{Point3, Vec3};
 use crate::feather::meshbuilderobjfile::MeshBuilderObjFile;
 use crate::feather::perspectivecamera::PerspectiveCamera;
 use crate::feather::scene::Scene;
+use crate::feather::uniform::UniformValue;
 
 pub struct TestApp {
     scene: Scene,
@@ -67,6 +68,30 @@ impl TestApp {
         let room_mesh = meshbuilderobjfile.build(&mut scene).unwrap();
 
         scene.node_set_mesh(room_node, room_mesh).unwrap();
+
+        // Material: the basic shader with the room texture bound to its `texSampler`.
+        let shader = scene
+            .create_shader(
+                Some("Basic".to_string()),
+                include_bytes!(concat!(env!("OUT_DIR"), "/shaders/shader.vert.spv")),
+                include_bytes!(concat!(env!("OUT_DIR"), "/shaders/shader.frag.spv")),
+            )
+            .unwrap();
+        let room_atlas = scene
+            .create_atlas_from_png("resources/viking_room.png", None)
+            .unwrap();
+        let room_texture = scene
+            .create_full_atlas_texture(Some("Room texture".to_string()), room_atlas)
+            .unwrap();
+        let room_material = scene
+            .create_material(Some("Room".to_string()), shader)
+            .unwrap();
+        scene
+            .get_material_mut(room_material)
+            .unwrap()
+            .uniforms_mut()
+            .set("texSampler", UniformValue::Texture(room_texture));
+        scene.node_set_material(room_node, room_material).unwrap();
 
         //let meshbuildercuboid =
         //    meshbuildercuboid::MeshBuilderCuboid::new_same_walls((-0.5, 0.5), (-0.5, 0.5), (-0.5, 0.5));

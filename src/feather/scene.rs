@@ -1,7 +1,9 @@
 use anyhow::Result;
 use vulkanalia::Device;
 
-use crate::feather::{atlas::Atlas, object::Object, texture::Texture};
+use crate::feather::{
+    atlas::Atlas, material::Material, object::Object, shader::Shader, texture::Texture,
+};
 
 use super::{mesh::Mesh, meshbuffer::MeshBuffer, node::Node, objdb::ObjDB, uniforms::Uniforms};
 
@@ -11,6 +13,8 @@ pub struct Scene {
     pub nodes: ObjDB<Node>,
     pub atlases: ObjDB<Atlas>,
     pub textures: ObjDB<Texture>,
+    pub shaders: ObjDB<Shader>,
+    pub materials: ObjDB<Material>,
     needs_create_mesh_buffer: bool,
 }
 
@@ -22,6 +26,8 @@ impl Scene {
             nodes: ObjDB::new(),
             atlases: ObjDB::new(),
             textures: ObjDB::new(),
+            shaders: ObjDB::new(),
+            materials: ObjDB::new(),
             needs_create_mesh_buffer: false,
         }
     }
@@ -83,6 +89,70 @@ impl Scene {
         Ok(())
     }
 
+    /// Assigns a material to a node. Fails if the node or the material does not exist.
+    pub fn node_set_material(&mut self, node_handle: usize, material_handle: usize) -> Result<()> {
+        if self.materials.get(material_handle).is_none() {
+            anyhow::bail!("Material {material_handle} not found");
+        }
+        self.get_node_mut(node_handle)
+            .ok_or_else(|| anyhow::anyhow!("Node {node_handle} not found"))?
+            .set_material(material_handle);
+        Ok(())
+    }
+
+    // --- shaders and materials ---
+
+    pub fn add_shader(&mut self, shader: Shader) -> usize {
+        self.shaders.add(shader)
+    }
+
+    /// Creates a shader from vertex and fragment SPIR-V and adds it to the scene.
+    pub fn create_shader(
+        &mut self,
+        name: Option<String>,
+        vertex: &[u8],
+        fragment: &[u8],
+    ) -> Result<usize> {
+        let shader = Shader::new(name, vertex, fragment)?;
+        Ok(self.add_shader(shader))
+    }
+
+    pub fn get_shader(&self, handle: usize) -> Option<&Shader> {
+        self.shaders.get(handle)
+    }
+
+    /// Creates a material using the given shader. Fails if the shader does not exist.
+    pub fn create_material(&mut self, name: Option<String>, shader_handle: usize) -> Result<usize> {
+        if self.shaders.get(shader_handle).is_none() {
+            anyhow::bail!("Shader {shader_handle} not found");
+        }
+        Ok(self.materials.add(Material::new(name, shader_handle)))
+    }
+
+    pub fn get_material(&self, handle: usize) -> Option<&Material> {
+        self.materials.get(handle)
+    }
+
+    pub fn get_material_mut(&mut self, handle: usize) -> Option<&mut Material> {
+        self.materials.get_mut(handle)
+    }
+
+    /// Changes a material's shader. Fails if the material or the shader does not exist.
+    pub fn material_set_shader(
+        &mut self,
+        material_handle: usize,
+        shader_handle: usize,
+    ) -> Result<()> {
+        if self.shaders.get(shader_handle).is_none() {
+            anyhow::bail!("Shader {shader_handle} not found");
+        }
+        self.materials
+            .get_mut(material_handle)
+            .ok_or_else(|| anyhow::anyhow!("Material {material_handle} not found"))?
+            .set_shader(shader_handle);
+        Ok(())
+    }
+
     /// Recomputes dynamic uniforms of every node, starting from the root nodes.
     pub fn update_dynamic_uniforms(&mut self) {
         let roots: Vec<usize> = self
@@ -97,7 +167,7 @@ impl Scene {
     }
 
     /// Recomputes dynamic uniforms of a node and all its descendants. Use it after changing
-    /// uniforms of one node; the node's parent must already be up to date.
+    /// uniforms of one node or of its material; the node's parent must already be up to date.
     pub fn update_node_dynamic_uniforms(&mut self, node_handle: usize) -> Result<()> {
         let node = self
             .nodes
@@ -106,7 +176,7 @@ impl Scene {
         let inherited = node
             .get_parent()
             .and_then(|p| self.nodes.get(p))
-            .map(|p| p.dynamic_uniforms().clone())
+            .map(|p| p.uniforms_for_children())
             .unwrap_or_default();
         self.update_subtree_dynamic_uniforms(node_handle, &inherited);
         Ok(())
@@ -119,10 +189,14 @@ impl Scene {
             let Some(node) = self.nodes.get_mut(handle) else {
                 continue;
             };
-            node.update_dynamic_uniforms(&inherited);
-            let dynamic = node.dynamic_uniforms();
+            let material = node
+                .get_material()
+                .and_then(|m| self.materials.get(m))
+                .map(|m| m.uniforms());
+            node.update_dynamic_uniforms(&inherited, material);
+            let for_children = node.uniforms_for_children();
             for &child in node.get_children() {
-                stack.push((child, dynamic.clone()));
+                stack.push((child, for_children.clone()));
             }
         }
     }
@@ -457,6 +531,132 @@ mod tests {
         assert!(scene.node_set_mesh(root, 0).is_err());
     }
 
+    // --- shaders and materials ---
+
+    use crate::feather::shader::tests::{FRAG, VERT};
+
+    #[test]
+    fn create_shader_adds_it() {
+        let mut scene = Scene::new();
+        let shader = scene
+            .create_shader(Some("basic".to_string()), VERT, FRAG)
+            .unwrap();
+
+        let shader_obj = scene.get_shader(shader).unwrap();
+        assert_eq!(shader_obj.get_handle(), shader);
+        assert_eq!(shader_obj.get_vertex(), VERT);
+        assert_eq!(
+            scene.shaders.get_by_name("basic").unwrap().get_handle(),
+            shader
+        );
+    }
+
+    #[test]
+    fn create_shader_with_invalid_code_fails() {
+        let mut scene = Scene::new();
+        assert!(scene.create_shader(None, &[1, 2, 3], FRAG).is_err());
+        assert_eq!(scene.shaders.iter().count(), 0);
+    }
+
+    #[test]
+    fn create_material_uses_shader() {
+        let mut scene = Scene::new();
+        let shader = scene.create_shader(None, VERT, FRAG).unwrap();
+        let material = scene
+            .create_material(Some("wood".to_string()), shader)
+            .unwrap();
+
+        let material_obj = scene.get_material(material).unwrap();
+        assert_eq!(material_obj.get_handle(), material);
+        assert_eq!(material_obj.get_shader(), shader);
+        assert_eq!(material_obj.get_name(), Some("wood".to_string()));
+    }
+
+    #[test]
+    fn create_material_with_invalid_shader_fails() {
+        let mut scene = Scene::new();
+        assert!(scene.create_material(None, 42).is_err());
+        assert_eq!(scene.materials.iter().count(), 0);
+    }
+
+    #[test]
+    fn material_uniforms_can_hold_texture() {
+        let mut scene = Scene::new();
+        let atlas = scene.add_atlas(test_atlas(None));
+        let texture = scene.create_full_atlas_texture(None, atlas).unwrap();
+        let shader = scene.create_shader(None, VERT, FRAG).unwrap();
+        let material = scene.create_material(None, shader).unwrap();
+
+        scene
+            .get_material_mut(material)
+            .unwrap()
+            .uniforms_mut()
+            .set("texSampler", UniformValue::Texture(texture));
+
+        assert_eq!(
+            scene
+                .get_material(material)
+                .unwrap()
+                .uniforms()
+                .get("texSampler"),
+            Some(&UniformValue::Texture(texture))
+        );
+    }
+
+    #[test]
+    fn material_set_shader() {
+        let mut scene = Scene::new();
+        let s1 = scene.create_shader(None, VERT, FRAG).unwrap();
+        let s2 = scene.create_shader(None, VERT, FRAG).unwrap();
+        let material = scene.create_material(None, s1).unwrap();
+
+        scene.material_set_shader(material, s2).unwrap();
+        assert_eq!(scene.get_material(material).unwrap().get_shader(), s2);
+
+        assert!(scene.material_set_shader(material, 42).is_err());
+        assert!(scene.material_set_shader(42, s1).is_err());
+        assert_eq!(scene.get_material(material).unwrap().get_shader(), s2);
+    }
+
+    #[test]
+    fn node_set_material() {
+        let mut scene = Scene::new();
+        let node = scene.create_root_node(None);
+        let shader = scene.create_shader(None, VERT, FRAG).unwrap();
+        let material = scene.create_material(None, shader).unwrap();
+
+        scene.node_set_material(node, material).unwrap();
+        assert_eq!(scene.get_node(node).unwrap().get_material(), Some(material));
+    }
+
+    #[test]
+    fn node_set_material_with_invalid_handles_fails() {
+        let mut scene = Scene::new();
+        let node = scene.create_root_node(None);
+        let shader = scene.create_shader(None, VERT, FRAG).unwrap();
+        let material = scene.create_material(None, shader).unwrap();
+
+        assert!(scene.node_set_material(node, 42).is_err());
+        assert!(scene.node_set_material(42, material).is_err());
+        assert_eq!(scene.get_node(node).unwrap().get_material(), None);
+    }
+
+    #[test]
+    fn materials_are_shared_between_nodes() {
+        let mut scene = Scene::new();
+        let a = scene.create_root_node(None);
+        let b = scene.create_root_node(None);
+        let shader = scene.create_shader(None, VERT, FRAG).unwrap();
+        let material = scene.create_material(None, shader).unwrap();
+
+        scene.node_set_material(a, material).unwrap();
+        scene.node_set_material(b, material).unwrap();
+
+        assert_eq!(scene.get_node(a).unwrap().get_material(), Some(material));
+        assert_eq!(scene.get_node(b).unwrap().get_material(), Some(material));
+        assert_eq!(scene.materials.iter().count(), 1);
+    }
+
     // --- dynamic uniforms ---
 
     #[test]
@@ -624,6 +824,137 @@ mod tests {
         let dynamic = scene.get_node(child).unwrap().dynamic_uniforms();
         assert_eq!(dynamic.get("x"), None);
         assert_eq!(dynamic.get("y"), Some(&UniformValue::UInt(2)));
+    }
+
+    /// Creates a material with one uniform and returns its handle.
+    fn material_with(scene: &mut Scene, name: &str, value: u32) -> usize {
+        let shader = scene.create_shader(None, VERT, FRAG).unwrap();
+        let material = scene.create_material(None, shader).unwrap();
+        scene
+            .get_material_mut(material)
+            .unwrap()
+            .uniforms_mut()
+            .set(name, value);
+        material
+    }
+
+    #[test]
+    fn material_uniforms_are_part_of_dynamic_uniforms() {
+        let mut scene = Scene::new();
+        let node = scene.create_root_node(None);
+        let material = material_with(&mut scene, "m", 1);
+        scene.node_set_material(node, material).unwrap();
+
+        scene.update_dynamic_uniforms();
+
+        assert_eq!(
+            scene.get_node(node).unwrap().dynamic_uniforms().get("m"),
+            Some(&UniformValue::UInt(1))
+        );
+    }
+
+    #[test]
+    fn node_uniforms_override_material_uniforms() {
+        let mut scene = Scene::new();
+        let root = scene.create_root_node(None);
+        let child = scene.create_node(None, root).unwrap();
+        let material = material_with(&mut scene, "x", 1);
+        scene.node_set_material(child, material).unwrap();
+        scene.node_set_material(root, material).unwrap();
+        // Own uniform beats the root's material; inherited beats the child's material.
+        scene
+            .get_node_mut(root)
+            .unwrap()
+            .uniforms_mut()
+            .set("x", 2u32);
+
+        scene.update_dynamic_uniforms();
+
+        assert_eq!(
+            scene.get_node(root).unwrap().dynamic_uniforms().get("x"),
+            Some(&UniformValue::UInt(2))
+        );
+        assert_eq!(
+            scene.get_node(child).unwrap().dynamic_uniforms().get("x"),
+            Some(&UniformValue::UInt(2))
+        );
+    }
+
+    #[test]
+    fn material_uniforms_are_not_inherited() {
+        let mut scene = Scene::new();
+        let root = scene.create_root_node(None);
+        let child = scene.create_node(None, root).unwrap();
+        let root_material = material_with(&mut scene, "texSampler", 1);
+        let child_material = material_with(&mut scene, "texSampler", 2);
+        scene.node_set_material(root, root_material).unwrap();
+        scene.node_set_material(child, child_material).unwrap();
+        let grandchild = scene.create_node(None, child).unwrap();
+
+        scene.update_dynamic_uniforms();
+
+        // The child uses its own material, not the root's.
+        assert_eq!(
+            scene
+                .get_node(child)
+                .unwrap()
+                .dynamic_uniforms()
+                .get("texSampler"),
+            Some(&UniformValue::UInt(2))
+        );
+        // A node without a material gets nothing from its ancestors' materials.
+        assert_eq!(
+            scene
+                .get_node(grandchild)
+                .unwrap()
+                .dynamic_uniforms()
+                .get("texSampler"),
+            None
+        );
+    }
+
+    #[test]
+    fn update_node_dynamic_uniforms_picks_up_material_change() {
+        let mut scene = Scene::new();
+        let root = scene.create_root_node(None);
+        let child = scene.create_node(None, root).unwrap();
+        scene
+            .get_node_mut(root)
+            .unwrap()
+            .uniforms_mut()
+            .set("a", 1u32);
+        let material = material_with(&mut scene, "m", 1);
+        scene.node_set_material(child, material).unwrap();
+        scene.update_dynamic_uniforms();
+
+        scene
+            .get_material_mut(material)
+            .unwrap()
+            .uniforms_mut()
+            .set("m", 5u32);
+        scene.update_node_dynamic_uniforms(child).unwrap();
+
+        let dynamic = scene.get_node(child).unwrap().dynamic_uniforms();
+        assert_eq!(dynamic.get("m"), Some(&UniformValue::UInt(5)));
+        // Still inherits from the parent.
+        assert_eq!(dynamic.get("a"), Some(&UniformValue::UInt(1)));
+    }
+
+    #[test]
+    fn update_node_dynamic_uniforms_does_not_inherit_parent_material() {
+        let mut scene = Scene::new();
+        let root = scene.create_root_node(None);
+        let child = scene.create_node(None, root).unwrap();
+        let material = material_with(&mut scene, "m", 1);
+        scene.node_set_material(root, material).unwrap();
+        scene.update_dynamic_uniforms();
+
+        scene.update_node_dynamic_uniforms(child).unwrap();
+
+        assert_eq!(
+            scene.get_node(child).unwrap().dynamic_uniforms().get("m"),
+            None
+        );
     }
 
     // --- atlases and textures ---
