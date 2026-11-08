@@ -5,6 +5,7 @@ use vulkanalia::prelude::v1_0::*;
 use super::buffers::FrameUniformBuffer;
 use super::featherapp::FeatherApp;
 use super::gpuimage::GpuImage;
+use super::gpumeshbuffer::GpuMeshBuffer;
 use super::pipeline::ShaderPipeline;
 use super::uniformdata::UniformIssue;
 use super::swapchain::Swapchain;
@@ -47,6 +48,11 @@ pub struct AppData {
     pub depth_image: vk::Image,
     pub depth_image_memory: vk::DeviceMemory,
     pub depth_image_view: vk::ImageView,
+    /// `Scene::get_id` of the scene the GPU state below belongs to. GPU state is keyed by the
+    /// scene's handles, so it is dropped when the app renders a different scene.
+    pub rendered_scene: Option<u64>,
+    /// Mesh buffers of the rendered scene on the GPU, by mesh buffer handle.
+    pub gpu_mesh_buffers: HashMap<usize, GpuMeshBuffer>,
     // Textures
     /// Sampler used for every texture.
     pub texture_sampler: vk::Sampler,

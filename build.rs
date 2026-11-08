@@ -2,10 +2,11 @@
 //!
 //! Every shader under `shaders/` (`.vert`, `.frag`, `.comp`, `.geom`, `.tesc`, `.tese`) is
 //! compiled with `glslc` into `$OUT_DIR/shaders/<same relative path>.spv`, e.g.
-//! `shaders/shader.vert` -> `$OUT_DIR/shaders/shader.vert.spv`.
+//! `shaders/demo_000_viking_room_shader.vert` ->
+//! `$OUT_DIR/shaders/demo_000_viking_room_shader.vert.spv`.
 //!
 //! Embed a compiled shader with:
-//! `include_bytes!(concat!(env!("OUT_DIR"), "/shaders/shader.vert.spv"))`
+//! `include_bytes!(concat!(env!("OUT_DIR"), "/shaders/demo_000_viking_room_shader.vert.spv"))`
 //!
 //! `glslc` is looked up in this order:
 //! 1. the `GLSLC` environment variable (full path to the executable),
@@ -14,7 +15,8 @@
 //!
 //! Everything under `resources/` is copied to an `assets/` directory next to the built
 //! executable (e.g. `target/debug/assets/`), where `AssetsProvider` reads it at runtime.
-//! Compiled shaders are copied there too, directly into `assets/`, e.g. `assets/shader.vert.spv`.
+//! Compiled shaders are copied there too, directly into `assets/`, e.g.
+//! `assets/demo_000_viking_room_shader.vert.spv`.
 //! Shaders in `shaders/tests/` (used by unit tests only) are not copied.
 
 use std::env;

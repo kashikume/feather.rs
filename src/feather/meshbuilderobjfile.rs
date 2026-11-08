@@ -12,27 +12,21 @@ use anyhow::{Context, Result};
 /// Builds a mesh from a Wavefront OBJ file. Materials (`.mtl`) are ignored.
 pub struct MeshBuilderObjFile {
     obj: Vec<u8>,
-    name: Option<String>,
 }
 
 impl MeshBuilderObjFile {
-    /// Reads the OBJ asset `asset` (e.g. `"viking_room.obj"`) from `assets`.
+    /// Reads the OBJ asset `asset` (e.g. `"demo_000_viking_room_mesh.obj"`) from `assets`.
     pub fn new(assets: &dyn AssetsProvider, asset: &str) -> Result<Self> {
         Ok(Self::from_bytes(assets.get_asset(asset)?))
     }
 
     /// Uses OBJ data already in memory.
     pub fn from_bytes(obj: Vec<u8>) -> Self {
-        Self { obj, name: None }
+        Self { obj }
     }
 
-    /// Sets the name of the mesh to build.
-    pub fn with_name(mut self, name: Option<String>) -> Self {
-        self.name = name;
-        self
-    }
-
-    pub fn build(self, scene: &mut Scene) -> Result<usize> {
+    /// Builds the mesh, named `name`, adds it to `scene` and returns its handle.
+    pub fn build(self, scene: &mut Scene, name: Option<String>) -> Result<usize> {
         let (models, _) = tobj::load_obj_buf(
             &mut self.obj.as_slice(),
             &tobj::LoadOptions {
@@ -84,7 +78,7 @@ impl MeshBuilderObjFile {
             }
         }
 
-        let mesh = Mesh::new(self.name, vertices, indices);
+        let mesh = Mesh::new(name, vertices, indices);
         Ok(scene.add_mesh(mesh))
     }
 }
@@ -110,7 +104,7 @@ f 1/1/1 2/2/1 3/3/1
     fn builds_mesh_from_bytes() {
         let mut scene = Scene::new();
         let mesh = MeshBuilderObjFile::from_bytes(TRIANGLE.as_bytes().to_vec())
-            .build(&mut scene)
+            .build(&mut scene, None)
             .unwrap();
 
         let mesh = scene.get_mesh(mesh).unwrap();
@@ -119,11 +113,10 @@ f 1/1/1 2/2/1 3/3/1
     }
 
     #[test]
-    fn with_name_names_the_mesh() {
+    fn build_names_the_mesh() {
         let mut scene = Scene::new();
         let mesh = MeshBuilderObjFile::from_bytes(TRIANGLE.as_bytes().to_vec())
-            .with_name(Some("triangle".to_string()))
-            .build(&mut scene)
+            .build(&mut scene, Some("triangle".to_string()))
             .unwrap();
         assert_eq!(scene.meshes.get_by_name("triangle").unwrap().get_handle(), mesh);
     }
@@ -145,7 +138,7 @@ f 1/1/1 3/3/1 4/4/1
 ";
         let mut scene = Scene::new();
         let mesh = MeshBuilderObjFile::from_bytes(quad.as_bytes().to_vec())
-            .build(&mut scene)
+            .build(&mut scene, None)
             .unwrap();
 
         let mesh = scene.get_mesh(mesh).unwrap();
@@ -156,9 +149,9 @@ f 1/1/1 3/3/1 4/4/1
     #[test]
     fn loads_asset() {
         let mut scene = Scene::new();
-        let mesh = MeshBuilderObjFile::new(&*test_resources(), "viking_room.obj")
+        let mesh = MeshBuilderObjFile::new(&*test_resources(), "demo_000_viking_room_mesh.obj")
             .unwrap()
-            .build(&mut scene)
+            .build(&mut scene, None)
             .unwrap();
 
         let mesh = scene.get_mesh(mesh).unwrap();
@@ -176,7 +169,7 @@ f 1/1/1 3/3/1 4/4/1
     fn invalid_obj_fails() {
         let mut scene = Scene::new();
         let result = MeshBuilderObjFile::from_bytes(b"f 1 2 3
-".to_vec()).build(&mut scene);
+".to_vec()).build(&mut scene, None);
         assert!(result.is_err());
     }
 }

@@ -1,0 +1,46 @@
+{
+  "atlases": [
+    { "name": "Cube atlas", "file": "demo_001_cuboid_atlas.png" }
+  ],
+  "textures": [
+    { "name": "Cube texture", "atlas": "Cube atlas" }
+  ],
+  "meshes": [
+    { "name": "Cube", "cuboid": {} }
+  ],
+  "shaders": [
+    {
+      "name": "Basic",
+      "vertex": "demo_001_cuboid_shader.vert.spv",
+      "fragment": "demo_001_cuboid_shader.frag.spv",
+      "model_uniform": "model",
+      "view_uniform": "view",
+      "projection_uniform": "proj"
+    }
+  ],
+  "materials": [
+    {
+      "name": "Cube",
+      "shader": "Basic",
+      "uniforms": {
+        "texSampler": { "texture": "Cube texture" }
+      }
+    }
+  ],
+  "root": {
+    "name": "Scene root",
+    "children": [
+      {
+        "name": "Rotation",
+        "children": [
+          {
+            "name": "Cube",
+            "mesh": "Cube",
+            "material": "Cube",
+            "transform": { "scale": [1.5, 1.0, 0.5] }
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -60,16 +60,16 @@ mod tests {
 
     #[test]
     fn get_asset_reads_file() {
-        let bytes = resources().get_asset("texture.png").unwrap();
-        assert_eq!(bytes, expected("texture.png"));
+        let bytes = resources().get_asset("demo_001_cuboid_atlas.png").unwrap();
+        assert_eq!(bytes, expected("demo_001_cuboid_atlas.png"));
     }
 
     #[test]
     fn get_asset_through_trait_object() {
         let provider: Box<dyn AssetsProvider> = Box::new(resources());
         assert_eq!(
-            provider.get_asset("viking_room.obj").unwrap(),
-            expected("viking_room.obj")
+            provider.get_asset("demo_000_viking_room_mesh.obj").unwrap(),
+            expected("demo_000_viking_room_mesh.obj")
         );
     }
 

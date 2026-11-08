@@ -1,18 +1,49 @@
-use anyhow::Result;
-use cgmath::Deg;
+use anyhow::{anyhow, Result};
+use winit::keyboard::KeyCode;
 
-use crate::feather::assetsprovider::create_assets_provider;
+use crate::feather::assetsprovider::{create_assets_provider, AssetsProvider};
 use crate::feather::camera::Camera;
 use crate::feather::featherapp::FeatherApp;
-use crate::feather::math::{Mat4, Point3, Vec3};
-use crate::feather::perspectivecamera::PerspectiveCamera;
 use crate::feather::scene::Scene;
 
+use super::demo_000_viking_room::VikingRoomDemo;
+use super::demo_001_cuboid::CuboidDemo;
+
+/// One demo of the test app: a scene, the camera looking at it, and its animation.
+pub trait Demo {
+    fn scene(&mut self) -> &mut Scene;
+    fn camera(&mut self) -> &mut dyn Camera;
+    /// Called every frame; `time` is in seconds since the demo started.
+    fn update(&mut self, time: f32) -> Result<()>;
+}
+
+/// An entry of the demo list.
+pub struct DemoInfo {
+    pub name: &'static str,
+    pub create: fn(&dyn AssetsProvider) -> Result<Box<dyn Demo>>,
+}
+
+/// All demos, by number.
+pub const DEMOS: &[DemoInfo] = &[
+    DemoInfo {
+        name: "Viking room",
+        create: |assets| Ok(Box::new(VikingRoomDemo::new(assets)?)),
+    },
+    DemoInfo {
+        name: "Cuboid",
+        create: |assets| Ok(Box::new(CuboidDemo::new(assets)?)),
+    },
+];
+
+/// The development app: shows one demo at a time. Left and right arrows switch to the
+/// previous and next demo, wrapping around.
 pub struct TestApp {
-    scene: Scene,
-    camera: PerspectiveCamera,
-    /// Spun in `on_update`.
-    room_node: usize,
+    assets: Box<dyn AssetsProvider>,
+    demo_index: usize,
+    demo: Box<dyn Demo>,
+    /// App time (as passed to `on_update`) when the current demo started; `None` until its
+    /// first update.
+    demo_start: Option<f32>,
 }
 
 impl FeatherApp for TestApp {
@@ -28,12 +59,8 @@ impl FeatherApp for TestApp {
 
     fn on_update(&mut self, time: f32) -> Result<()> {
         log::trace!("on_update called with time: {}", time);
-        // Spin the room around the Z axis, 10 degrees per second.
-        self.scene
-            .get_node_mut(self.room_node)
-            .unwrap()
-            .set_transform(Mat4::from_angle_z(Deg(10.0 * time)));
-        Ok(())
+        let start = *self.demo_start.get_or_insert(time);
+        self.demo.update(time - start)
     }
 
     fn on_destroy(&mut self) {
@@ -45,31 +72,51 @@ impl FeatherApp for TestApp {
     }
 
     fn get_scene_to_render(&mut self, _scene_index: usize) -> &mut Scene {
-        &mut self.scene
+        self.demo.scene()
     }
 
     fn get_camera_to_render_scene(&mut self, _scene_index: usize) -> &mut dyn Camera {
-        &mut self.camera
+        self.demo.camera()
+    }
+
+    fn on_key_pressed(&mut self, key: KeyCode) -> Result<()> {
+        let count = DEMOS.len();
+        match key {
+            KeyCode::ArrowRight => self.show_demo((self.demo_index + 1) % count),
+            KeyCode::ArrowLeft => self.show_demo((self.demo_index + count - 1) % count),
+            _ => Ok(()),
+        }
     }
 }
 
 impl TestApp {
-    pub fn new() -> Self {
-        let assets = create_assets_provider("assets").unwrap();
-        let scene = Scene::load(&*assets, "viking_room.scene.json").unwrap();
-        let room_node = scene.find_node("Room").unwrap();
-
-        let mut camera = PerspectiveCamera::new();
-        camera.set_fov(45.0).set_near_far(0.1, 10.0).set_view(
-            Point3::new(2.0, 2.0, 2.0),
-            Point3::new(0.0, 0.0, 0.0),
-            Vec3::new(0.0, 0.0, 1.0),
-        );
-
-        Self {
-            scene,
-            camera,
-            room_node,
-        }
+    /// Creates the app showing demo `demo_index` (see `DEMOS`).
+    pub fn new(demo_index: usize) -> Result<Self> {
+        let assets = create_assets_provider("assets")?;
+        let demo = create_demo(&*assets, demo_index)?;
+        Ok(Self {
+            assets,
+            demo_index,
+            demo,
+            demo_start: None,
+        })
     }
+
+    /// Replaces the current demo with demo `index`. If it can't be created, the current demo
+    /// stays and the error is returned.
+    fn show_demo(&mut self, index: usize) -> Result<()> {
+        self.demo = create_demo(&*self.assets, index)?;
+        self.demo_index = index;
+        self.demo_start = None;
+        Ok(())
+    }
+}
+
+fn create_demo(assets: &dyn AssetsProvider, index: usize) -> Result<Box<dyn Demo>> {
+    let info = DEMOS
+        .get(index)
+        .ok_or_else(|| anyhow!("there is no demo {index}"))?;
+    log::info!("Demo {index}: {}", info.name);
+    (info.create)(assets)
+        .map_err(|e| e.context(format!("Cannot create demo {index} ({})", info.name)))
 }

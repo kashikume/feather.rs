@@ -6,11 +6,14 @@
 //!
 //! ```json
 //! {
-//!   "atlases":  [{ "name": "Room", "file": "viking_room.png" }],
+//!   "atlases":  [{ "name": "Room", "file": "demo_000_viking_room_atlas.png" }],
 //!   "textures": [{ "name": "Room", "atlas": "Room" },
 //!                { "name": "Corner", "atlas": "Room", "rect": [0.0, 0.0, 0.5, 0.5] }],
-//!   "meshes":   [{ "name": "Room", "file": "viking_room.obj" }],
-//!   "shaders":  [{ "name": "Basic", "vertex": "shader.vert.spv", "fragment": "shader.frag.spv",
+//!   "meshes":   [{ "name": "Room", "file": "demo_000_viking_room_mesh.obj" },
+//!                { "name": "Box", "cuboid": { "x": [-1, 1], "y": [-1, 1], "z": [0, 2] } }],
+//!   "shaders":  [{ "name": "Basic",
+//!                  "vertex": "demo_000_viking_room_shader.vert.spv",
+//!                  "fragment": "demo_000_viking_room_shader.frag.spv",
 //!                  "model_uniform": "model", "view_uniform": "view",
 //!                  "projection_uniform": "proj" }],
 //!   "materials": [{ "name": "Room", "shader": "Basic",
@@ -27,6 +30,9 @@
 //! ```
 //!
 //! - Every list item needs a name, unique within its list. All lists are optional.
+//! - A mesh is either an OBJ `file` or a `cuboid` with optional `x`, `y`, `z` ranges (default
+//!   `[-0.5, 0.5]`, so `"cuboid": {}` is a 1x1x1 cube centred on the origin) and optional
+//!   per-wall `u`, `v` texture ranges.
 //! - A texture without `rect` covers its whole atlas and becomes the atlas's full texture;
 //!   `rect` is `[u_min, v_min, u_range, v_range]` in UV space.
 //! - Uniform values are written as `{ "<glsl type>": value }`: `float`, `int`, `uint`, `bool`,
@@ -45,6 +51,7 @@ use serde::Deserialize;
 
 use super::assetsprovider::AssetsProvider;
 use super::math::{IVec2, IVec3, IVec4, Mat4, UVec2, UVec3, UVec4, Vec2, Vec3, Vec4};
+use super::meshbuildercuboid::MeshBuilderCuboid;
 use super::meshbuilderobjfile::MeshBuilderObjFile;
 use super::scene::Scene;
 use super::texture::Texture;
@@ -88,8 +95,26 @@ struct TextureEntry {
 #[serde(deny_unknown_fields)]
 struct MeshEntry {
     name: String,
-    /// OBJ asset.
-    file: String,
+    /// OBJ asset. Exactly one of `file` and `cuboid` must be given.
+    file: Option<String>,
+    cuboid: Option<CuboidEntry>,
+}
+
+/// A box with walls parallel to the axes (`MeshBuilderCuboid`). `{}` is the default 1x1x1 cube
+/// centred on the origin.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CuboidEntry {
+    /// `[min, max]` along each axis; `[-0.5, 0.5]` when missing.
+    x: Option<[f32; 2]>,
+    y: Option<[f32; 2]>,
+    z: Option<[f32; 2]>,
+    /// Texture coordinates `[min, max]` of each wall, in wall order; when the list is shorter
+    /// than 6 it repeats. Default: the whole texture on every wall.
+    #[serde(default)]
+    u: Vec<[f32; 2]>,
+    #[serde(default)]
+    v: Vec<[f32; 2]>,
 }
 
 #[derive(Deserialize)]
@@ -180,6 +205,8 @@ impl Scene {
     pub fn load(assets: &dyn AssetsProvider, asset: &str) -> Result<Scene> {
         let json = assets.get_asset(asset)?;
         let json = std::str::from_utf8(&json).with_context(|| format!("{asset} is not UTF-8"))?;
+        // Windows tools often start UTF-8 files with a byte order mark.
+        let json = json.strip_prefix('\u{feff}').unwrap_or(json);
         Self::from_json(assets, json).with_context(|| format!("Cannot load scene {asset}"))
     }
 
@@ -220,9 +247,38 @@ impl Scene {
 
         let mut meshes = HashMap::new();
         for entry in &file.meshes {
-            let handle = MeshBuilderObjFile::new(assets, &entry.file)
-                .and_then(|b| b.with_name(Some(entry.name.clone())).build(&mut scene))
-                .with_context(|| format!("mesh `{}`", entry.name))?;
+            let name = Some(entry.name.clone());
+            let handle = match (&entry.file, &entry.cuboid) {
+                (Some(file), None) => MeshBuilderObjFile::new(assets, file)
+                    .and_then(|b| b.build(&mut scene, name)),
+                (None, Some(c)) => {
+                    let is_default = c.x.is_none()
+                        && c.y.is_none()
+                        && c.z.is_none()
+                        && c.u.is_empty()
+                        && c.v.is_empty();
+                    let builder = if is_default {
+                        MeshBuilderCuboid::default()
+                    } else {
+                        let range = |r: Option<[f32; 2]>| {
+                            let [min, max] = r.unwrap_or([-0.5, 0.5]);
+                            (min, max)
+                        };
+                        let pairs =
+                            |list: &[[f32; 2]]| list.iter().map(|[a, b]| (*a, *b)).collect();
+                        MeshBuilderCuboid::new(
+                            range(c.x),
+                            range(c.y),
+                            range(c.z),
+                            Some(pairs(&c.u)),
+                            Some(pairs(&c.v)),
+                        )
+                    };
+                    builder.build(&mut scene, name)
+                }
+                _ => Err(anyhow!("a mesh needs exactly one of `file` and `cuboid`")),
+            }
+            .with_context(|| format!("mesh `{}`", entry.name))?;
             meshes.insert(entry.name.as_str(), handle);
         }
 
@@ -622,15 +678,113 @@ mod tests {
             let name = path.file_name().unwrap().to_string_lossy().into_owned();
             assets.assets.insert(name, std::fs::read(&path).unwrap());
         }
-        assets.assets.insert("shader.vert.spv".to_string(), VERT.to_vec());
-        assets.assets.insert("shader.frag.spv".to_string(), FRAG.to_vec());
+        assets.assets.insert("demo_000_viking_room_shader.vert.spv".to_string(), VERT.to_vec());
+        assets.assets.insert("demo_000_viking_room_shader.frag.spv".to_string(), FRAG.to_vec());
 
-        let scene = Scene::load(&assets, "viking_room.scene.json").unwrap();
+        let scene = Scene::load(&assets, "demo_000_viking_room_scene.json").unwrap();
 
         let room = scene.get_node(scene.find_node("Room").unwrap()).unwrap();
         assert!(room.get_mesh().is_some());
         assert!(room.get_material().is_some());
         assert_eq!(scene.get_node(room.get_parent().unwrap()).unwrap().get_name(), Some("Scene root".to_string()));
+    }
+
+    #[test]
+    fn cuboid_mesh() {
+        let json = r#"{
+            "meshes": [
+                { "name": "Box", "cuboid": { "x": [-1, 1], "y": [-2, 2], "z": [0, 3] } },
+                { "name": "Tiled", "cuboid": { "x": [0, 1], "y": [0, 1], "z": [0, 1],
+                                              "u": [[0, 0.5], [0.5, 1]], "v": [[0, 1]] } }
+            ],
+            "root": { "mesh": "Box" }
+        }"#;
+        let scene = Scene::from_json(&assets(), json).unwrap();
+
+        let mesh = scene.meshes.get_by_name("Box").unwrap();
+        // 6 walls, 4 vertices and 2 triangles each.
+        assert_eq!(mesh.gen_num_vertexes(), 24);
+        assert_eq!(mesh.gen_num_indexes(), 36);
+        let xs = mesh.vertices.iter().map(|v| v.pos.x);
+        let zs = mesh.vertices.iter().map(|v| v.pos.z);
+        assert_eq!(xs.clone().fold(f32::MAX, f32::min), -1.0);
+        assert_eq!(xs.fold(f32::MIN, f32::max), 1.0);
+        assert_eq!(zs.fold(f32::MIN, f32::max), 3.0);
+        assert!(scene.meshes.get_by_name("Tiled").is_some());
+    }
+
+    #[test]
+    fn empty_cuboid_is_the_default_unit_cube() {
+        let json = r#"{
+            "meshes": [
+                { "name": "Unit", "cuboid": {} },
+                { "name": "Tall", "cuboid": { "z": [0, 2] } }
+            ],
+            "root": {}
+        }"#;
+        let scene = Scene::from_json(&assets(), json).unwrap();
+
+        let positions = |name| -> Vec<[f32; 3]> {
+            let mesh = scene.meshes.get_by_name(name).unwrap();
+            mesh.vertices.iter().map(|v| [v.pos.x, v.pos.y, v.pos.z]).collect()
+        };
+        let mut default_scene = Scene::new();
+        let default_mesh = MeshBuilderCuboid::default().build(&mut default_scene, None).unwrap();
+        let expected: Vec<[f32; 3]> = default_scene.get_mesh(default_mesh).unwrap().vertices
+            .iter()
+            .map(|v| [v.pos.x, v.pos.y, v.pos.z])
+            .collect();
+        assert_eq!(positions("Unit"), expected);
+
+        // Missing axes default to [-0.5, 0.5].
+        for [x, y, z] in positions("Tall") {
+            assert!(x == -0.5 || x == 0.5);
+            assert!(y == -0.5 || y == 0.5);
+            assert!(z == 0.0 || z == 2.0);
+        }
+    }
+
+    #[test]
+    fn mesh_needs_file_or_cuboid() {
+        let both = r#"{ "meshes": [{ "name": "M", "file": "triangle.obj",
+                          "cuboid": { "x": [0, 1], "y": [0, 1], "z": [0, 1] } }], "root": {} }"#;
+        let neither = r#"{ "meshes": [{ "name": "M" }], "root": {} }"#;
+        for json in [both, neither] {
+            let error = load_error(json);
+            assert!(error.contains("mesh `M`: a mesh needs exactly one of"), "{error}");
+        }
+    }
+
+    #[test]
+    fn cuboid_demo_scene_loads() {
+        let mut assets = MemoryAssetsProvider::default();
+        let resources = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("resources");
+        for name in ["demo_001_cuboid_scene.json", "demo_001_cuboid_atlas.png"] {
+            assets.assets.insert(name.to_string(), std::fs::read(resources.join(name)).unwrap());
+        }
+        assets.assets.insert("demo_001_cuboid_shader.vert.spv".to_string(), VERT.to_vec());
+        assets.assets.insert("demo_001_cuboid_shader.frag.spv".to_string(), FRAG.to_vec());
+
+        let scene = Scene::load(&assets, "demo_001_cuboid_scene.json").unwrap();
+
+        // `Rotation` (spun by the demo) holds `Cube`, which has the mesh and the scale.
+        let rotation = scene.find_node("Rotation").unwrap();
+        let cube = scene.get_node(scene.find_node("Cube").unwrap()).unwrap();
+        assert_eq!(cube.get_parent(), Some(rotation));
+        assert!(cube.get_mesh().is_some());
+        assert!(cube.get_material().is_some());
+        assert_ne!(cube.get_transform(), Mat4::identity());
+    }
+
+    #[test]
+    fn load_skips_utf8_byte_order_mark() {
+        let mut assets = assets();
+        let mut file = "\u{feff}".as_bytes().to_vec();
+        file.extend_from_slice(br#"{ "root": { "name": "R" } }"#);
+        assets.assets.insert("bom.scene.json".to_string(), file);
+
+        let scene = Scene::load(&assets, "bom.scene.json").unwrap();
+        assert!(scene.find_node("R").is_some());
     }
 
     #[test]

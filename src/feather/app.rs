@@ -5,7 +5,8 @@ use anyhow::{anyhow, Result};
 use vulkanalia::loader::{LibloadingLoader, LIBRARY};
 use vulkanalia::prelude::v1_0::*;
 use vulkanalia::window as vk_window;
-use winit::event::{Event, WindowEvent};
+use winit::event::{ElementState, Event, KeyEvent, WindowEvent};
+use winit::keyboard::PhysicalKey;
 use winit::event_loop::EventLoop;
 use winit::window::Window;
 
@@ -35,6 +36,7 @@ use super::pipeline::{create_render_pass, PipelineTarget, ShaderPipeline};
 use super::swapchain::Swapchain;
 use super::syncobjects::create_sync_objects;
 use super::gpuimage::{create_texture_sampler, GpuImage, UploadContext};
+use super::gpumeshbuffer::GpuMeshBuffer;
 use super::uniform::UniformValue;
 use super::uniformdata::{pack_draw, resolve_samplers, UniformArena, UniformValues};
 
@@ -76,6 +78,8 @@ impl App {
             depth_image: vk::Image::default(),
             depth_image_memory: vk::DeviceMemory::default(),
             depth_image_view: vk::ImageView::default(),
+            rendered_scene: None,
+            gpu_mesh_buffers: HashMap::new(),
             texture_sampler: vk::Sampler::default(),
             gpu_atlases: HashMap::new(),
             failed_atlases: HashSet::new(),
@@ -126,26 +130,28 @@ impl App {
         })
     }
 
-    /// Gets the scenes ready for drawing: places new meshes in mesh buffers, uploads mesh
-    /// buffers that are not on the GPU yet, and updates node uniforms and transforms.
+    /// Gets the scenes ready for drawing: places new meshes in mesh buffers and updates node
+    /// uniforms and transforms.
     fn prepare_scenes(&mut self) -> Result<()> {
         for i in 0..self.data.app.get_num_scenes_to_render() {
             let scene = self.data.app.get_scene_to_render(i);
             scene.build_missing_mesh_buffers()?;
-            for buffer in scene.buffers.iter_mut() {
-                if !buffer.is_prepared() {
-                    buffer.prepare(
-                        &self.instance,
-                        &self.device,
-                        &self.data.physical_device,
-                        &self.data.command_pool,
-                        &self.data.graphics_queue,
-                        &scene.meshes,
-                    )?;
-                }
-            }
             scene.update_nodes();
         }
+        Ok(())
+    }
+
+    /// Releases all GPU state of the rendered scene: mesh buffers, atlases and pipelines (with
+    /// their descriptor sets). Waits for the GPU first.
+    unsafe fn release_scene_gpu_state(&mut self) -> Result<()> {
+        self.device.device_wait_idle()?;
+        let device = &self.device;
+        self.data.shader_pipelines.drain().for_each(|(_, p)| p.destroy(device));
+        self.data.gpu_atlases.drain().for_each(|(_, a)| a.destroy(device));
+        self.data.gpu_mesh_buffers.drain().for_each(|(_, b)| b.destroy(device));
+        self.data.failed_shaders.clear();
+        self.data.failed_atlases.clear();
+        self.data.reported_uniform_issues.clear();
         Ok(())
     }
 
@@ -222,14 +228,10 @@ impl App {
                 }
             }
             let pipeline = &self.data.shader_pipelines[&item.shader];
-            let Some(buffer) = scene.buffers.get(item.mesh_buffer) else {
+            let Some(buffer) = self.data.gpu_mesh_buffers.get(&item.mesh_buffer) else {
                 continue;
             };
-            let (Some(vertex_buffer), Some(index_buffer)) =
-                (buffer.vertex_buffer, buffer.index_buffer)
-            else {
-                continue;
-            };
+            let (vertex_buffer, index_buffer) = (buffer.vertex_buffer, buffer.index_buffer);
             let Some(node) = scene.get_node(item.node) else {
                 continue;
             };
@@ -344,12 +346,53 @@ impl App {
         Ok(())
     }
 
-    /// Uploads the rendered scene's new atlases to the GPU and releases removed ones.
-    unsafe fn sync_atlases(&mut self) -> Result<()> {
+    /// Brings the GPU state in line with the rendered scene: when the app renders a different
+    /// scene, releases everything of the previous one; uploads new mesh buffers and atlases,
+    /// and releases removed ones.
+    unsafe fn sync_gpu_state(&mut self) -> Result<()> {
         if self.data.app.get_num_scenes_to_render() == 0 {
             return Ok(());
         }
+        let scene_id = self.data.app.get_scene_to_render(0).get_id();
+        if self.data.rendered_scene != Some(scene_id) {
+            if self.data.rendered_scene.is_some() {
+                self.release_scene_gpu_state()?;
+            }
+            self.data.rendered_scene = Some(scene_id);
+        }
         let scene = self.data.app.get_scene_to_render(0);
+
+        let upload = UploadContext {
+            instance: &self.instance,
+            device: &self.device,
+            physical_device: self.data.physical_device,
+            command_pool: self.data.command_pool,
+            queue: self.data.graphics_queue,
+        };
+
+        // Mesh buffers. Their contents never change once created.
+        let removed: Vec<usize> = self
+            .data
+            .gpu_mesh_buffers
+            .keys()
+            .copied()
+            .filter(|&h| scene.buffers.get(h).is_none())
+            .collect();
+        if !removed.is_empty() {
+            self.device.device_wait_idle()?;
+            for handle in removed {
+                self.data.gpu_mesh_buffers.remove(&handle).unwrap().destroy(&self.device);
+            }
+        }
+        for buffer in scene.buffers.iter() {
+            let handle = buffer.get_handle();
+            if !self.data.gpu_mesh_buffers.contains_key(&handle) {
+                let gpu_buffer = GpuMeshBuffer::upload(&upload, buffer, &scene.meshes)?;
+                self.data.gpu_mesh_buffers.insert(handle, gpu_buffer);
+            }
+        }
+
+        // Atlases.
 
         let removed: Vec<usize> = self
             .data
@@ -374,13 +417,6 @@ impl App {
             .failed_atlases
             .retain(|&h| scene.get_atlas(h).is_some());
 
-        let upload = UploadContext {
-            instance: &self.instance,
-            device: &self.device,
-            physical_device: self.data.physical_device,
-            command_pool: self.data.command_pool,
-            queue: self.data.graphics_queue,
-        };
         for atlas in scene.atlases.iter() {
             let handle = atlas.get_handle();
             if self.data.gpu_atlases.contains_key(&handle)
@@ -414,7 +450,7 @@ impl App {
         let time = self.start.elapsed().as_secs_f32();
         self.data.app.on_update(time)?;
         self.prepare_scenes()?;
-        self.sync_atlases()?;
+        self.sync_gpu_state()?;
         self.data.app.on_render()?;
         let in_flight_fence = self.data.in_flight_fences[self.frame];
 
@@ -515,9 +551,7 @@ impl App {
         self.data.in_flight_fences.iter().for_each(|f| self.device.destroy_fence(*f, None));
         self.data.render_finished_semaphores.iter().for_each(|s| self.device.destroy_semaphore(*s, None));
         self.data.image_available_semaphores.iter().for_each(|s| self.device.destroy_semaphore(*s, None));
-        for i in 0..self.data.app.get_num_scenes_to_render() {
-            self.data.app.get_scene_to_render(i).destroy(&self.device);
-        }
+        self.data.gpu_mesh_buffers.drain().for_each(|(_, b)| b.destroy(&self.device));
         self.data.gpu_atlases.drain().for_each(|(_, a)| a.destroy(&self.device));
         if let Some(fallback) = self.data.fallback_texture.take() {
             fallback.destroy(&self.device);
@@ -572,6 +606,21 @@ impl App {
                         } else {
                             minimized = false;
                             self.resized = true;
+                        }
+                    }
+                    // Pass key presses to the app.
+                    WindowEvent::KeyboardInput {
+                        event:
+                            KeyEvent {
+                                physical_key: PhysicalKey::Code(key),
+                                state: ElementState::Pressed,
+                                repeat: false,
+                                ..
+                            },
+                        ..
+                    } => {
+                        if let Err(e) = self.data.app.on_key_pressed(key) {
+                            log::error!("Handling key {key:?} failed: {e:#}");
                         }
                     }
                     // Destroy our Vulkan app.

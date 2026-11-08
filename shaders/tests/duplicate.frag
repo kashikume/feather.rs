@@ -1,6 +1,7 @@
 #version 450
 
-// Test shader for reflection: `view` is also a member of a block in shader.vert.
+// Test shader for reflection: `view` is also a member of a block in
+// demo_000_viking_room_shader.vert.
 
 layout(set = 0, binding = 2) uniform Other {
     mat4 view;

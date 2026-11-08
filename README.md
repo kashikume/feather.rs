@@ -49,11 +49,22 @@ What works today:
 ```powershell
 cargo run              # debug build, validation layers on
 cargo run --release    # release build, validation layers off
+cargo run -- 1         # start with demo 1
 cargo test             # unit tests
 ```
 
-The development app (`src/testapp`) opens a 1024×768 window and renders the model in
-`resources/viking_room.obj`.
+The development app (`src/testapp`) opens a 1024×768 window and shows one demo at a time. The
+only command line argument is the number of the demo to start with (default 0). **Left** and
+**right** arrows switch to the previous and next demo; after the last demo comes the first.
+
+| Demo | Name        | What it shows                                                        |
+| ---- | ----------- | -------------------------------------------------------------------- |
+| 0    | Viking room | A model with a texture, loaded from a [scene file](#scene-files)     |
+| 1    | Cuboid      | A textured cuboid from its scene file: a node spun in code holds a node scaled in the file |
+
+Each demo is in its own file, `src/testapp/demo_NNN_<name>.rs`, and its resources are named
+`demo_NNN_<name>_<kind>` (`scene`, `atlas`, `mesh`, `shader`, ...). Demos are listed in `DEMOS`
+in `src/testapp/testapp.rs`.
 
 Everything the app loads comes from the `assets/` directory next to the executable, so it can be
 started from any directory.
@@ -64,12 +75,13 @@ started from any directory.
 `.tese`) with `glslc` during `cargo build`, and recompiles whenever anything in `shaders/` changes.
 Shaders are compiled without `-O`, also in release builds: optimization strips the debug names
 the engine reads uniform names from. A compiled shader keeps its path relative to `shaders/` and
-gets `.spv` added, so `shaders/shader.vert` becomes `shader.vert.spv`. It is written to:
+gets `.spv` added, so `shaders/demo_000_viking_room_shader.vert` becomes
+`demo_000_viking_room_shader.vert.spv`. It is written to:
 
-- the `assets/` directory next to the executable (`assets/shader.vert.spv`), where applications
-  load it through the assets provider as `"shader.vert.spv"` (see [Assets](#assets)),
+- the `assets/` directory next to the executable, where applications load it through the assets
+  provider as `"demo_000_viking_room_shader.vert.spv"` (see [Assets](#assets)),
 - `$OUT_DIR/shaders/`, for embedding with
-  `include_bytes!(concat!(env!("OUT_DIR"), "/shaders/shader.vert.spv"))`.
+  `include_bytes!(concat!(env!("OUT_DIR"), "/shaders/demo_000_viking_room_shader.vert.spv"))`.
 
 `build.rs` looks for `glslc` in this order: the `GLSLC` environment variable,
 `$VULKAN_SDK/Bin/glslc`, then `glslc` on `PATH`.
@@ -94,9 +106,10 @@ the assets root and use `/`, e.g. `"textures/wall.png"`.
 ```rust
 let assets = create_assets_provider("assets")?;
 
-let bytes = assets.get_asset("shader.vert.spv")?;
-let mesh = MeshBuilderObjFile::new(&*assets, "viking_room.obj")?.build(&mut scene)?;
-let atlas = scene.create_atlas_from_png(&*assets, "viking_room.png", None)?;
+let bytes = assets.get_asset("demo_000_viking_room_shader.vert.spv")?;
+let mesh = MeshBuilderObjFile::new(&*assets, "demo_000_viking_room_mesh.obj")?
+    .build(&mut scene, Some("Room".to_string()))?;
+let atlas = scene.create_atlas_from_png(&*assets, "demo_000_viking_room_atlas.png", None)?;
 ```
 
 Atlases and meshes can also be built from bytes already in memory (`Atlas::new_from_png_bytes`,
@@ -163,9 +176,9 @@ src/
     camera.rs, perspectivecamera.rs
     instance.rs, physicaldevice.rs, logicaldevice.rs, swapchain.rs, pipeline.rs, ...
                      Vulkan object wrappers
-  testapp/           development application used to exercise the engine
-shaders/             GLSL sources (shader.vert, shader.frag), compiled by build.rs;
-                     shaders/tests/ holds shaders used only by unit tests
+  testapp/           development application: one file per demo, testapp.rs switches them
+shaders/             GLSL sources, compiled by build.rs; shaders/tests/ holds shaders used
+                     only by unit tests
 build.rs             compiles shaders to SPIR-V and copies assets next to the executable
 resources/           scene files, models and textures, copied to assets/ by build.rs
 ```
@@ -185,26 +198,32 @@ pub trait FeatherApp {
     fn get_num_scenes_to_render(&self) -> usize;
     fn get_scene_to_render(&mut self, scene_index: usize) -> &mut Scene;
     fn get_camera_to_render_scene(&mut self, scene_index: usize) -> &mut dyn Camera;
+
+    /// Optional: called when a key is pressed.
+    fn on_key_pressed(&mut self, key: KeyCode) -> Result<()> { Ok(()) }
 }
 ```
 
-`src/testapp/testapp.rs` is a minimal example. It loads its scene from
-`resources/viking_room.scene.json` (see [Scene files](#scene-files)), finds the room node by name
-to spin it in `on_update`, and sets up a perspective camera:
+The app may return a different scene at any time. The engine notices (each `Scene` has a unique
+`get_id()`), waits for the GPU and releases everything it uploaded for the previous scene, then
+uploads the new one. Scenes hold no GPU objects themselves, so the app can simply drop them.
+
+Each demo of the test app loads its scene from a [scene file](#scene-files) and finds the node it
+animates by name, e.g. `src/testapp/demo_000_viking_room.rs`:
 
 ```rust
-let assets = create_assets_provider("assets")?;
-let scene = Scene::load(&*assets, "viking_room.scene.json")?;
+let scene = Scene::load(assets, "demo_000_viking_room_scene.json")?;
 let room_node = scene.find_node("Room").unwrap();
 ```
 
-Scenes can also be built in code, with `Scene::create_atlas_from_png`, `create_shader`,
-`create_material`, `create_node` and the other `Scene` methods.
+Scenes can also be built in code, with `create_root_node`, `create_node`, `MeshBuilderCuboid`,
+`MeshBuilderObjFile`, `create_shader`, `create_atlas_from_png`, `create_material` and the other
+`Scene` methods.
 
-`main.rs` passes it to the engine:
+`main.rs` passes the app to the engine:
 
 ```rust
-let mut app = unsafe { App::create(&window, Box::new(TestApp::new()))? };
+let mut app = unsafe { App::create(&window, Box::new(TestApp::new(demo)?))? };
 app.run(&window, event_loop)?;
 ```
 
@@ -252,11 +271,12 @@ so the scene file holds no binary data. The viking room:
 
 ```json
 {
-  "atlases":  [{ "name": "Room atlas", "file": "viking_room.png" }],
+  "atlases":  [{ "name": "Room atlas", "file": "demo_000_viking_room_atlas.png" }],
   "textures": [{ "name": "Room texture", "atlas": "Room atlas" }],
-  "meshes":   [{ "name": "Room", "file": "viking_room.obj" }],
+  "meshes":   [{ "name": "Room", "file": "demo_000_viking_room_mesh.obj" }],
   "shaders":  [{
-    "name": "Basic", "vertex": "shader.vert.spv", "fragment": "shader.frag.spv",
+    "name": "Basic",
+    "vertex": "demo_000_viking_room_shader.vert.spv", "fragment": "demo_000_viking_room_shader.frag.spv",
     "model_uniform": "model", "view_uniform": "view", "projection_uniform": "proj"
   }],
   "materials": [{
@@ -274,7 +294,7 @@ so the scene file holds no binary data. The viking room:
 | ---- | ------ |
 | atlas | `name`, `file` (PNG) |
 | texture | `name`, `atlas`, optional `rect` `[u_min, v_min, u_range, v_range]`; without `rect` it covers the whole atlas and becomes its full texture |
-| mesh | `name`, `file` (OBJ) |
+| mesh | `name`, and either `file` (OBJ) or `cuboid` (optional `x`, `y`, `z` as `[min, max]`; `{}` is a 1×1×1 cube) |
 | shader | `name`, `vertex`, `fragment` (SPIR-V), optional `model_uniform`, `view_uniform`, `projection_uniform` |
 | material | `name`, `shader`, optional `uniforms` |
 | node | all optional: `name`, `mesh`, `material`, `transform`, `visible`, `uniforms`, `children` |

@@ -1,5 +1,6 @@
+use std::sync::atomic::{AtomicU64, Ordering};
+
 use anyhow::Result;
-use vulkanalia::Device;
 
 use crate::feather::{
     assetsprovider::AssetsProvider, atlas::Atlas, material::Material, object::Object, shader::Shader, texture::Texture,
@@ -26,7 +27,12 @@ pub struct DrawItem {
     pub vertex_offset: i32,
 }
 
+/// Source of `Scene::get_id` values.
+static NEXT_SCENE_ID: AtomicU64 = AtomicU64::new(0);
+
 pub struct Scene {
+    /// Unique among all scenes created by the process.
+    id: u64,
     pub meshes: ObjDB<Mesh>,
     pub buffers: ObjDB<MeshBuffer>,
     pub nodes: ObjDB<Node>,
@@ -40,6 +46,7 @@ pub struct Scene {
 impl Scene {
     pub fn new() -> Self {
         Self {
+            id: NEXT_SCENE_ID.fetch_add(1, Ordering::Relaxed),
             meshes: ObjDB::new(),
             buffers: ObjDB::new(),
             nodes: ObjDB::new(),
@@ -49,6 +56,13 @@ impl Scene {
             materials: ObjDB::new(),
             needs_create_mesh_buffer: false,
         }
+    }
+
+    /// Identifies the scene: no two scenes created by the process have the same id. The
+    /// renderer uses it to notice when it is given a different scene, whose handles mean
+    /// different objects.
+    pub fn get_id(&self) -> u64 {
+        self.id
     }
 
     pub fn add_mesh(&mut self, mesh: Mesh) -> usize {
@@ -372,12 +386,6 @@ impl Scene {
         self.needs_create_mesh_buffer = false;
         Ok(())
     }
-
-    pub fn destroy(&mut self, device: &Device) {
-        for mesh_buffer in self.buffers.iter_mut() {
-            mesh_buffer.cleanup(device);
-        }
-    }
 }
 
 impl Default for Scene {
@@ -389,6 +397,9 @@ impl Default for Scene {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A 512x512 PNG in resources/.
+    const TEST_PNG: &str = "demo_001_cuboid_atlas.png";
     use crate::feather::math::{Vec2, Vec3};
     use crate::feather::uniform::UniformValue;
     use crate::feather::vertex::Vertex;
@@ -416,6 +427,16 @@ mod tests {
         assert_eq!(scene.meshes.iter().count(), 0);
         assert_eq!(scene.buffers.iter().count(), 0);
         assert_eq!(scene.nodes.iter().count(), 0);
+    }
+
+    #[test]
+    fn scenes_have_unique_ids() {
+        let a = Scene::new();
+        let b = Scene::new();
+        let c = Scene::default();
+        assert_ne!(a.get_id(), b.get_id());
+        assert_ne!(b.get_id(), c.get_id());
+        assert_ne!(a.get_id(), c.get_id());
     }
 
     #[test]
@@ -1086,17 +1107,17 @@ mod tests {
     fn create_atlas_from_png_adds_atlas() {
         let mut scene = Scene::new();
         let atlas = scene
-            .create_atlas_from_png(&*test_resources(), "texture.png", None)
+            .create_atlas_from_png(&*test_resources(), TEST_PNG, None)
             .unwrap();
 
         let atlas_obj = scene.get_atlas(atlas).unwrap();
         assert_eq!(atlas_obj.get_handle(), atlas);
-        assert_eq!(atlas_obj.get_name(), Some("texture.png".to_string()));
+        assert_eq!(atlas_obj.get_name(), Some(TEST_PNG.to_string()));
         assert_eq!((atlas_obj.get_width(), atlas_obj.get_height()), (512, 512));
         assert_eq!(
             scene
                 .atlases
-                .get_by_name("texture.png")
+                .get_by_name(TEST_PNG)
                 .unwrap()
                 .get_handle(),
             atlas
@@ -1107,7 +1128,7 @@ mod tests {
     fn create_atlas_from_png_with_name() {
         let mut scene = Scene::new();
         let atlas = scene
-            .create_atlas_from_png(&*test_resources(), "texture.png", Some("bricks".to_string()))
+            .create_atlas_from_png(&*test_resources(), TEST_PNG, Some("bricks".to_string()))
             .unwrap();
         assert_eq!(
             scene.get_atlas(atlas).unwrap().get_name(),
@@ -1128,7 +1149,7 @@ mod tests {
     fn full_texture_of_loaded_atlas() {
         let mut scene = Scene::new();
         let atlas = scene
-            .create_atlas_from_png(&*test_resources(), "texture.png", None)
+            .create_atlas_from_png(&*test_resources(), TEST_PNG, None)
             .unwrap();
         let full = scene.create_full_atlas_texture(None, atlas).unwrap();
 
@@ -1207,7 +1228,6 @@ mod tests {
 
         assert_ne!(b0, b1);
         assert_eq!(scene.buffers.iter().count(), 2);
-        assert!(!scene.buffers.get(b0).unwrap().is_prepared());
     }
 
     #[test]

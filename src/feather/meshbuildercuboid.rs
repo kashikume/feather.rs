@@ -74,7 +74,8 @@ impl MeshBuilderCuboid {
         Self::new(x, y, z, None, None)
     }
 
-    pub fn build(mut self, scene: &mut Scene) -> Result<usize> {
+    /// Builds the mesh, named `name`, adds it to `scene` and returns its handle.
+    pub fn build(mut self, scene: &mut Scene, name: Option<String>) -> Result<usize> {
 
         // 0
         self.add_wall(
@@ -136,7 +137,7 @@ impl MeshBuilderCuboid {
             (0.0, -1.0, 0.0),
         )?;
 
-        let mesh = Mesh::new(None, self.vertices, self.indices);
+        let mesh = Mesh::new(name, self.vertices, self.indices);
         Ok(scene.add_mesh(mesh))
     }
 
@@ -175,5 +176,39 @@ impl MeshBuilderCuboid {
         self.indices.push(start_pos + 2);
 
         Ok(())
+    }
+}
+
+impl Default for MeshBuilderCuboid {
+    /// A 1x1x1 cube centred on the origin, with the whole texture on every wall.
+    fn default() -> Self {
+        Self::new_same_walls((-0.5, 0.5), (-0.5, 0.5), (-0.5, 0.5))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::feather::object::Object;
+
+    #[test]
+    fn default_is_unit_cube_centred_on_origin() {
+        let mut scene = Scene::new();
+        let mesh = MeshBuilderCuboid::default()
+            .build(&mut scene, Some("cube".to_string()))
+            .unwrap();
+
+        let mesh = scene.get_mesh(mesh).unwrap();
+        assert_eq!(mesh.get_name(), Some("cube".to_string()));
+        assert_eq!(mesh.gen_num_vertexes(), 24);
+        assert_eq!(mesh.gen_num_indexes(), 36);
+        for v in &mesh.vertices {
+            for c in [v.pos.x, v.pos.y, v.pos.z] {
+                assert!(c == -0.5 || c == 0.5, "{:?}", v.pos);
+            }
+            for t in [v.tex_coord.x, v.tex_coord.y] {
+                assert!(t == 0.0 || t == 1.0, "{:?}", v.tex_coord);
+            }
+        }
     }
 }

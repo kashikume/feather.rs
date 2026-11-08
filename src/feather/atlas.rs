@@ -149,6 +149,9 @@ fn read_png_rgba(png: &[u8]) -> Result<(u32, u32, Vec<u8>)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A 512x512 PNG in resources/.
+    const TEST_PNG: &str = "demo_001_cuboid_atlas.png";
     use crate::feather::assetsprovider::tests::{test_resources, MemoryAssetsProvider};
 
     /// 2x1 atlas with a red and a green pixel.
@@ -187,7 +190,7 @@ mod tests {
 
     #[test]
     fn new_from_png_loads_resource() {
-        let atlas = Atlas::new_from_png(&*test_resources(), "texture.png", None).unwrap();
+        let atlas = Atlas::new_from_png(&*test_resources(), TEST_PNG, None).unwrap();
         assert_eq!(atlas.get_width(), 512);
         assert_eq!(atlas.get_height(), 512);
         assert_eq!(atlas.get_pixels().len(), 512 * 512 * 4);
@@ -198,20 +201,20 @@ mod tests {
 
     #[test]
     fn name_defaults_to_file_name() {
-        let atlas = Atlas::new_from_png(&*test_resources(), "texture.png", None).unwrap();
-        assert_eq!(atlas.get_name(), Some("texture.png".to_string()));
+        let atlas = Atlas::new_from_png(&*test_resources(), TEST_PNG, None).unwrap();
+        assert_eq!(atlas.get_name(), Some(TEST_PNG.to_string()));
     }
 
     #[test]
     fn empty_name_defaults_to_file_name() {
-        let atlas = Atlas::new_from_png(&*test_resources(), "texture.png", Some(String::new())).unwrap();
-        assert_eq!(atlas.get_name(), Some("texture.png".to_string()));
+        let atlas = Atlas::new_from_png(&*test_resources(), TEST_PNG, Some(String::new())).unwrap();
+        assert_eq!(atlas.get_name(), Some(TEST_PNG.to_string()));
     }
 
     #[test]
     fn explicit_name_is_kept() {
         let atlas =
-            Atlas::new_from_png(&*test_resources(), "texture.png", Some("bricks".to_string())).unwrap();
+            Atlas::new_from_png(&*test_resources(), TEST_PNG, Some("bricks".to_string())).unwrap();
         assert_eq!(atlas.get_name(), Some("bricks".to_string()));
     }
 
@@ -310,7 +313,8 @@ mod tests {
 
     #[test]
     fn non_png_asset_fails() {
-        assert!(Atlas::new_from_png(&*test_resources(), "viking_room.obj", None).is_err());
+        let mesh = "demo_000_viking_room_mesh.obj";
+        assert!(Atlas::new_from_png(&*test_resources(), mesh, None).is_err());
         assert!(Atlas::new_from_png_bytes(b"not a png", None).is_err());
     }
 

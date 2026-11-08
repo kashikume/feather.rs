@@ -35,7 +35,7 @@ impl Object for Shader {
 
 impl Shader {
     /// Creates a shader from SPIR-V bytecode, e.g. from
-    /// `include_bytes!(concat!(env!("OUT_DIR"), "/shaders/shader.vert.spv"))`.
+    /// `include_bytes!(concat!(env!("OUT_DIR"), "/shaders/demo_000_viking_room_shader.vert.spv"))`.
     /// `uniform_model_name`, `uniform_view_name` and `uniform_proj_name` name the uniforms
     /// that receive the node's model matrix and the camera's view and projection matrices
     /// (`None` if the shader doesn't use one); each named uniform must exist in the shader and
@@ -152,9 +152,9 @@ pub(crate) mod tests {
     use super::*;
 
     pub(crate) const VERT: &[u8] =
-        include_bytes!(concat!(env!("OUT_DIR"), "/shaders/shader.vert.spv"));
+        include_bytes!(concat!(env!("OUT_DIR"), "/shaders/demo_000_viking_room_shader.vert.spv"));
     pub(crate) const FRAG: &[u8] =
-        include_bytes!(concat!(env!("OUT_DIR"), "/shaders/shader.frag.spv"));
+        include_bytes!(concat!(env!("OUT_DIR"), "/shaders/demo_000_viking_room_shader.frag.spv"));
 
     #[test]
     fn new_keeps_code_and_name() {

@@ -105,8 +105,8 @@ Each step should leave the app running.
 
 - [x] Compute node global transforms (parent global × local), in the same pass as the dynamic
       uniforms (`Scene::update_nodes` / `Scene::update_node`)
-- [x] Add a push constant range for the model matrix to the pipeline layout; change `shader.vert`
-      to read `model` from it
+- [x] Add a push constant range for the model matrix to the pipeline layout; change
+      `demo_000_viking_room_shader.vert` to read `model` from it
 - [x] Re-record command buffers every frame
 - [x] Walk the scene: for each visible node with a mesh, bind its mesh buffers, push its model
       matrix, draw (`Scene::draw_items`; a hidden node hides its subtree)
@@ -127,8 +127,8 @@ Each step should leave the app running.
       (also for unknown or non-`mat4` model/view/proj names, and duplicate uniform names)
 - [x] Create descriptor set layouts and the pipeline layout from reflection data
 - [x] Create a Vulkan pipeline per shader (cached, recreated with the swapchain)
-- [x] Tests for reflection of `shader.vert` / `shader.frag`, plus test-only shaders in
-      `shaders/tests/` (all uniform types, stage merging, unsupported cases)
+- [x] Tests for reflection of `demo_000_viking_room_shader.vert` / `.frag`, plus test-only
+      shaders in `shaders/tests/` (all uniform types, stage merging, unsupported cases)
 - [x] Compile shaders without `-O`, also in release: it strips the names reflection needs
 
 ### 3. Uniform values on the GPU
@@ -156,8 +156,8 @@ Each step should leave the app running.
 - [x] Sampler descriptor sets cached per (shader, swapchain image, textures)
 - [x] Bind `Texture(handle)` uniforms to the reflected sampler bindings
       (`uniformdata::resolve_samplers`); fallback texture and warnings for bad values
-- [x] Remove the hard-coded texture code from `texture.rs` and the `resources/viking_room.png`
-      path; the app then runs from any directory
+- [x] Remove the hard-coded texture code from `texture.rs` and the
+      `resources/demo_000_viking_room_atlas.png` path; the app then runs from any directory
 
 ### Later
 
