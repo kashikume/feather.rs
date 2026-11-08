@@ -87,6 +87,17 @@ impl Scene {
         self.atlases.add(atlas)
     }
 
+    /// Loads an atlas from a PNG file and adds it to the scene. When `name` is `None` or empty,
+    /// the file name is used.
+    pub fn create_atlas_from_png(
+        &mut self,
+        path: impl AsRef<std::path::Path>,
+        name: Option<String>,
+    ) -> Result<usize> {
+        let atlas = Atlas::new_from_png(path, name)?;
+        Ok(self.add_atlas(atlas))
+    }
+
     pub fn get_atlas(&self, handle: usize) -> Option<&Atlas> {
         self.atlases.get(handle)
     }
@@ -403,10 +414,72 @@ mod tests {
 
     // --- atlases and textures ---
 
+    /// 1x1 in-memory atlas.
+    fn test_atlas(name: Option<&str>) -> Atlas {
+        Atlas::from_rgba(name.map(str::to_string), 1, 1, vec![0, 0, 0, 255])
+    }
+
+    #[test]
+    fn create_atlas_from_png_adds_atlas() {
+        let mut scene = Scene::new();
+        let atlas = scene
+            .create_atlas_from_png("resources/texture.png", None)
+            .unwrap();
+
+        let atlas_obj = scene.get_atlas(atlas).unwrap();
+        assert_eq!(atlas_obj.get_handle(), atlas);
+        assert_eq!(atlas_obj.get_name(), Some("texture.png".to_string()));
+        assert_eq!((atlas_obj.get_width(), atlas_obj.get_height()), (512, 512));
+        assert_eq!(
+            scene
+                .atlases
+                .get_by_name("texture.png")
+                .unwrap()
+                .get_handle(),
+            atlas
+        );
+    }
+
+    #[test]
+    fn create_atlas_from_png_with_name() {
+        let mut scene = Scene::new();
+        let atlas = scene
+            .create_atlas_from_png("resources/texture.png", Some("bricks".to_string()))
+            .unwrap();
+        assert_eq!(
+            scene.get_atlas(atlas).unwrap().get_name(),
+            Some("bricks".to_string())
+        );
+    }
+
+    #[test]
+    fn create_atlas_from_png_with_missing_file_fails() {
+        let mut scene = Scene::new();
+        assert!(scene
+            .create_atlas_from_png("resources/does_not_exist.png", None)
+            .is_err());
+        assert_eq!(scene.atlases.iter().count(), 0);
+    }
+
+    #[test]
+    fn full_texture_of_loaded_atlas() {
+        let mut scene = Scene::new();
+        let atlas = scene
+            .create_atlas_from_png("resources/texture.png", None)
+            .unwrap();
+        let full = scene.create_full_atlas_texture(None, atlas).unwrap();
+
+        assert_eq!(
+            scene.get_atlas(atlas).unwrap().get_full_texture(),
+            Some(full)
+        );
+        assert_eq!(scene.get_texture(full).unwrap().get_atlas(), atlas);
+    }
+
     #[test]
     fn add_texture_registers_it_with_atlas() {
         let mut scene = Scene::new();
-        let atlas = scene.add_atlas(Atlas::new(None));
+        let atlas = scene.add_atlas(test_atlas(None));
         let t1 = scene
             .add_texture(Texture::full_atlas(Some("t1".to_string()), atlas))
             .unwrap();
@@ -430,7 +503,7 @@ mod tests {
     #[test]
     fn create_full_atlas_texture() {
         let mut scene = Scene::new();
-        let atlas = scene.add_atlas(Atlas::new(None));
+        let atlas = scene.add_atlas(test_atlas(None));
         let other = scene.add_texture(Texture::full_atlas(None, atlas)).unwrap();
         let full = scene.create_full_atlas_texture(None, atlas).unwrap();
 
@@ -450,8 +523,8 @@ mod tests {
     #[test]
     fn textures_stay_with_their_own_atlas() {
         let mut scene = Scene::new();
-        let a = scene.add_atlas(Atlas::new(Some("a".to_string())));
-        let b = scene.add_atlas(Atlas::new(Some("b".to_string())));
+        let a = scene.add_atlas(test_atlas(Some("a")));
+        let b = scene.add_atlas(test_atlas(Some("b")));
         let ta = scene.create_full_atlas_texture(None, a).unwrap();
         let tb = scene.create_full_atlas_texture(None, b).unwrap();
 
