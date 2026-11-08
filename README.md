@@ -24,6 +24,7 @@ What works today:
   gets its own pipeline
 - Uniforms on materials and nodes, inherited down the scene graph
 - Assets loaded through a platform-specific `AssetsProvider`
+- Scenes described in JSON files, with objects referring to each other by name
 - Perspective camera
 - Textures from atlases, uploaded with mipmaps; textures that are part of an atlas pass their UV
   rectangle to the shader
@@ -144,6 +145,7 @@ src/
     app.rs           Vulkan setup, main loop, frame rendering
     featherapp.rs    FeatherApp trait implemented by applications
     scene.rs         scene: owns all objects and the node graph
+    scenefile.rs     loading a scene from a JSON file
     objdb.rs         handle-based object storage used by the scene
     node.rs          scene graph node (mesh, material, uniforms)
     mesh*.rs         meshes and mesh builders (.obj file, cuboid)
@@ -165,7 +167,7 @@ src/
 shaders/             GLSL sources (shader.vert, shader.frag), compiled by build.rs;
                      shaders/tests/ holds shaders used only by unit tests
 build.rs             compiles shaders to SPIR-V and copies assets next to the executable
-resources/           models and textures, copied to assets/ by build.rs
+resources/           scene files, models and textures, copied to assets/ by build.rs
 ```
 
 ## Writing an application
@@ -186,31 +188,18 @@ pub trait FeatherApp {
 }
 ```
 
-`src/testapp/testapp.rs` is a minimal example. It builds a scene with a root node and a room node,
-loads the room mesh, shader and atlas through the assets provider, creates a material using the
-atlas as its `texSampler` texture, and sets up a perspective camera:
+`src/testapp/testapp.rs` is a minimal example. It loads its scene from
+`resources/viking_room.scene.json` (see [Scene files](#scene-files)), finds the room node by name
+to spin it in `on_update`, and sets up a perspective camera:
 
 ```rust
 let assets = create_assets_provider("assets")?;
-
-let shader = scene.create_shader(
-    Some("Basic".to_string()),
-    &assets.get_asset("shader.vert.spv")?,
-    &assets.get_asset("shader.frag.spv")?,
-    Some("model".to_string()), // uniform names for the model, view and projection matrices
-    Some("view".to_string()),
-    Some("proj".to_string()),
-)?;
-let atlas = scene.create_atlas_from_png(&*assets, "viking_room.png", None)?;
-let texture = scene.create_full_atlas_texture(Some("Room texture".to_string()), atlas)?;
-let material = scene.create_material(Some("Room".to_string()), shader)?;
-scene
-    .get_material_mut(material)
-    .unwrap()
-    .uniforms_mut()
-    .set("texSampler", UniformValue::Texture(texture));
-scene.node_set_material(room_node, material)?;
+let scene = Scene::load(&*assets, "viking_room.scene.json")?;
+let room_node = scene.find_node("Room").unwrap();
 ```
+
+Scenes can also be built in code, with `Scene::create_atlas_from_png`, `create_shader`,
+`create_material`, `create_node` and the other `Scene` methods.
 
 `main.rs` passes it to the engine:
 
@@ -252,6 +241,53 @@ under the names given to `create_shader`, then writes every value into the shade
 blocks and push constants by name, at the offsets read from the shader's SPIR-V. A uniform with
 no value, a value of the wrong type, or a value the shader doesn't use is logged once as a
 warning.
+
+## Scene files
+
+`Scene::load(assets, "name.scene.json")` builds a scene from a JSON file. The full format is
+described in [doc/scene-format.md](doc/scene-format.md). The file lists the
+atlases, textures, meshes, shaders and materials, and describes the node tree from the root.
+Objects refer to each other by name; files are asset names read through the `AssetsProvider`,
+so the scene file holds no binary data. The viking room:
+
+```json
+{
+  "atlases":  [{ "name": "Room atlas", "file": "viking_room.png" }],
+  "textures": [{ "name": "Room texture", "atlas": "Room atlas" }],
+  "meshes":   [{ "name": "Room", "file": "viking_room.obj" }],
+  "shaders":  [{
+    "name": "Basic", "vertex": "shader.vert.spv", "fragment": "shader.frag.spv",
+    "model_uniform": "model", "view_uniform": "view", "projection_uniform": "proj"
+  }],
+  "materials": [{
+    "name": "Room", "shader": "Basic",
+    "uniforms": { "texSampler": { "texture": "Room texture" } }
+  }],
+  "root": {
+    "name": "Scene root",
+    "children": [{ "name": "Room", "mesh": "Room", "material": "Room" }]
+  }
+}
+```
+
+| Item | Fields |
+| ---- | ------ |
+| atlas | `name`, `file` (PNG) |
+| texture | `name`, `atlas`, optional `rect` `[u_min, v_min, u_range, v_range]`; without `rect` it covers the whole atlas and becomes its full texture |
+| mesh | `name`, `file` (OBJ) |
+| shader | `name`, `vertex`, `fragment` (SPIR-V), optional `model_uniform`, `view_uniform`, `projection_uniform` |
+| material | `name`, `shader`, optional `uniforms` |
+| node | all optional: `name`, `mesh`, `material`, `transform`, `visible`, `uniforms`, `children` |
+
+- Names must be unique within each list. Nodes are found with `Scene::find_node(name)`.
+- Uniform values are written as `{ "<glsl type>": value }`: `float`, `int`, `uint`, `bool`,
+  `vec2`–`vec4`, `ivec2`–`ivec4`, `uvec2`–`uvec4` (arrays), `mat2`–`mat4` (column-major arrays),
+  or `texture` with a texture name.
+- `transform` is either `matrix` (16 numbers, column-major) or any of `translation` `[x, y, z]`,
+  `rotation` `[x, y, z]` in degrees (around X, then Y, then Z) and `scale` (a number or
+  `[x, y, z]`).
+- Unknown fields, duplicate names and unknown names are errors; the message says where, e.g.
+  ``node `Scene root`: node `Room`: unknown mesh `Rom` ``.
 
 ## Roadmap
 

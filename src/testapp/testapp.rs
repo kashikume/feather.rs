@@ -5,15 +5,13 @@ use crate::feather::assetsprovider::create_assets_provider;
 use crate::feather::camera::Camera;
 use crate::feather::featherapp::FeatherApp;
 use crate::feather::math::{Mat4, Point3, Vec3};
-use crate::feather::meshbuilderobjfile::MeshBuilderObjFile;
 use crate::feather::perspectivecamera::PerspectiveCamera;
 use crate::feather::scene::Scene;
-use crate::feather::uniform::UniformValue;
 
 pub struct TestApp {
     scene: Scene,
     camera: PerspectiveCamera,
-    root_node: usize,
+    /// Spun in `on_update`.
     room_node: usize,
 }
 
@@ -57,62 +55,20 @@ impl FeatherApp for TestApp {
 
 impl TestApp {
     pub fn new() -> Self {
-        let mut scene = Scene::new();
-        let root_node = scene.create_root_node(Some("Scene root".to_string()));
-        let room_node = scene
-            .create_node(Some("Room".to_string()), root_node)
-            .unwrap();
+        let assets = create_assets_provider("assets").unwrap();
+        let scene = Scene::load(&*assets, "viking_room.scene.json").unwrap();
+        let room_node = scene.find_node("Room").unwrap();
 
         let mut camera = PerspectiveCamera::new();
-
         camera.set_fov(45.0).set_near_far(0.1, 10.0).set_view(
             Point3::new(2.0, 2.0, 2.0),
             Point3::new(0.0, 0.0, 0.0),
             Vec3::new(0.0, 0.0, 1.0),
         );
 
-        let assets = create_assets_provider("assets").unwrap();
-
-        let meshbuilderobjfile = MeshBuilderObjFile::new(&*assets, "viking_room.obj").unwrap();
-        let room_mesh = meshbuilderobjfile.build(&mut scene).unwrap();
-
-        scene.node_set_mesh(room_node, room_mesh).unwrap();
-
-        // Material: the basic shader with the room texture bound to its `texSampler`.
-        let shader = scene
-            .create_shader(
-                Some("Basic".to_string()),
-                &assets.get_asset("shader.vert.spv").unwrap(),
-                &assets.get_asset("shader.frag.spv").unwrap(),
-                Some("model".to_string()),
-                Some("view".to_string()),
-                Some("proj".to_string()),
-            )
-            .unwrap();
-        let room_atlas = scene
-            .create_atlas_from_png(&*assets, "viking_room.png", None)
-            .unwrap();
-        let room_texture = scene
-            .create_full_atlas_texture(Some("Room texture".to_string()), room_atlas)
-            .unwrap();
-        let room_material = scene
-            .create_material(Some("Room".to_string()), shader)
-            .unwrap();
-        scene
-            .get_material_mut(room_material)
-            .unwrap()
-            .uniforms_mut()
-            .set("texSampler", UniformValue::Texture(room_texture));
-        scene.node_set_material(room_node, room_material).unwrap();
-
-        //let meshbuildercuboid =
-        //    meshbuildercuboid::MeshBuilderCuboid::new_same_walls((-0.5, 0.5), (-0.5, 0.5), (-0.5, 0.5));
-        //let mesh2 = meshbuildercuboid.build(&mut data.scene)?;
-
         Self {
             scene,
             camera,
-            root_node,
             room_node,
         }
     }

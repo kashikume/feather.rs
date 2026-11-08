@@ -31,6 +31,7 @@ pub mod physicaldevice;
 pub mod pipeline;
 pub mod queuefamilyindices;
 pub mod scene;
+pub mod scenefile;
 pub mod shader;
 pub mod shaderlayout;
 pub mod swapchain;

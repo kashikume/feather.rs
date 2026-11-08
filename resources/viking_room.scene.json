@@ -1,0 +1,36 @@
+{
+  "atlases": [
+    { "name": "Room atlas", "file": "viking_room.png" }
+  ],
+  "textures": [
+    { "name": "Room texture", "atlas": "Room atlas" }
+  ],
+  "meshes": [
+    { "name": "Room", "file": "viking_room.obj" }
+  ],
+  "shaders": [
+    {
+      "name": "Basic",
+      "vertex": "shader.vert.spv",
+      "fragment": "shader.frag.spv",
+      "model_uniform": "model",
+      "view_uniform": "view",
+      "projection_uniform": "proj"
+    }
+  ],
+  "materials": [
+    {
+      "name": "Room",
+      "shader": "Basic",
+      "uniforms": {
+        "texSampler": { "texture": "Room texture" }
+      }
+    }
+  ],
+  "root": {
+    "name": "Scene root",
+    "children": [
+      { "name": "Room", "mesh": "Room", "material": "Room" }
+    ]
+  }
+}

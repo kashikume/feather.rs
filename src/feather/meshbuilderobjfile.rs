@@ -12,6 +12,7 @@ use anyhow::{Context, Result};
 /// Builds a mesh from a Wavefront OBJ file. Materials (`.mtl`) are ignored.
 pub struct MeshBuilderObjFile {
     obj: Vec<u8>,
+    name: Option<String>,
 }
 
 impl MeshBuilderObjFile {
@@ -22,7 +23,13 @@ impl MeshBuilderObjFile {
 
     /// Uses OBJ data already in memory.
     pub fn from_bytes(obj: Vec<u8>) -> Self {
-        Self { obj }
+        Self { obj, name: None }
+    }
+
+    /// Sets the name of the mesh to build.
+    pub fn with_name(mut self, name: Option<String>) -> Self {
+        self.name = name;
+        self
     }
 
     pub fn build(self, scene: &mut Scene) -> Result<usize> {
@@ -77,7 +84,7 @@ impl MeshBuilderObjFile {
             }
         }
 
-        let mesh = Mesh::new(None, vertices, indices);
+        let mesh = Mesh::new(self.name, vertices, indices);
         Ok(scene.add_mesh(mesh))
     }
 }
@@ -85,6 +92,7 @@ impl MeshBuilderObjFile {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::feather::object::Object;
     use crate::feather::assetsprovider::tests::test_resources;
 
     /// One triangle with texture coordinates and normals.
@@ -108,6 +116,16 @@ f 1/1/1 2/2/1 3/3/1
         let mesh = scene.get_mesh(mesh).unwrap();
         assert_eq!(mesh.gen_num_vertexes(), 3);
         assert_eq!(mesh.gen_num_indexes(), 3);
+    }
+
+    #[test]
+    fn with_name_names_the_mesh() {
+        let mut scene = Scene::new();
+        let mesh = MeshBuilderObjFile::from_bytes(TRIANGLE.as_bytes().to_vec())
+            .with_name(Some("triangle".to_string()))
+            .build(&mut scene)
+            .unwrap();
+        assert_eq!(scene.meshes.get_by_name("triangle").unwrap().get_handle(), mesh);
     }
 
     #[test]
