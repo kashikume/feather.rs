@@ -1,3 +1,4 @@
+use std::collections::{HashMap, HashSet};
 use std::mem::size_of;
 use std::ptr::copy_nonoverlapping as memcpy;
 use std::time::Instant;
@@ -28,11 +29,15 @@ use super::commandpool::create_command_pool;
 use super::dephobjects::create_depth_objects;
 use super::descriptors::{create_descriptor_pool, create_descriptor_sets};
 use super::featherapp::FeatherApp;
+use super::object::Object;
 use super::framebuffers::create_framebuffers;
 use super::instance::create_instance;
 use super::logicaldevice::create_logical_device;
 use super::physicaldevice::pick_physical_device;
-use super::pipeline::{create_descriptor_set_layout, create_pipeline, create_render_pass};
+use super::pipeline::{
+    check_renderer_support, create_descriptor_set_layout, create_render_pass, PipelineTarget,
+    ShaderPipeline,
+};
 use super::swapchain::Swapchain;
 use super::syncobjects::create_sync_objects;
 use super::texture::{create_texture_image, create_texture_image_view, create_texture_sampler};
@@ -65,8 +70,8 @@ impl App {
             swapchain: Swapchain::default(),
             render_pass: vk::RenderPass::default(),
             descriptor_set_layout: vk::DescriptorSetLayout::default(),
-            pipeline_layout: vk::PipelineLayout::default(),
-            pipeline: vk::Pipeline::default(),
+            shader_pipelines: HashMap::new(),
+            failed_shaders: HashSet::new(),
             framebuffers: Vec::new(),
             command_pool: vk::CommandPool::default(),
             color_image: vk::Image::default(),
@@ -98,7 +103,6 @@ impl App {
         data.swapchain.create_image_views(&device)?;
         create_render_pass(&instance, &device, &mut data)?;
         create_descriptor_set_layout(&device, &mut data)?;
-        create_pipeline(&device, &mut data)?;
         create_command_pool(&instance, &device, &mut data)?;
         create_color_objects(&instance, &device, &mut data)?;
         create_depth_objects(&instance, &device, &mut data)?;
@@ -146,14 +150,15 @@ impl App {
         Ok(())
     }
 
-    /// Collects the draw calls of the rendered scene.
+    /// Collects the draw calls of the rendered scene, sorted by shader, creating the pipelines
+    /// of shaders drawn for the first time.
     ///
     /// Only the first scene is drawn for now: there is one view/projection uniform buffer per
     /// frame, filled from the first scene's camera.
-    fn collect_draws(&mut self) -> Vec<GpuDraw> {
+    unsafe fn collect_draws(&mut self) -> Result<Vec<GpuDraw>> {
         let num_scenes = self.data.app.get_num_scenes_to_render();
         if num_scenes == 0 {
-            return Vec::new();
+            return Ok(Vec::new());
         }
         if num_scenes > 1 {
             static WARN: std::sync::Once = std::sync::Once::new();
@@ -161,21 +166,79 @@ impl App {
         }
 
         let scene = self.data.app.get_scene_to_render(0);
-        scene
-            .draw_items()
-            .into_iter()
-            .filter_map(|item| {
-                let buffer = scene.buffers.get(item.mesh_buffer)?;
-                Some(GpuDraw {
-                    vertex_buffer: buffer.vertex_buffer?,
-                    index_buffer: buffer.index_buffer?,
-                    model: item.model,
-                    first_index: item.first_index,
-                    index_count: item.index_count,
-                    vertex_offset: item.vertex_offset,
-                })
-            })
-            .collect()
+
+        // Pipelines of shaders that no longer exist. They may still be used by frames in
+        // flight, so wait for the GPU before destroying them.
+        let removed: Vec<usize> = self
+            .data
+            .shader_pipelines
+            .keys()
+            .copied()
+            .filter(|&h| scene.get_shader(h).is_none())
+            .collect();
+        if !removed.is_empty() {
+            self.device.device_wait_idle()?;
+            for handle in removed {
+                self.data.shader_pipelines.remove(&handle).unwrap().destroy(&self.device);
+            }
+        }
+        self.data
+            .failed_shaders
+            .retain(|&h| scene.get_shader(h).is_some());
+
+        let mut items = scene.draw_items();
+        items.sort_by_key(|item| item.shader);
+
+        let target = PipelineTarget {
+            render_pass: self.data.render_pass,
+            msaa_samples: self.data.msaa_samples,
+            extent: self.data.swapchain.swapchain_extent,
+        };
+        let mut draws = Vec::with_capacity(items.len());
+        for item in items {
+            if self.data.failed_shaders.contains(&item.shader) {
+                continue;
+            }
+            if !self.data.shader_pipelines.contains_key(&item.shader) {
+                let shader = scene.get_shader(item.shader).unwrap();
+                let pipeline = check_renderer_support(shader)
+                    .and_then(|_| ShaderPipeline::create(&self.device, &target, shader));
+                match pipeline {
+                    Ok(pipeline) => {
+                        self.data.shader_pipelines.insert(item.shader, pipeline);
+                    }
+                    Err(e) => {
+                        log::error!(
+                            "Cannot draw with shader {}: {e:#}",
+                            shader.get_name().unwrap_or_else(|| item.shader.to_string())
+                        );
+                        self.data.failed_shaders.insert(item.shader);
+                        continue;
+                    }
+                }
+            }
+            let pipeline = &self.data.shader_pipelines[&item.shader];
+            let Some(buffer) = scene.buffers.get(item.mesh_buffer) else {
+                continue;
+            };
+            let (Some(vertex_buffer), Some(index_buffer)) =
+                (buffer.vertex_buffer, buffer.index_buffer)
+            else {
+                continue;
+            };
+            draws.push(GpuDraw {
+                pipeline: pipeline.pipeline,
+                pipeline_layout: pipeline.layout,
+                model_push_constant: pipeline.model_push_constant,
+                vertex_buffer,
+                index_buffer,
+                model: item.model,
+                first_index: item.first_index,
+                index_count: item.index_count,
+                vertex_offset: item.vertex_offset,
+            });
+        }
+        Ok(draws)
     }
 
     /// Renders a frame for our Vulkan app.
@@ -211,7 +274,7 @@ impl App {
         self.data.images_in_flight[image_index] = in_flight_fence;
 
         self.update_uniform_buffer(image_index)?;
-        let draws = self.collect_draws();
+        let draws = self.collect_draws()?;
         record_command_buffer(&self.device, &self.data, image_index, &draws)?;
 
         let wait_semaphores = &[self.data.image_available_semaphores[self.frame]];
@@ -293,7 +356,6 @@ impl App {
         self.data.swapchain = Swapchain::create(window, &self.instance, &self.device, &self.data)?;
         self.data.swapchain.create_image_views(&self.device)?;
         create_render_pass(&self.instance, &self.device, &mut self.data)?;
-        create_pipeline(&self.device, &mut self.data)?;
         create_color_objects(&self.instance, &self.device, &mut self.data)?;
         create_depth_objects(&self.instance, &self.device, &mut self.data)?;
         create_framebuffers(&self.device, &mut self.data)?;
@@ -353,8 +415,9 @@ impl App {
         self.device.free_memory(self.data.color_image_memory, None);
         self.device.destroy_image(self.data.color_image, None);
         self.data.framebuffers.iter().for_each(|f| self.device.destroy_framebuffer(*f, None));
-        self.device.destroy_pipeline(self.data.pipeline, None);
-        self.device.destroy_pipeline_layout(self.data.pipeline_layout, None);
+        // Pipelines depend on the render pass and the extent; they are recreated when needed.
+        self.data.shader_pipelines.drain().for_each(|(_, p)| p.destroy(&self.device));
+        self.data.failed_shaders.clear();
         self.device.destroy_render_pass(self.data.render_pass, None);
         self.data.swapchain.destroy(&self.device);
     }

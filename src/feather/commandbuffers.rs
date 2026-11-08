@@ -6,13 +6,18 @@ use vulkanalia::prelude::v1_0::*;
 
 use super::appdata::AppData;
 use super::math::Mat4;
+use super::pipeline::PushConstantSlot;
 
 //================================================
 // Command Buffers
 //================================================
 
-/// One draw call with the Vulkan buffers it uses.
+/// One draw call with the Vulkan objects it uses.
 pub struct GpuDraw {
+    pub pipeline: vk::Pipeline,
+    pub pipeline_layout: vk::PipelineLayout,
+    /// Where to push the model matrix; `None` if the shader doesn't take it as a push constant.
+    pub model_push_constant: Option<PushConstantSlot>,
     pub vertex_buffer: vk::Buffer,
     pub index_buffer: vk::Buffer,
     pub model: Mat4,
@@ -40,7 +45,7 @@ pub unsafe fn create_command_buffers(device: &Device, data: &mut AppData) -> Res
 }
 
 /// Records the command buffer of swapchain image `image_index`: clears the image and issues
-/// `draws`. The command buffer must not be in use by the GPU.
+/// `draws` (best sorted by pipeline). The command buffer must not be in use by the GPU.
 pub unsafe fn record_command_buffer(
     device: &Device,
     data: &AppData,
@@ -81,18 +86,27 @@ pub unsafe fn record_command_buffer(
         .clear_values(clear_values);
 
     device.cmd_begin_render_pass(command_buffer, &info, vk::SubpassContents::INLINE);
-    device.cmd_bind_pipeline(command_buffer, vk::PipelineBindPoint::GRAPHICS, data.pipeline);
-    device.cmd_bind_descriptor_sets(
-        command_buffer,
-        vk::PipelineBindPoint::GRAPHICS,
-        data.pipeline_layout,
-        0,
-        &[data.descriptor_sets[image_index]],
-        &[],
-    );
 
+    let mut bound_pipeline = None;
     let mut bound_buffers = None;
     for draw in draws {
+        if bound_pipeline != Some(draw.pipeline) {
+            device.cmd_bind_pipeline(
+                command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                draw.pipeline,
+            );
+            device.cmd_bind_descriptor_sets(
+                command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                draw.pipeline_layout,
+                0,
+                &[data.descriptor_sets[image_index]],
+                &[],
+            );
+            bound_pipeline = Some(draw.pipeline);
+        }
+
         // Meshes sharing a mesh buffer don't need the buffers bound again.
         if bound_buffers != Some((draw.vertex_buffer, draw.index_buffer)) {
             device.cmd_bind_vertex_buffers(command_buffer, 0, &[draw.vertex_buffer], &[0]);
@@ -105,15 +119,19 @@ pub unsafe fn record_command_buffer(
             bound_buffers = Some((draw.vertex_buffer, draw.index_buffer));
         }
 
-        let model_bytes =
-            slice::from_raw_parts((&draw.model as *const Mat4).cast::<u8>(), size_of::<Mat4>());
-        device.cmd_push_constants(
-            command_buffer,
-            data.pipeline_layout,
-            vk::ShaderStageFlags::VERTEX,
-            0,
-            model_bytes,
-        );
+        if let Some(slot) = draw.model_push_constant {
+            let model_bytes = slice::from_raw_parts(
+                (&draw.model as *const Mat4).cast::<u8>(),
+                size_of::<Mat4>(),
+            );
+            device.cmd_push_constants(
+                command_buffer,
+                draw.pipeline_layout,
+                slot.stages,
+                slot.offset,
+                model_bytes,
+            );
+        }
 
         device.cmd_draw_indexed(
             command_buffer,

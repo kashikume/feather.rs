@@ -8,14 +8,20 @@ names.
 
 - Scene, nodes, materials, shaders, atlases, textures and uniforms exist on the CPU side.
   `Scene::update_nodes` computes the final uniforms and the global transform of each node.
-- Step 1 is done: every visible node with a mesh is drawn with its global transform as the model
-  matrix (push constant). Command buffers are recorded every frame from `Scene::draw_items`.
+- Step 1 is done: every visible node with a mesh and a material is drawn with its global
+  transform as the model matrix (push constant). Command buffers are recorded every frame from
+  `Scene::draw_items`.
+- Step 2 is done: `Shader::new` reflects the SPIR-V into a `ShaderLayout` (uniform blocks, push
+  constants, samplers; `shaderlayout.rs`, using `spirq`). Each shader gets its own Vulkan pipeline
+  (`ShaderPipeline`), created when first drawn and recreated with the swapchain. The model matrix
+  is pushed at the offset of the shader's model uniform.
 - Still hard-coded in the renderer:
-  - one pipeline and descriptor set layout: binding 0 = `UniformBufferObject { view, proj }`,
-    binding 1 = `texSampler` (`pipeline.rs`, `descriptors.rs`);
+  - one descriptor set shared by all shaders: binding 0 = `UniformBufferObject { view, proj }`,
+    binding 1 = the texture (`create_descriptor_set_layout`, `descriptors.rs`).
+    `check_renderer_support` refuses shaders with another layout (their nodes are not drawn);
   - view/proj come from the first scene's camera; only the first scene is drawn;
   - one texture loaded directly from `resources/viking_room.png` (`texture.rs`);
-  - materials, shaders and node uniforms are not used by the renderer.
+  - material and node uniform values are not sent to the GPU.
 
 ## Design
 
@@ -29,7 +35,7 @@ names.
 
 ### Uniform name → GPU location
 
-Reflect each shader's SPIR-V when the `Shader` is created (e.g. `spirq` or `spirv-reflect`):
+Reflect each shader's SPIR-V when the `Shader` is created (`spirq`, see `ShaderLayout`):
 
 - uniform blocks: set, binding, size, and for each member its name, offset and type;
 - samplers: set, binding, name.
@@ -98,13 +104,17 @@ Each step should leave the app running.
 
 ### 2. Shader reflection and a pipeline per shader
 
-- [ ] Choose a SPIR-V reflection crate and reflect in `Shader::new`
-- [ ] Store uniform blocks (set, binding, size, members with name/offset/type) and samplers
-      (set, binding, name) in `Shader`
-- [ ] Check that reflected types are supported by `UniformValue`; fail `Shader::new` otherwise
-- [ ] Create descriptor set layouts and the pipeline layout from reflection data
-- [ ] Create a Vulkan pipeline per shader (cached, recreated with the swapchain)
-- [ ] Tests for reflection of `shader.vert` / `shader.frag`
+- [x] Choose a SPIR-V reflection crate and reflect in `Shader::new` (`spirq`: pure Rust, so it
+      also builds for Android)
+- [x] Store uniform blocks (set, binding, size, members with name/offset/type), push constants
+      and samplers (set, binding, name) in `Shader` (`Shader::get_layout`)
+- [x] Check that reflected types are supported by `UniformValue`; fail `Shader::new` otherwise
+      (also for unknown or non-`mat4` model/view/proj names, and duplicate uniform names)
+- [x] Create descriptor set layouts and the pipeline layout from reflection data
+- [x] Create a Vulkan pipeline per shader (cached, recreated with the swapchain)
+- [x] Tests for reflection of `shader.vert` / `shader.frag`, plus test-only shaders in
+      `shaders/tests/` (all uniform types, stage merging, unsupported cases)
+- [x] Compile shaders without `-O`, also in release: it strips the names reflection needs
 
 ### 3. Uniform values on the GPU
 
@@ -114,6 +124,8 @@ Each step should leave the app running.
 - [ ] Set 0 for per-frame camera data; set 2 with `UNIFORM_BUFFER_DYNAMIC` per node
 - [ ] Warn (once) about uniforms that the shader doesn't use, and about shader uniforms with no
       value
+- [ ] Allocate descriptor sets from each shader's own set layouts; remove the fixed
+      `create_descriptor_set_layout` and `check_renderer_support`
 
 ### 4. Textures from atlases
 

@@ -1,6 +1,9 @@
+use std::collections::{HashMap, HashSet};
+
 use vulkanalia::prelude::v1_0::*;
 
 use super::featherapp::FeatherApp;
+use super::pipeline::ShaderPipeline;
 use super::swapchain::Swapchain;
 
 /// The Vulkan handles and associated properties used by our Vulkan app.
@@ -20,8 +23,11 @@ pub struct AppData {
     // Pipeline
     pub render_pass: vk::RenderPass,
     pub descriptor_set_layout: vk::DescriptorSetLayout,
-    pub pipeline_layout: vk::PipelineLayout,
-    pub pipeline: vk::Pipeline,
+    /// Pipelines of the rendered scene's shaders, by shader handle. Created when first
+    /// needed; destroyed with the swapchain.
+    pub shader_pipelines: HashMap<usize, ShaderPipeline>,
+    /// Shaders whose pipeline could not be created; their nodes are not drawn.
+    pub failed_shaders: HashSet<usize>,
     // Framebuffers
     pub framebuffers: Vec<vk::Framebuffer>,
     // Command Pool

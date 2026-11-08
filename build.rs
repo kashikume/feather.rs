@@ -15,6 +15,7 @@
 //! Everything under `resources/` is copied to an `assets/` directory next to the built
 //! executable (e.g. `target/debug/assets/`), where `AssetsProvider` reads it at runtime.
 //! Compiled shaders are copied there too, directly into `assets/`, e.g. `assets/shader.vert.spv`.
+//! Shaders in `shaders/tests/` (used by unit tests only) are not copied.
 
 use std::env;
 use std::fs;
@@ -23,6 +24,8 @@ use std::process::Command;
 
 const SHADER_DIR: &str = "shaders";
 const SHADER_EXTENSIONS: &[&str] = &["vert", "frag", "comp", "geom", "tesc", "tese"];
+/// Shaders under `shaders/tests/` are compiled but not copied to the assets.
+const TEST_SHADER_DIR: &str = "tests";
 const ASSETS_SOURCE_DIR: &str = "resources";
 const ASSETS_TARGET_DIR: &str = "assets";
 
@@ -34,7 +37,6 @@ fn main() {
 
     let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR not set"));
     let glslc = find_glslc();
-    let optimize = env::var("PROFILE").map(|p| p == "release").unwrap_or(false);
 
     let assets_dir = assets_dir(&out_dir);
     copy_dir(Path::new(ASSETS_SOURCE_DIR), &assets_dir);
@@ -50,11 +52,11 @@ fn main() {
 
         fs::create_dir_all(output.parent().unwrap()).expect("failed to create shader output dir");
 
+        // No `-O`, also in release builds: it strips the debug names that shader reflection
+        // (`ShaderLayout`) uses as uniform names, and may drop unused uniforms. Drivers
+        // optimize SPIR-V themselves.
         let mut cmd = Command::new(&glslc);
         cmd.arg(&source).arg("-o").arg(&output);
-        if optimize {
-            cmd.arg("-O");
-        }
 
         let result = cmd.output().unwrap_or_else(|e| {
             panic!(
@@ -72,6 +74,10 @@ fn main() {
             );
         }
 
+        // Test shaders are only embedded by unit tests; they are not assets.
+        if relative.starts_with(TEST_SHADER_DIR) {
+            continue;
+        }
         let asset = assets_dir.join(output.strip_prefix(out_dir.join(SHADER_DIR)).unwrap());
         fs::create_dir_all(asset.parent().unwrap()).expect("failed to create shader asset dir");
         fs::copy(&output, &asset).unwrap_or_else(|e| {

@@ -14,20 +14,23 @@ What works today:
 - Vulkan renderer (via [`vulkanalia`](https://github.com/KyleMayes/vulkanalia)) with swapchain recreation on resize
 - Windowing and event loop via [`winit`](https://github.com/rust-windowing/winit)
 - Scene graph made of nodes with transforms, visibility, meshes and materials; every visible node
-  with a mesh is drawn
+  with a mesh and a material is drawn
 - Scene objects (meshes, nodes, atlases, textures, shaders, materials) stored in the scene and
   referenced by handle
 - Mesh builders: Wavefront `.obj` loading (via `tobj`) and procedural cuboids
 - Atlases loaded from PNG (any color type, converted to 8-bit RGBA), with textures cut from them
-- Shaders (SPIR-V) and materials (a shader plus uniform values, textures included)
+- Shaders (SPIR-V) and materials (a shader plus uniform values, textures included); each
+  shader's uniform blocks, push constants and samplers are read from its SPIR-V, and each shader
+  gets its own pipeline
 - Uniforms on materials and nodes, inherited down the scene graph
 - Assets loaded through a platform-specific `AssetsProvider`
 - Perspective camera
 - Textures with mipmaps and MSAA
 - Vulkan validation layers turned on automatically in debug builds
 
-> The renderer draws every visible node with a mesh, using the node's global transform, but it
-> does not use materials, uniforms or atlases yet: it has one hard-coded pipeline and texture.
+> The renderer draws every visible node that has a mesh and a material, with the material's
+> shader and the node's global transform. It does not send uniform values or atlases to the GPU
+> yet: all shaders share one descriptor set with the camera matrices and one hard-coded texture.
 > See [doc/todo](doc/todo/node-uniforms-rendering.md) for the plan.
 
 ## Requirements
@@ -58,7 +61,8 @@ directory next to the executable.
 
 `build.rs` compiles every shader in `shaders/` (`.vert`, `.frag`, `.comp`, `.geom`, `.tesc`,
 `.tese`) with `glslc` during `cargo build`, and recompiles whenever anything in `shaders/` changes.
-Release builds pass `-O` to `glslc`. A compiled shader keeps its path relative to `shaders/` and
+Shaders are compiled without `-O`, also in release builds: optimization strips the debug names
+the engine reads uniform names from. A compiled shader keeps its path relative to `shaders/` and
 gets `.spv` added, so `shaders/shader.vert` becomes `shader.vert.spv`. It is written to:
 
 - the `assets/` directory next to the executable (`assets/shader.vert.spv`), where applications
@@ -147,6 +151,7 @@ src/
                      images loaded from PNG and textures cut from them
     shader.rs, material.rs
                      SPIR-V shaders and materials
+    shaderlayout.rs  uniform blocks, push constants and samplers read from a shader's SPIR-V
     uniform.rs, uniforms.rs
                      uniform values and named uniform lists
     assetsprovider.rs, windowsassetsprovider.rs
@@ -155,7 +160,8 @@ src/
     instance.rs, physicaldevice.rs, logicaldevice.rs, swapchain.rs, pipeline.rs, ...
                      Vulkan object wrappers
   testapp/           development application used to exercise the engine
-shaders/             GLSL sources (shader.vert, shader.frag), compiled by build.rs
+shaders/             GLSL sources (shader.vert, shader.frag), compiled by build.rs;
+                     shaders/tests/ holds shaders used only by unit tests
 build.rs             compiles shaders to SPIR-V and copies assets next to the executable
 resources/           models and textures, copied to assets/ by build.rs
 ```

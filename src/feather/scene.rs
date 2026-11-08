@@ -9,10 +9,13 @@ use super::{
     math::Mat4, mesh::Mesh, meshbuffer::MeshBuffer, node::Node, objdb::ObjDB, uniforms::Uniforms,
 };
 
-/// One draw call: a node's mesh, located in a mesh buffer, with the node's model matrix.
+/// One draw call: a node's mesh, located in a mesh buffer, drawn with the shader of the node's
+/// material and the node's model matrix.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DrawItem {
     pub node: usize,
+    /// Handle of the shader (in `Scene::shaders`) of the node's material.
+    pub shader: usize,
     /// Handle of the mesh buffer (in `Scene::buffers`) holding the mesh.
     pub mesh_buffer: usize,
     pub model: Mat4,
@@ -243,9 +246,9 @@ impl Scene {
         }
     }
 
-    /// Lists what to draw: every visible node that has a mesh already placed in a mesh
-    /// buffer. A hidden node hides its descendants too. Uses the global transforms computed
-    /// by `update_nodes`.
+    /// Lists what to draw: every visible node that has a material with an existing shader and
+    /// a mesh already placed in a mesh buffer. A hidden node hides its descendants too. Uses
+    /// the global transforms computed by `update_nodes`.
     pub fn draw_items(&self) -> Vec<DrawItem> {
         let mut items = Vec::new();
         let mut stack = self.root_nodes();
@@ -265,8 +268,17 @@ impl Scene {
             else {
                 continue;
             };
+            let Some(shader) = node
+                .get_material()
+                .and_then(|m| self.materials.get(m))
+                .map(|m| m.get_shader())
+                .filter(|&s| self.shaders.get(s).is_some())
+            else {
+                continue;
+            };
             items.push(DrawItem {
                 node: handle,
+                shader,
                 mesh_buffer: data.buffer_handle,
                 model: node.get_global_transform().unwrap_or(node.get_transform()),
                 first_index: data.index_begin_index as u32,
@@ -1305,6 +1317,13 @@ mod tests {
         Mat4::from_translation(Vec3::new(x, y, z))
     }
 
+    /// Creates a shader and a material using it; returns (shader, material).
+    fn test_material(scene: &mut Scene) -> (usize, usize) {
+        let shader = scene.create_shader(None, VERT, FRAG, None, None, None).unwrap();
+        let material = scene.create_material(None, shader).unwrap();
+        (shader, material)
+    }
+
     #[test]
     fn update_nodes_computes_global_transforms() {
         let mut scene = Scene::new();
@@ -1351,6 +1370,9 @@ mod tests {
         let mesh_b = scene.add_mesh(test_mesh(3, 3));
         scene.node_set_mesh(a, mesh_a).unwrap();
         scene.node_set_mesh(b, mesh_b).unwrap();
+        let (shader, material) = test_material(&mut scene);
+        scene.node_set_material(a, material).unwrap();
+        scene.node_set_material(b, material).unwrap();
         scene.get_node_mut(a).unwrap().set_transform(translation(1.0, 0.0, 0.0));
         scene.get_node_mut(b).unwrap().set_transform(translation(0.0, 1.0, 0.0));
         scene.build_missing_mesh_buffers().unwrap();
@@ -1369,6 +1391,7 @@ mod tests {
             item(a),
             DrawItem {
                 node: a,
+                shader,
                 mesh_buffer: buffer,
                 model: translation(1.0, 0.0, 0.0),
                 first_index: data_a.index_begin_index as u32,
@@ -1380,6 +1403,7 @@ mod tests {
             item(b),
             DrawItem {
                 node: b,
+                shader,
                 mesh_buffer: buffer,
                 model: translation(1.0, 1.0, 0.0),
                 first_index: data_b.index_begin_index as u32,
@@ -1395,9 +1419,60 @@ mod tests {
         let root = scene.create_root_node(None);
         let mesh = scene.add_mesh(test_mesh(3, 3));
         scene.node_set_mesh(root, mesh).unwrap();
+        let (_, material) = test_material(&mut scene);
+        scene.node_set_material(root, material).unwrap();
         scene.update_nodes();
 
         assert!(scene.draw_items().is_empty());
+    }
+
+    #[test]
+    fn draw_items_skip_nodes_without_material() {
+        let mut scene = Scene::new();
+        let root = scene.create_root_node(None);
+        let mesh = scene.add_mesh(test_mesh(3, 3));
+        scene.node_set_mesh(root, mesh).unwrap();
+        scene.build_missing_mesh_buffers().unwrap();
+        scene.update_nodes();
+
+        assert!(scene.draw_items().is_empty());
+    }
+
+    #[test]
+    fn draw_items_skip_materials_with_removed_shader() {
+        let mut scene = Scene::new();
+        let root = scene.create_root_node(None);
+        let mesh = scene.add_mesh(test_mesh(3, 3));
+        scene.node_set_mesh(root, mesh).unwrap();
+        let (shader, material) = test_material(&mut scene);
+        scene.node_set_material(root, material).unwrap();
+        scene.shaders.remove(shader);
+        scene.build_missing_mesh_buffers().unwrap();
+        scene.update_nodes();
+
+        assert!(scene.draw_items().is_empty());
+    }
+
+    #[test]
+    fn draw_items_use_the_material_shader() {
+        let mut scene = Scene::new();
+        let root = scene.create_root_node(None);
+        let a = scene.create_node(None, root).unwrap();
+        let b = scene.create_node(None, root).unwrap();
+        let mesh = scene.add_mesh(test_mesh(3, 3));
+        let (shader_a, material_a) = test_material(&mut scene);
+        let (shader_b, material_b) = test_material(&mut scene);
+        for (node, material) in [(a, material_a), (b, material_b)] {
+            scene.node_set_mesh(node, mesh).unwrap();
+            scene.node_set_material(node, material).unwrap();
+        }
+        scene.build_missing_mesh_buffers().unwrap();
+        scene.update_nodes();
+
+        let items = scene.draw_items();
+        let shader_of = |node| items.iter().find(|i| i.node == node).unwrap().shader;
+        assert_eq!(shader_of(a), shader_a);
+        assert_eq!(shader_of(b), shader_b);
     }
 
     #[test]
@@ -1408,8 +1483,10 @@ mod tests {
         let below_hidden = scene.create_node(None, hidden).unwrap();
         let shown = scene.create_node(None, root).unwrap();
         let mesh = scene.add_mesh(test_mesh(3, 3));
+        let (_, material) = test_material(&mut scene);
         for node in [hidden, below_hidden, shown] {
             scene.node_set_mesh(node, mesh).unwrap();
+            scene.node_set_material(node, material).unwrap();
         }
         scene.get_node_mut(hidden).unwrap().set_visible(false);
         scene.build_missing_mesh_buffers().unwrap();

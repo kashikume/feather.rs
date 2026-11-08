@@ -1,6 +1,7 @@
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 
 use super::object::Object;
+use super::shaderlayout::{ShaderLayout, UniformLocation, UniformType};
 
 /// SPIR-V magic number (first word of every SPIR-V module).
 const SPIRV_MAGIC: u32 = 0x0723_0203;
@@ -11,6 +12,8 @@ pub struct Shader {
     handle: usize,
     vertex: Vec<u8>,
     fragment: Vec<u8>,
+    /// Resources the shader uses, reflected from the SPIR-V.
+    layout: ShaderLayout,
     uniform_model_name: Option<String>,
     uniform_view_name: Option<String>,
     uniform_proj_name: Option<String>,
@@ -35,8 +38,11 @@ impl Shader {
     /// `include_bytes!(concat!(env!("OUT_DIR"), "/shaders/shader.vert.spv"))`.
     /// `uniform_model_name`, `uniform_view_name` and `uniform_proj_name` name the uniforms
     /// that receive the node's model matrix and the camera's view and projection matrices
-    /// (`None` if the shader doesn't use one).
-    /// Fails if either stage is not valid SPIR-V.
+    /// (`None` if the shader doesn't use one); each named uniform must exist in the shader and
+    /// be a `mat4`.
+    ///
+    /// Fails if either stage is not valid SPIR-V, if the shader uses resources the engine
+    /// doesn't support (see `ShaderLayout`), or if a matrix uniform name is wrong.
     pub fn new(
         name: Option<String>,
         vertex: &[u8],
@@ -47,11 +53,23 @@ impl Shader {
     ) -> Result<Self> {
         check_spirv("vertex", vertex)?;
         check_spirv("fragment", fragment)?;
+        let layout = ShaderLayout::reflect(vertex, fragment).with_context(|| {
+            format!(
+                "Cannot read the layout of shader {}",
+                name.as_deref().unwrap_or("<unnamed>")
+            )
+        })?;
+        for uniform in [&uniform_model_name, &uniform_view_name, &uniform_proj_name] {
+            if let Some(uniform) = uniform {
+                check_matrix_uniform(&layout, uniform)?;
+            }
+        }
         Ok(Self {
             name,
             handle: usize::MAX,
             vertex: vertex.to_vec(),
             fragment: fragment.to_vec(),
+            layout,
             uniform_model_name,
             uniform_view_name,
             uniform_proj_name,
@@ -64,6 +82,11 @@ impl Shader {
 
     pub fn get_fragment(&self) -> &[u8] {
         &self.fragment
+    }
+
+    /// Uniform blocks, push constants and samplers the shader uses.
+    pub fn get_layout(&self) -> &ShaderLayout {
+        &self.layout
     }
 
     /// Name of the uniform that receives the node's model matrix, if the shader uses one.
@@ -95,6 +118,19 @@ impl Shader {
         self.uniform_proj_name = name;
         self
     }
+}
+
+fn check_matrix_uniform(layout: &ShaderLayout, name: &str) -> Result<()> {
+    let ty = match layout.find(name) {
+        Some(UniformLocation::Block { member, .. }) => member.ty,
+        Some(UniformLocation::PushConstant(member)) => member.ty,
+        Some(UniformLocation::Sampler(_)) => bail!("uniform `{name}` is a sampler, not a mat4"),
+        None => bail!("the shader has no uniform `{name}`"),
+    };
+    if ty != UniformType::Mat4 {
+        bail!("uniform `{name}` is {ty:?}, not a mat4");
+    }
+    Ok(())
 }
 
 fn check_spirv(stage: &str, code: &[u8]) -> Result<()> {
@@ -173,6 +209,26 @@ pub(crate) mod tests {
 
         shader.set_uniform_view_name(None);
         assert_eq!(shader.get_uniform_view_name(), None);
+    }
+
+    #[test]
+    fn new_reflects_layout() {
+        let shader = Shader::new(None, VERT, FRAG, None, None, None).unwrap();
+        assert_eq!(shader.get_layout(), &ShaderLayout::reflect(VERT, FRAG).unwrap());
+        assert!(shader.get_layout().find("texSampler").is_some());
+    }
+
+    #[test]
+    fn unknown_matrix_uniform_name_fails() {
+        let err = Shader::new(None, VERT, FRAG, Some("mdl".to_string()), None, None)
+            .err()
+            .unwrap();
+        assert!(err.to_string().contains("mdl"), "{err}");
+    }
+
+    #[test]
+    fn matrix_uniform_name_must_be_mat4() {
+        assert!(Shader::new(None, VERT, FRAG, None, Some("texSampler".to_string()), None).is_err());
     }
 
     #[test]

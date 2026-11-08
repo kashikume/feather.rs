@@ -32,6 +32,7 @@ pub mod pipeline;
 pub mod queuefamilyindices;
 pub mod scene;
 pub mod shader;
+pub mod shaderlayout;
 pub mod swapchain;
 pub mod swapchainsupport;
 pub mod syncobjects;
