@@ -17,20 +17,12 @@ impl<T: Object> ObjDB<T> {
         }
     }
 
+    /// Adds an object and returns its handle. Every object gets its own handle, even when its
+    /// name is already used; name lookups keep returning the object registered first.
     pub fn add(&mut self, mut object: T) -> usize {
-        let handle = if let Some(name) = object.get_name() {
-            if self.object_names.contains_key(&name) {
-                *self.object_names.get(&name).unwrap()
-            } else {
-                self.free_indexes.pop().unwrap_or(self.objects.len())
-            }
-        } else if !self.free_indexes.is_empty() {
-            self.free_indexes.pop().unwrap()
-        } else {
-            self.objects.len()
-        };
+        let handle = self.free_indexes.pop().unwrap_or(self.objects.len());
         if let Some(name) = object.get_name() {
-            self.object_names.insert(name, handle);
+            self.object_names.entry(name).or_insert(handle);
         }
         object.set_handle(handle);
         if handle >= self.objects.len() {
@@ -42,18 +34,35 @@ impl<T: Object> ObjDB<T> {
         handle
     }
 
+    /// Removes an object. Invalid or already removed handles are ignored.
     pub fn remove(&mut self, handle: usize) {
-        if let Some(object) = self.objects[handle].take() {
-            self.objects[handle] = None;
-            self.free_indexes.push(handle);
-            if let Some(name) = object.get_name() {
-                self.object_names.remove(&name);
-            }
+        let Some(object) = self.objects.get_mut(handle).and_then(Option::take) else {
+            return;
+        };
+        self.free_indexes.push(handle);
+
+        let Some(name) = object.get_name() else {
+            return;
+        };
+        if self.object_names.get(&name) != Some(&handle) {
+            return;
         }
+        // The name pointed at the removed object: hand it to another object with the same
+        // name, if there is one.
+        let other = self
+            .objects
+            .iter()
+            .flatten()
+            .find(|o| o.get_name().as_deref() == Some(name.as_str()))
+            .map(|o| o.get_handle());
+        match other {
+            Some(other) => self.object_names.insert(name, other),
+            None => self.object_names.remove(&name),
+        };
     }
 
     pub fn get(&self, handle: usize) -> Option<&T> {
-        self.objects[handle].as_ref()
+        self.objects.get(handle).and_then(Option::as_ref)
     }
 
     pub fn get_by_name(&self, name: &str) -> Option<&T> {
@@ -69,7 +78,7 @@ impl<T: Object> ObjDB<T> {
     }
 
     pub fn get_mut(&mut self, handle: usize) -> Option<&mut T> {
-        self.objects[handle].as_mut()
+        self.objects.get_mut(handle).and_then(Option::as_mut)
     }
 
     pub fn iter(&self) -> impl Iterator<Item = &T> {
@@ -179,5 +188,67 @@ mod tests {
             sum += obj.value;
         }
         assert_eq!(sum, 4 + 6);
+    }
+
+    #[test]
+    fn duplicate_names_get_separate_handles() {
+        let mut db = ObjDB::new();
+        let h1 = db.add(TestObject::new(Some("a"), 1));
+        let h2 = db.add(TestObject::new(Some("a"), 2));
+
+        assert_ne!(h1, h2);
+        assert_eq!(db.get(h1).unwrap().value, 1);
+        assert_eq!(db.get(h2).unwrap().value, 2);
+        // Name lookup returns the object registered first.
+        assert_eq!(db.get_by_name("a").unwrap().get_handle(), h1);
+    }
+
+    #[test]
+    fn removing_named_object_moves_name_to_duplicate() {
+        let mut db = ObjDB::new();
+        let h1 = db.add(TestObject::new(Some("a"), 1));
+        let h2 = db.add(TestObject::new(Some("a"), 2));
+
+        db.remove(h1);
+        assert_eq!(db.get_by_name("a").unwrap().get_handle(), h2);
+
+        db.remove(h2);
+        assert!(db.get_by_name("a").is_none());
+    }
+
+    #[test]
+    fn removing_duplicate_keeps_name_of_first() {
+        let mut db = ObjDB::new();
+        let h1 = db.add(TestObject::new(Some("a"), 1));
+        let h2 = db.add(TestObject::new(Some("a"), 2));
+
+        db.remove(h2);
+        assert_eq!(db.get_by_name("a").unwrap().get_handle(), h1);
+    }
+
+    #[test]
+    fn named_object_reuses_free_index() {
+        let mut db = ObjDB::new();
+        let h1 = db.add(TestObject::new(None, 1));
+        db.add(TestObject::new(None, 2));
+        db.remove(h1);
+
+        let h3 = db.add(TestObject::new(Some("c"), 3));
+        assert_eq!(h3, h1);
+    }
+
+    #[test]
+    fn invalid_handles_are_handled() {
+        let mut db: ObjDB<TestObject> = ObjDB::new();
+        assert!(db.get(42).is_none());
+        assert!(db.get_mut(42).is_none());
+        db.remove(42); // must not panic
+
+        let h = db.add(TestObject::new(None, 1));
+        db.remove(h);
+        db.remove(h); // removing twice must not panic or duplicate the free index
+        let a = db.add(TestObject::new(None, 2));
+        let b = db.add(TestObject::new(None, 3));
+        assert_ne!(a, b);
     }
 }

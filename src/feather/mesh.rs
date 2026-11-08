@@ -30,7 +30,7 @@ impl Mesh {
     pub fn new(name: Option<String>, vertices: Vec<Vertex>, indices: Vec<u32>) -> Self {
         Self {
             handle: usize::MAX,
-            name: None,
+            name,
             vertices,
             indices,
             mesh_buffer_data: None,
@@ -59,5 +59,19 @@ impl Mesh {
 
     pub fn has_buffers_assigned(&self) -> bool {
         self.mesh_buffer_data.is_some()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn new_keeps_name() {
+        let mesh = Mesh::new(Some("cube".to_string()), Vec::new(), Vec::new());
+        assert_eq!(mesh.get_name(), Some("cube".to_string()));
+
+        let unnamed = Mesh::new(None, Vec::new(), Vec::new());
+        assert_eq!(unnamed.get_name(), None);
     }
 }

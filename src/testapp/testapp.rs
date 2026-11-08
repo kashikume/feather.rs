@@ -51,7 +51,9 @@ impl TestApp {
     pub fn new() -> Self {
         let mut scene = Scene::new();
         let root_node = scene.create_root_node(Some("Scene root".to_string()));
-        let room_node = scene.create_node(Some("Room".to_string()), root_node);
+        let room_node = scene
+            .create_node(Some("Room".to_string()), root_node)
+            .unwrap();
 
         let mut camera = PerspectiveCamera::new();
 
