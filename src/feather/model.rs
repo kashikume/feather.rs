@@ -1,6 +1,7 @@
 use anyhow::Result;
 
 use super::appdata::AppData;
+use super::assetsprovider::create_assets_provider;
 use super::{meshbuildercuboid, meshbuilderobjfile};
 
 //================================================
@@ -8,8 +9,9 @@ use super::{meshbuildercuboid, meshbuilderobjfile};
 //================================================
 
 pub fn load_model(data: &mut AppData) -> Result<()> {
+    let assets = create_assets_provider("assets")?;
     let meshbuilderobjfile =
-        meshbuilderobjfile::MeshBuilderObjFile::new("resources/viking_room.obj");
+        meshbuilderobjfile::MeshBuilderObjFile::new(&*assets, "viking_room.obj")?;
     let mesh = meshbuilderobjfile.build(&mut data.scene)?;
 
     let meshbuildercuboid =

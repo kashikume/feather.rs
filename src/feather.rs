@@ -1,5 +1,6 @@
 pub mod app;
 pub mod appdata;
+pub mod assetsprovider;
 pub mod atlas;
 pub mod bufferdata;
 pub mod buffers;
@@ -40,3 +41,5 @@ pub mod uniform;
 pub mod uniforms;
 pub mod uniformbufferobject;
 pub mod vertex;
+#[cfg(windows)]
+pub mod windowsassetsprovider;

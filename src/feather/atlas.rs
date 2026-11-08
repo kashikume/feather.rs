@@ -1,9 +1,6 @@
-use std::fs::File;
-use std::io::BufReader;
-use std::path::Path;
-
 use anyhow::{bail, Context, Result};
 
+use super::assetsprovider::AssetsProvider;
 use super::object::Object;
 
 /// An image that textures are cut from. Pixels are stored as 8-bit RGBA, row by row.
@@ -34,23 +31,29 @@ impl Object for Atlas {
 }
 
 impl Atlas {
-    /// Loads an atlas from a PNG file. Any PNG color type and bit depth is converted to 8-bit
-    /// RGBA. When `name` is `None` or empty, the file name (e.g. `texture.png`) is used.
-    pub fn new_from_png(path: impl AsRef<Path>, name: Option<String>) -> Result<Self> {
-        let path = path.as_ref();
+    /// Loads an atlas from the PNG asset `asset` (e.g. `"textures/wall.png"`). Any PNG color
+    /// type and bit depth is converted to 8-bit RGBA. When `name` is `None` or empty, the
+    /// asset's file name (e.g. `wall.png`) is used.
+    pub fn new_from_png(
+        assets: &dyn AssetsProvider,
+        asset: &str,
+        name: Option<String>,
+    ) -> Result<Self> {
         let name = match name {
             Some(name) if !name.is_empty() => name,
-            _ => path
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_default(),
+            _ => asset.rsplit('/').next().unwrap_or(asset).to_string(),
         };
 
-        let file = File::open(path).with_context(|| format!("Cannot open {}", path.display()))?;
-        let (width, height, pixels) =
-            read_png_rgba(file).with_context(|| format!("Cannot read PNG {}", path.display()))?;
+        let bytes = assets.get_asset(asset)?;
+        Self::new_from_png_bytes(&bytes, Some(name))
+            .with_context(|| format!("Cannot read PNG asset {asset}"))
+    }
 
-        Ok(Self::from_rgba(Some(name), width, height, pixels))
+    /// Decodes an atlas from PNG data in memory. Any PNG color type and bit depth is converted
+    /// to 8-bit RGBA.
+    pub fn new_from_png_bytes(png: &[u8], name: Option<String>) -> Result<Self> {
+        let (width, height, pixels) = read_png_rgba(png)?;
+        Ok(Self::from_rgba(name, width, height, pixels))
     }
 
     /// Creates an atlas from 8-bit RGBA pixels (`width * height * 4` bytes).
@@ -116,8 +119,8 @@ impl Atlas {
 }
 
 /// Decodes a PNG into 8-bit RGBA pixels. Returns `(width, height, pixels)`.
-fn read_png_rgba(file: File) -> Result<(u32, u32, Vec<u8>)> {
-    let mut decoder = png::Decoder::new(BufReader::new(file));
+fn read_png_rgba(png: &[u8]) -> Result<(u32, u32, Vec<u8>)> {
+    let mut decoder = png::Decoder::new(png);
     // Palette and low bit depths expand to 8 bits, 16-bit channels are cut down to 8.
     decoder.set_transformations(png::Transformations::normalize_to_color8());
     let mut reader = decoder.read_info()?;
@@ -146,7 +149,7 @@ fn read_png_rgba(file: File) -> Result<(u32, u32, Vec<u8>)> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
+    use crate::feather::assetsprovider::tests::{test_resources, MemoryAssetsProvider};
 
     /// 2x1 atlas with a red and a green pixel.
     fn test_atlas(name: Option<&str>) -> Atlas {
@@ -158,22 +161,17 @@ mod tests {
         )
     }
 
-    /// Writes a PNG to a unique temporary file and returns its path.
+    /// Encodes a PNG in memory.
     fn write_png(
-        file_name: &str,
         width: u32,
         height: u32,
         color: png::ColorType,
         depth: png::BitDepth,
         data: &[u8],
         palette: Option<Vec<u8>>,
-    ) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("feather_atlas_tests_{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join(file_name);
-
-        let file = File::create(&path).unwrap();
-        let mut encoder = png::Encoder::new(std::io::BufWriter::new(file), width, height);
+    ) -> Vec<u8> {
+        let mut png = Vec::new();
+        let mut encoder = png::Encoder::new(&mut png, width, height);
         encoder.set_color(color);
         encoder.set_depth(depth);
         if let Some(palette) = palette {
@@ -182,14 +180,14 @@ mod tests {
         let mut writer = encoder.write_header().unwrap();
         writer.write_image_data(data).unwrap();
         writer.finish().unwrap();
-        path
+        png
     }
 
     // --- loading ---
 
     #[test]
     fn new_from_png_loads_resource() {
-        let atlas = Atlas::new_from_png("resources/texture.png", None).unwrap();
+        let atlas = Atlas::new_from_png(&*test_resources(), "texture.png", None).unwrap();
         assert_eq!(atlas.get_width(), 512);
         assert_eq!(atlas.get_height(), 512);
         assert_eq!(atlas.get_pixels().len(), 512 * 512 * 4);
@@ -200,28 +198,27 @@ mod tests {
 
     #[test]
     fn name_defaults_to_file_name() {
-        let atlas = Atlas::new_from_png("resources/texture.png", None).unwrap();
+        let atlas = Atlas::new_from_png(&*test_resources(), "texture.png", None).unwrap();
         assert_eq!(atlas.get_name(), Some("texture.png".to_string()));
     }
 
     #[test]
     fn empty_name_defaults_to_file_name() {
-        let atlas = Atlas::new_from_png("resources/texture.png", Some(String::new())).unwrap();
+        let atlas = Atlas::new_from_png(&*test_resources(), "texture.png", Some(String::new())).unwrap();
         assert_eq!(atlas.get_name(), Some("texture.png".to_string()));
     }
 
     #[test]
     fn explicit_name_is_kept() {
         let atlas =
-            Atlas::new_from_png("resources/texture.png", Some("bricks".to_string())).unwrap();
+            Atlas::new_from_png(&*test_resources(), "texture.png", Some("bricks".to_string())).unwrap();
         assert_eq!(atlas.get_name(), Some("bricks".to_string()));
     }
 
     #[test]
     fn rgba_png_is_loaded_as_is() {
         let data = [1, 2, 3, 4, 5, 6, 7, 8];
-        let path = write_png(
-            "rgba.png",
+        let png = write_png(
             2,
             1,
             png::ColorType::Rgba,
@@ -229,15 +226,14 @@ mod tests {
             &data,
             None,
         );
-        let atlas = Atlas::new_from_png(&path, None).unwrap();
+        let atlas = Atlas::new_from_png_bytes(&png, None).unwrap();
         assert_eq!((atlas.get_width(), atlas.get_height()), (2, 1));
         assert_eq!(atlas.get_pixels(), &data);
     }
 
     #[test]
     fn rgb_png_gets_opaque_alpha() {
-        let path = write_png(
-            "rgb.png",
+        let png = write_png(
             2,
             1,
             png::ColorType::Rgb,
@@ -245,14 +241,13 @@ mod tests {
             &[10, 20, 30, 40, 50, 60],
             None,
         );
-        let atlas = Atlas::new_from_png(&path, None).unwrap();
+        let atlas = Atlas::new_from_png_bytes(&png, None).unwrap();
         assert_eq!(atlas.get_pixels(), &[10, 20, 30, 255, 40, 50, 60, 255]);
     }
 
     #[test]
     fn grayscale_png_is_converted() {
-        let path = write_png(
-            "gray.png",
+        let png = write_png(
             2,
             1,
             png::ColorType::Grayscale,
@@ -260,14 +255,13 @@ mod tests {
             &[0, 200],
             None,
         );
-        let atlas = Atlas::new_from_png(&path, None).unwrap();
+        let atlas = Atlas::new_from_png_bytes(&png, None).unwrap();
         assert_eq!(atlas.get_pixels(), &[0, 0, 0, 255, 200, 200, 200, 255]);
     }
 
     #[test]
     fn grayscale_alpha_png_is_converted() {
-        let path = write_png(
-            "gray_alpha.png",
+        let png = write_png(
             1,
             1,
             png::ColorType::GrayscaleAlpha,
@@ -275,15 +269,14 @@ mod tests {
             &[100, 50],
             None,
         );
-        let atlas = Atlas::new_from_png(&path, None).unwrap();
+        let atlas = Atlas::new_from_png_bytes(&png, None).unwrap();
         assert_eq!(atlas.get_pixels(), &[100, 100, 100, 50]);
     }
 
     #[test]
     fn sixteen_bit_png_is_reduced_to_eight_bits() {
         // One RGBA pixel, 16 bits per channel (big-endian); the high byte is kept.
-        let path = write_png(
-            "rgba16.png",
+        let png = write_png(
             1,
             1,
             png::ColorType::Rgba,
@@ -291,15 +284,14 @@ mod tests {
             &[0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xFF, 0xFF],
             None,
         );
-        let atlas = Atlas::new_from_png(&path, None).unwrap();
+        let atlas = Atlas::new_from_png_bytes(&png, None).unwrap();
         assert_eq!(atlas.get_pixels(), &[0x12, 0x56, 0x9A, 0xFF]);
     }
 
     #[test]
     fn indexed_png_is_expanded() {
         let palette = vec![255, 0, 0, 0, 0, 255]; // red, blue
-        let path = write_png(
-            "indexed.png",
+        let png = write_png(
             2,
             1,
             png::ColorType::Indexed,
@@ -307,18 +299,59 @@ mod tests {
             &[1, 0],
             Some(palette),
         );
-        let atlas = Atlas::new_from_png(&path, None).unwrap();
+        let atlas = Atlas::new_from_png_bytes(&png, None).unwrap();
         assert_eq!(atlas.get_pixels(), &[0, 0, 255, 255, 255, 0, 0, 255]);
     }
 
     #[test]
     fn missing_file_fails() {
-        assert!(Atlas::new_from_png("resources/does_not_exist.png", None).is_err());
+        assert!(Atlas::new_from_png(&*test_resources(), "does_not_exist.png", None).is_err());
     }
 
     #[test]
-    fn non_png_file_fails() {
-        assert!(Atlas::new_from_png("Cargo.toml", None).is_err());
+    fn non_png_asset_fails() {
+        assert!(Atlas::new_from_png(&*test_resources(), "viking_room.obj", None).is_err());
+        assert!(Atlas::new_from_png_bytes(b"not a png", None).is_err());
+    }
+
+    #[test]
+    fn name_defaults_to_last_path_segment() {
+        let png = write_png(
+            1,
+            1,
+            png::ColorType::Rgba,
+            png::BitDepth::Eight,
+            &[1, 2, 3, 4],
+            None,
+        );
+        let mut assets = MemoryAssetsProvider::default();
+        assets.assets.insert("sub/dir/tiny.png".to_string(), png);
+
+        let atlas = Atlas::new_from_png(&assets, "sub/dir/tiny.png", None).unwrap();
+        assert_eq!(atlas.get_name(), Some("tiny.png".to_string()));
+    }
+
+    #[test]
+    fn missing_asset_error_names_the_asset() {
+        let err = Atlas::new_from_png(&*test_resources(), "does_not_exist.png", None)
+            .err()
+            .unwrap();
+        assert!(format!("{err:#}").contains("does_not_exist.png"));
+    }
+
+    #[test]
+    fn new_from_png_bytes_keeps_name() {
+        let png = write_png(
+            1,
+            1,
+            png::ColorType::Rgba,
+            png::BitDepth::Eight,
+            &[1, 2, 3, 4],
+            None,
+        );
+        let atlas = Atlas::new_from_png_bytes(&png, Some("tiny".to_string())).unwrap();
+        assert_eq!(atlas.get_name(), Some("tiny".to_string()));
+        assert_eq!(Atlas::new_from_png_bytes(&png, None).unwrap().get_name(), None);
     }
 
     // --- textures ---

@@ -2,7 +2,7 @@ use anyhow::Result;
 use vulkanalia::Device;
 
 use crate::feather::{
-    atlas::Atlas, material::Material, object::Object, shader::Shader, texture::Texture,
+    assetsprovider::AssetsProvider, atlas::Atlas, material::Material, object::Object, shader::Shader, texture::Texture,
 };
 
 use super::{mesh::Mesh, meshbuffer::MeshBuffer, node::Node, objdb::ObjDB, uniforms::Uniforms};
@@ -220,14 +220,15 @@ impl Scene {
         self.atlases.add(atlas)
     }
 
-    /// Loads an atlas from a PNG file and adds it to the scene. When `name` is `None` or empty,
-    /// the file name is used.
+    /// Loads an atlas from the PNG asset `asset` and adds it to the scene. When `name` is `None`
+    /// or empty, the asset's file name is used.
     pub fn create_atlas_from_png(
         &mut self,
-        path: impl AsRef<std::path::Path>,
+        assets: &dyn AssetsProvider,
+        asset: &str,
         name: Option<String>,
     ) -> Result<usize> {
-        let atlas = Atlas::new_from_png(path, name)?;
+        let atlas = Atlas::new_from_png(assets, asset, name)?;
         Ok(self.add_atlas(atlas))
     }
 
@@ -548,6 +549,7 @@ mod tests {
 
     // --- shaders and materials ---
 
+    use crate::feather::assetsprovider::tests::test_resources;
     use crate::feather::shader::tests::{FRAG, VERT};
 
     #[test]
@@ -1011,7 +1013,7 @@ mod tests {
     fn create_atlas_from_png_adds_atlas() {
         let mut scene = Scene::new();
         let atlas = scene
-            .create_atlas_from_png("resources/texture.png", None)
+            .create_atlas_from_png(&*test_resources(), "texture.png", None)
             .unwrap();
 
         let atlas_obj = scene.get_atlas(atlas).unwrap();
@@ -1032,7 +1034,7 @@ mod tests {
     fn create_atlas_from_png_with_name() {
         let mut scene = Scene::new();
         let atlas = scene
-            .create_atlas_from_png("resources/texture.png", Some("bricks".to_string()))
+            .create_atlas_from_png(&*test_resources(), "texture.png", Some("bricks".to_string()))
             .unwrap();
         assert_eq!(
             scene.get_atlas(atlas).unwrap().get_name(),
@@ -1044,7 +1046,7 @@ mod tests {
     fn create_atlas_from_png_with_missing_file_fails() {
         let mut scene = Scene::new();
         assert!(scene
-            .create_atlas_from_png("resources/does_not_exist.png", None)
+            .create_atlas_from_png(&*test_resources(), "does_not_exist.png", None)
             .is_err());
         assert_eq!(scene.atlases.iter().count(), 0);
     }
@@ -1053,7 +1055,7 @@ mod tests {
     fn full_texture_of_loaded_atlas() {
         let mut scene = Scene::new();
         let atlas = scene
-            .create_atlas_from_png("resources/texture.png", None)
+            .create_atlas_from_png(&*test_resources(), "texture.png", None)
             .unwrap();
         let full = scene.create_full_atlas_texture(None, atlas).unwrap();
 

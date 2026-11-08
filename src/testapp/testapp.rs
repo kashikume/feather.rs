@@ -1,5 +1,6 @@
 use anyhow::Result;
 
+use crate::feather::assetsprovider::create_assets_provider;
 use crate::feather::camera::Camera;
 use crate::feather::featherapp::FeatherApp;
 use crate::feather::math::{Point3, Vec3};
@@ -64,7 +65,9 @@ impl TestApp {
             Vec3::new(0.0, 0.0, 1.0),
         );
 
-        let meshbuilderobjfile = MeshBuilderObjFile::new("resources/viking_room.obj");
+        let assets = create_assets_provider("assets").unwrap();
+
+        let meshbuilderobjfile = MeshBuilderObjFile::new(&*assets, "viking_room.obj").unwrap();
         let room_mesh = meshbuilderobjfile.build(&mut scene).unwrap();
 
         scene.node_set_mesh(room_node, room_mesh).unwrap();
@@ -73,15 +76,15 @@ impl TestApp {
         let shader = scene
             .create_shader(
                 Some("Basic".to_string()),
-                include_bytes!(concat!(env!("OUT_DIR"), "/shaders/shader.vert.spv")),
-                include_bytes!(concat!(env!("OUT_DIR"), "/shaders/shader.frag.spv")),
+                &assets.get_asset("shaders/shader.vert.spv").unwrap(),
+                &assets.get_asset("shaders/shader.frag.spv").unwrap(),
                 Some("model".to_string()),
                 Some("view".to_string()),
                 Some("proj".to_string()),
             )
             .unwrap();
         let room_atlas = scene
-            .create_atlas_from_png("resources/viking_room.png", None)
+            .create_atlas_from_png(&*assets, "viking_room.png", None)
             .unwrap();
         let room_texture = scene
             .create_full_atlas_texture(Some("Room texture".to_string()), room_atlas)

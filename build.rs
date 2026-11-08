@@ -11,6 +11,10 @@
 //! 1. the `GLSLC` environment variable (full path to the executable),
 //! 2. `$VULKAN_SDK/Bin/glslc` (`bin` on Linux/macOS),
 //! 3. `glslc` on `PATH`.
+//!
+//! Everything under `resources/` is copied to an `assets/` directory next to the built
+//! executable (e.g. `target/debug/assets/`), where `AssetsProvider` reads it at runtime.
+//! Compiled shaders are copied there too, as `assets/shaders/<name>.spv`.
 
 use std::env;
 use std::fs;
@@ -19,15 +23,21 @@ use std::process::Command;
 
 const SHADER_DIR: &str = "shaders";
 const SHADER_EXTENSIONS: &[&str] = &["vert", "frag", "comp", "geom", "tesc", "tese"];
+const ASSETS_SOURCE_DIR: &str = "resources";
+const ASSETS_TARGET_DIR: &str = "assets";
 
 fn main() {
     println!("cargo:rerun-if-changed={SHADER_DIR}");
+    println!("cargo:rerun-if-changed={ASSETS_SOURCE_DIR}");
     println!("cargo:rerun-if-env-changed=GLSLC");
     println!("cargo:rerun-if-env-changed=VULKAN_SDK");
 
     let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR not set"));
     let glslc = find_glslc();
     let optimize = env::var("PROFILE").map(|p| p == "release").unwrap_or(false);
+
+    let assets_dir = assets_dir(&out_dir);
+    copy_dir(Path::new(ASSETS_SOURCE_DIR), &assets_dir);
 
     let mut shaders = Vec::new();
     collect_shaders(Path::new(SHADER_DIR), &mut shaders);
@@ -60,6 +70,43 @@ fn main() {
                 source.display(),
                 String::from_utf8_lossy(&result.stderr)
             );
+        }
+
+        let asset = assets_dir.join(output.strip_prefix(&out_dir).unwrap());
+        fs::create_dir_all(asset.parent().unwrap()).expect("failed to create shader asset dir");
+        fs::copy(&output, &asset).unwrap_or_else(|e| {
+            panic!("failed to copy {} to {}: {e}", output.display(), asset.display())
+        });
+    }
+}
+
+/// The `assets/` directory next to the executable. `OUT_DIR` is
+/// `<target>/<profile>/build/<package>-<hash>/out`, so the executable's directory is three
+/// levels up.
+fn assets_dir(out_dir: &Path) -> PathBuf {
+    let exe_dir = out_dir
+        .ancestors()
+        .nth(3)
+        .expect("unexpected OUT_DIR layout");
+    exe_dir.join(ASSETS_TARGET_DIR)
+}
+
+fn copy_dir(source: &Path, target: &Path) {
+    fs::create_dir_all(target)
+        .unwrap_or_else(|e| panic!("failed to create {}: {e}", target.display()));
+
+    let entries = fs::read_dir(source)
+        .unwrap_or_else(|e| panic!("failed to read asset dir {}: {e}", source.display()));
+
+    for entry in entries {
+        let path = entry.expect("failed to read dir entry").path();
+        let destination = target.join(path.file_name().unwrap());
+        if path.is_dir() {
+            copy_dir(&path, &destination);
+        } else {
+            fs::copy(&path, &destination).unwrap_or_else(|e| {
+                panic!("failed to copy {} to {}: {e}", path.display(), destination.display())
+            });
         }
     }
 }
