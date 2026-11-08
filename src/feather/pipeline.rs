@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use anyhow::Result;
 use vulkanalia::bytecode::Bytecode;
 use vulkanalia::prelude::v1_0::*;
@@ -115,15 +117,24 @@ pub struct PipelineTarget {
     pub render_pass: vk::RenderPass,
     pub msaa_samples: vk::SampleCountFlags,
     pub extent: vk::Extent2D,
-    /// Number of swapchain images; the pipeline gets a set of descriptor sets for each.
-    pub image_count: usize,
 }
+
+/// Descriptor sets for one swapchain image and one combination of textures.
+struct CachedSets {
+    sets: Vec<vk::DescriptorSet>,
+    /// The uniform buffer the sets' uniform blocks point at.
+    uniform_buffer: vk::Buffer,
+}
+
+/// Number of descriptor set groups (all sets of the shader) each descriptor pool holds.
+const SET_GROUPS_PER_POOL: u32 = 16;
 
 /// The Vulkan pipeline of one `Shader`, with layouts and descriptor sets created from the
 /// shader's reflected `ShaderLayout`.
 ///
 /// Every uniform block is a `UNIFORM_BUFFER_DYNAMIC` descriptor: all blocks of a frame live in
-/// one buffer, and each draw passes the offsets of its own blocks.
+/// one buffer, and each draw passes the offsets of its own blocks. Samplers are bound per
+/// draw, so descriptor sets are cached for each swapchain image and combination of textures.
 pub struct ShaderPipeline {
     pub layout_info: ShaderLayout,
     /// One per descriptor set the shader uses (`ShaderLayout::set_count`).
@@ -132,10 +143,10 @@ pub struct ShaderPipeline {
     pub pipeline: vk::Pipeline,
     /// Stages that read the push constants (empty if the shader has none).
     pub push_constant_stages: vk::ShaderStageFlags,
-    /// `None` when the shader uses no descriptor sets.
-    descriptor_pool: Option<vk::DescriptorPool>,
-    /// For each swapchain image, the shader's descriptor sets (set 0, 1, ...).
-    pub descriptor_sets: Vec<Vec<vk::DescriptorSet>>,
+    /// Pools the descriptor sets come from; a new one is added when the last is full.
+    descriptor_pools: Vec<vk::DescriptorPool>,
+    /// Descriptor sets (set 0, 1, ...) by (swapchain image, image view of each sampler).
+    descriptor_sets: HashMap<(usize, Vec<vk::ImageView>), CachedSets>,
 }
 
 impl ShaderPipeline {
@@ -150,8 +161,8 @@ impl ShaderPipeline {
                 .push_constants
                 .as_ref()
                 .map_or(vk::ShaderStageFlags::empty(), |p| stage_flags(p.stages)),
-            descriptor_pool: None,
-            descriptor_sets: Vec::new(),
+            descriptor_pools: Vec::new(),
+            descriptor_sets: HashMap::new(),
         };
         // On error, destroy whatever was created so far.
         match pipeline.create_objects(device, target, shader) {
@@ -218,112 +229,104 @@ impl ShaderPipeline {
             .push_constant_ranges(&push_constant_ranges);
         self.layout = device.create_pipeline_layout(&layout_info, None)?;
 
-        // Descriptor sets: the shader's sets for every swapchain image
-
-        if !self.set_layouts.is_empty() {
-            let images = target.image_count as u32;
-            let pool_sizes: Vec<_> = [
-                (
-                    vk::DescriptorType::UNIFORM_BUFFER_DYNAMIC,
-                    shader_layout.uniform_blocks.len() as u32,
-                ),
-                (
-                    vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
-                    shader_layout.samplers.len() as u32,
-                ),
-            ]
-            .into_iter()
-            .filter(|(_, count)| *count > 0)
-            .map(|(type_, count)| {
-                vk::DescriptorPoolSize::builder()
-                    .type_(type_)
-                    .descriptor_count(count * images)
-                    .build()
-            })
-            .collect();
-            let info = vk::DescriptorPoolCreateInfo::builder()
-                .pool_sizes(&pool_sizes)
-                .max_sets(self.set_layouts.len() as u32 * images);
-            let pool = device.create_descriptor_pool(&info, None)?;
-            self.descriptor_pool = Some(pool);
-
-            for _ in 0..images {
-                let info = vk::DescriptorSetAllocateInfo::builder()
-                    .descriptor_pool(pool)
-                    .set_layouts(&self.set_layouts);
-                self.descriptor_sets
-                    .push(device.allocate_descriptor_sets(&info)?);
-            }
-        }
-
         self.pipeline = create_graphics_pipeline(device, target, shader, self.layout)?;
         Ok(())
     }
 
-    /// Points the descriptor sets of swapchain image `image` at `uniform_buffer` (each block
-    /// at offset 0 with its size; draws add their dynamic offsets) and every sampler at the
-    /// given texture. The sets must not be in use by the GPU.
-    pub unsafe fn update_descriptor_sets(
-        &self,
+    /// The descriptor sets (set 0, 1, ...) for a draw on swapchain image `image`: uniform
+    /// blocks point at `uniform_buffer` (draws add their dynamic offsets), sampler `i` at
+    /// `views[i]`. Sets are created on first use and reused afterwards. The image's previous
+    /// frame must be finished, and the sets must be fetched before recording the frame.
+    pub unsafe fn descriptor_sets(
+        &mut self,
         device: &Device,
         image: usize,
+        views: &[vk::ImageView],
         uniform_buffer: vk::Buffer,
-        texture_view: vk::ImageView,
-        texture_sampler: vk::Sampler,
-    ) {
-        let Some(sets) = self.descriptor_sets.get(image) else {
-            return;
-        };
-        let buffer_infos: Vec<_> = self
-            .layout_info
-            .uniform_blocks
-            .iter()
-            .map(|b| {
-                [vk::DescriptorBufferInfo::builder()
-                    .buffer(uniform_buffer)
-                    .offset(0)
-                    .range(b.size as u64)
-                    .build()]
-            })
-            .collect();
-        let image_info = [vk::DescriptorImageInfo::builder()
-            .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-            .image_view(texture_view)
-            .sampler(texture_sampler)
-            .build()];
+        sampler: vk::Sampler,
+    ) -> Result<Vec<vk::DescriptorSet>> {
+        if self.set_layouts.is_empty() {
+            return Ok(Vec::new());
+        }
+        let key = (image, views.to_vec());
+        if let Some(cached) = self.descriptor_sets.get_mut(&key) {
+            if cached.uniform_buffer != uniform_buffer {
+                // The frame's uniform buffer was replaced (it grew).
+                write_descriptor_sets(device, &self.layout_info, &cached.sets, uniform_buffer, None);
+                cached.uniform_buffer = uniform_buffer;
+            }
+            return Ok(cached.sets.clone());
+        }
 
-        let block_writes = self
-            .layout_info
-            .uniform_blocks
-            .iter()
-            .zip(&buffer_infos)
-            .map(|(b, info)| {
-                vk::WriteDescriptorSet::builder()
-                    .dst_set(sets[b.set as usize])
-                    .dst_binding(b.binding)
-                    .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER_DYNAMIC)
-                    .buffer_info(info)
-                    .build()
-            });
-        let sampler_writes = self.layout_info.samplers.iter().map(|s| {
-            vk::WriteDescriptorSet::builder()
-                .dst_set(sets[s.set as usize])
-                .dst_binding(s.binding)
-                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-                .image_info(&image_info)
+        let sets = self.allocate_sets(device)?;
+        write_descriptor_sets(
+            device,
+            &self.layout_info,
+            &sets,
+            uniform_buffer,
+            Some((views, sampler)),
+        );
+        self.descriptor_sets.insert(
+            key,
+            CachedSets {
+                sets: sets.clone(),
+                uniform_buffer,
+            },
+        );
+        Ok(sets)
+    }
+
+    /// Allocates one descriptor set per set layout, adding a pool when the last one is full.
+    unsafe fn allocate_sets(&mut self, device: &Device) -> Result<Vec<vk::DescriptorSet>> {
+        if let Some(&pool) = self.descriptor_pools.last() {
+            let info = vk::DescriptorSetAllocateInfo::builder()
+                .descriptor_pool(pool)
+                .set_layouts(&self.set_layouts);
+            match device.allocate_descriptor_sets(&info) {
+                Ok(sets) => return Ok(sets),
+                Err(vk::ErrorCode::OUT_OF_POOL_MEMORY) | Err(vk::ErrorCode::FRAGMENTED_POOL) => {}
+                Err(e) => return Err(e.into()),
+            }
+        }
+
+        let pool_sizes: Vec<_> = [
+            (
+                vk::DescriptorType::UNIFORM_BUFFER_DYNAMIC,
+                self.layout_info.uniform_blocks.len() as u32,
+            ),
+            (
+                vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+                self.layout_info.samplers.len() as u32,
+            ),
+        ]
+        .into_iter()
+        .filter(|(_, count)| *count > 0)
+        .map(|(type_, count)| {
+            vk::DescriptorPoolSize::builder()
+                .type_(type_)
+                .descriptor_count(count * SET_GROUPS_PER_POOL)
                 .build()
-        });
-        let writes: Vec<_> = block_writes.chain(sampler_writes).collect();
-        device.update_descriptor_sets(&writes, &[] as &[vk::CopyDescriptorSet]);
+        })
+        .collect();
+        let info = vk::DescriptorPoolCreateInfo::builder()
+            .pool_sizes(&pool_sizes)
+            .max_sets(self.set_layouts.len() as u32 * SET_GROUPS_PER_POOL);
+        let pool = device.create_descriptor_pool(&info, None)?;
+        self.descriptor_pools.push(pool);
+
+        let info = vk::DescriptorSetAllocateInfo::builder()
+            .descriptor_pool(pool)
+            .set_layouts(&self.set_layouts);
+        Ok(device.allocate_descriptor_sets(&info)?)
     }
 
     pub unsafe fn destroy(&self, device: &Device) {
         if self.pipeline != vk::Pipeline::null() {
             device.destroy_pipeline(self.pipeline, None);
         }
-        if let Some(pool) = self.descriptor_pool {
-            device.destroy_descriptor_pool(pool, None);
-        }
+        self.descriptor_pools
+            .iter()
+            .for_each(|p| device.destroy_descriptor_pool(*p, None));
         if self.layout != vk::PipelineLayout::null() {
             device.destroy_pipeline_layout(self.layout, None);
         }
@@ -331,6 +334,66 @@ impl ShaderPipeline {
             .iter()
             .for_each(|l| device.destroy_descriptor_set_layout(*l, None));
     }
+}
+
+/// Points the uniform blocks of `sets` at `uniform_buffer` and, when `textures` is given,
+/// sampler `i` at `textures.0[i]` with sampler `textures.1`.
+unsafe fn write_descriptor_sets(
+    device: &Device,
+    layout: &ShaderLayout,
+    sets: &[vk::DescriptorSet],
+    uniform_buffer: vk::Buffer,
+    textures: Option<(&[vk::ImageView], vk::Sampler)>,
+) {
+    let buffer_infos: Vec<_> = layout
+        .uniform_blocks
+        .iter()
+        .map(|b| {
+            [vk::DescriptorBufferInfo::builder()
+                .buffer(uniform_buffer)
+                .offset(0)
+                .range(b.size as u64)
+                .build()]
+        })
+        .collect();
+    let mut writes: Vec<_> = layout
+        .uniform_blocks
+        .iter()
+        .zip(&buffer_infos)
+        .map(|(b, info)| {
+            vk::WriteDescriptorSet::builder()
+                .dst_set(sets[b.set as usize])
+                .dst_binding(b.binding)
+                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER_DYNAMIC)
+                .buffer_info(info)
+                .build()
+        })
+        .collect();
+
+    let image_infos: Vec<_> = textures
+        .map(|(views, sampler)| {
+            views
+                .iter()
+                .map(|view| {
+                    [vk::DescriptorImageInfo::builder()
+                        .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                        .image_view(*view)
+                        .sampler(sampler)
+                        .build()]
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    writes.extend(layout.samplers.iter().zip(&image_infos).map(|(s, info)| {
+        vk::WriteDescriptorSet::builder()
+            .dst_set(sets[s.set as usize])
+            .dst_binding(s.binding)
+            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+            .image_info(info)
+            .build()
+    }));
+
+    device.update_descriptor_sets(&writes, &[] as &[vk::CopyDescriptorSet]);
 }
 
 fn stage_flags(stages: ShaderStages) -> vk::ShaderStageFlags {

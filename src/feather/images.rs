@@ -1,7 +1,6 @@
 use anyhow::{anyhow, Result};
 use vulkanalia::prelude::v1_0::*;
 
-use super::appdata::AppData;
 use super::other::{begin_single_time_commands, end_single_time_commands, get_memory_type_index};
 
 //================================================
@@ -11,7 +10,7 @@ use super::other::{begin_single_time_commands, end_single_time_commands, get_mem
 pub unsafe fn create_image(
     instance: &Instance,
     device: &Device,
-    data: &AppData,
+    physical_device: vk::PhysicalDevice,
     width: u32,
     height: u32,
     mip_levels: u32,
@@ -49,7 +48,7 @@ pub unsafe fn create_image(
         .allocation_size(requirements.size)
         .memory_type_index(get_memory_type_index(
             instance,
-            &data.physical_device,
+            &physical_device,
             properties,
             requirements,
         )?);
@@ -86,7 +85,8 @@ pub unsafe fn create_image_view(
 
 pub unsafe fn transition_image_layout(
     device: &Device,
-    data: &AppData,
+    command_pool: vk::CommandPool,
+    queue: vk::Queue,
     image: vk::Image,
     _format: vk::Format,
     old_layout: vk::ImageLayout,
@@ -110,7 +110,7 @@ pub unsafe fn transition_image_layout(
             _ => return Err(anyhow!("Unsupported image layout transition!")),
         };
 
-    let command_buffer = begin_single_time_commands(device, &data.command_pool)?;
+    let command_buffer = begin_single_time_commands(device, &command_pool)?;
 
     let subresource = vk::ImageSubresourceRange::builder()
         .aspect_mask(vk::ImageAspectFlags::COLOR)
@@ -139,25 +139,21 @@ pub unsafe fn transition_image_layout(
         &[barrier],
     );
 
-    end_single_time_commands(
-        device,
-        &data.command_pool,
-        &data.graphics_queue,
-        command_buffer,
-    )?;
+    end_single_time_commands(device, &command_pool, &queue, command_buffer)?;
 
     Ok(())
 }
 
 pub unsafe fn copy_buffer_to_image(
     device: &Device,
-    data: &AppData,
+    command_pool: vk::CommandPool,
+    queue: vk::Queue,
     buffer: vk::Buffer,
     image: vk::Image,
     width: u32,
     height: u32,
 ) -> Result<()> {
-    let command_buffer = begin_single_time_commands(device, &data.command_pool)?;
+    let command_buffer = begin_single_time_commands(device, &command_pool)?;
 
     let subresource = vk::ImageSubresourceLayers::builder()
         .aspect_mask(vk::ImageAspectFlags::COLOR)
@@ -185,12 +181,7 @@ pub unsafe fn copy_buffer_to_image(
         &[region],
     );
 
-    end_single_time_commands(
-        device,
-        &data.command_pool,
-        &data.graphics_queue,
-        command_buffer,
-    )?;
+    end_single_time_commands(device, &command_pool, &queue, command_buffer)?;
 
     Ok(())
 }

@@ -20,7 +20,7 @@ pub unsafe fn create_depth_objects(
     let (depth_image, depth_image_memory) = create_image(
         instance,
         device,
-        data,
+        data.physical_device,
         data.swapchain.swapchain_extent.width,
         data.swapchain.swapchain_extent.height,
         1,

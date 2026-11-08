@@ -17,9 +17,11 @@ names.
 - Step 3 is done: each draw's uniform blocks and push constants are filled from the node's
   `dynamic_uniforms()` plus model/view/proj (`uniformdata.rs`), stored in one uniform buffer per
   swapchain image, and bound with dynamic offsets through each shader's own descriptor sets.
-- Still hard-coded in the renderer:
-  - every sampler is bound to one texture loaded directly from `resources/viking_room.png`
-    (`texture.rs`); `Texture` uniform values are not used yet;
+- Step 4 is done: atlases are uploaded as GPU images with mipmaps (`gpuimage.rs`), each sampler
+  is bound to the atlas of the `Texture` stored under its name, and the texture's UV rectangle
+  goes to the `<sampler>Rect` uniform. Descriptor sets are cached per (swapchain image, textures).
+  The app runs from any directory.
+- Still limited:
   - only the first scene is drawn, with the first scene's camera.
 
 ## Design
@@ -65,10 +67,16 @@ are logged once per shader and uniform; the uniform keeps zero bytes.
 
 ### Textures
 
-- Each atlas gets a GPU image; textures are views/samplers of it, or the atlas plus a UV rectangle
-  passed as a uniform.
-- Descriptor sets for samplers are cached per (shader, set of textures). Nodes that don't override
-  textures reuse their material's set.
+- Each atlas gets one GPU image (RGBA8 sRGB, with mipmaps), uploaded when the scene first has
+  it. All textures share one sampler (linear, anisotropic, repeat).
+- A sampler's value is `UniformValue::Texture(handle)`; the sampler is bound to that texture's
+  atlas. Image views can't crop, so a texture that is part of an atlas reaches the shader as a
+  UV rectangle: the engine fills `vec4 <sampler>Rect` (u_min, v_min, u_range, v_range) if the
+  shader declares it, and the shader maps `rect.xy + uv * rect.zw`. Full-atlas textures don't
+  need it.
+- Samplers without a valid texture get a 1x1 magenta fallback image, and the problem is logged.
+- Each shader pipeline caches descriptor sets per (swapchain image, image view of each sampler),
+  allocated from pools that grow when full. Nodes using the same atlases share sets.
 
 ### Recording draws
 
@@ -142,16 +150,22 @@ Each step should leave the app running.
 
 ### 4. Textures from atlases
 
-- [ ] Upload each atlas as a GPU image (with mipmaps)
-- [ ] Decide how a texture that is part of an atlas reaches the shader (UV rectangle uniform or
-      separate view)
-- [ ] Sampler descriptor sets cached per (shader, textures)
-- [ ] Bind `Texture(handle)` uniforms to the reflected sampler bindings
-- [ ] Remove the hard-coded texture code from `texture.rs` and the `resources/viking_room.png`
+- [x] Upload each atlas as a GPU image (with mipmaps) (`GpuImage`, `App::sync_atlases`)
+- [x] Decide how a texture that is part of an atlas reaches the shader: UV rectangle uniform
+      `<sampler>Rect` (`Texture::new`, `Texture::get_uv_rect`)
+- [x] Sampler descriptor sets cached per (shader, swapchain image, textures)
+- [x] Bind `Texture(handle)` uniforms to the reflected sampler bindings
+      (`uniformdata::resolve_samplers`); fallback texture and warnings for bad values
+- [x] Remove the hard-coded texture code from `texture.rs` and the `resources/viking_room.png`
       path; the app then runs from any directory
 
 ### Later
 
+- [ ] Sub-textures: mipmaps and linear filtering bleed across texture borders in an atlas, and
+      `REPEAT` wraps around the whole atlas; add padding or per-texture sampler modes
+- [ ] Re-upload an atlas when its pixels change (no API changes pixels yet)
+- [ ] An atlas removed and another added under the same handle in one frame keeps the old GPU
+      image; give objects a generation counter
 - [ ] Render more than one scene (per-scene camera data instead of one uniform buffer per frame)
 - [ ] Sort draws by shader and material; skip redundant binds
 - [ ] Transparent nodes drawn after opaque ones, back to front

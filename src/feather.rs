@@ -11,6 +11,7 @@ pub mod commandpool;
 pub mod dephobjects;
 pub mod featherapp;
 pub mod framebuffers;
+pub mod gpuimage;
 pub mod images;
 pub mod instance;
 pub mod logicaldevice;

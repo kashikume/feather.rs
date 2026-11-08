@@ -18,7 +18,7 @@ pub unsafe fn create_color_objects(
     let (color_image, color_image_memory) = create_image(
         instance,
         device,
-        data,
+        data.physical_device,
         data.swapchain.swapchain_extent.width,
         data.swapchain.swapchain_extent.height,
         1,

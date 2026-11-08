@@ -4,6 +4,7 @@ use vulkanalia::prelude::v1_0::*;
 
 use super::buffers::FrameUniformBuffer;
 use super::featherapp::FeatherApp;
+use super::gpuimage::GpuImage;
 use super::pipeline::ShaderPipeline;
 use super::uniformdata::UniformIssue;
 use super::swapchain::Swapchain;
@@ -46,12 +47,15 @@ pub struct AppData {
     pub depth_image: vk::Image,
     pub depth_image_memory: vk::DeviceMemory,
     pub depth_image_view: vk::ImageView,
-    // Texture
-    pub mip_levels: u32,
-    pub texture_image: vk::Image,
-    pub texture_image_memory: vk::DeviceMemory,
-    pub texture_image_view: vk::ImageView,
+    // Textures
+    /// Sampler used for every texture.
     pub texture_sampler: vk::Sampler,
+    /// Atlases of the rendered scene on the GPU, by atlas handle.
+    pub gpu_atlases: HashMap<usize, GpuImage>,
+    /// Atlases that could not be uploaded; their textures show the fallback texture.
+    pub failed_atlases: HashSet<usize>,
+    /// 1x1 magenta image bound to samplers without a valid texture.
+    pub fallback_texture: Option<GpuImage>,
     // Buffers
     /// Uniform data of each swapchain image's frame; created and grown when needed.
     pub frame_uniforms: Vec<Option<FrameUniformBuffer>>,

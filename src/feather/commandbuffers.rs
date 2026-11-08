@@ -9,9 +9,14 @@ use super::appdata::AppData;
 
 /// One draw call with the Vulkan objects it uses.
 pub struct GpuDraw {
+    /// Handle of the shader; its pipeline provides the descriptor sets.
+    pub shader: usize,
+    /// Image view bound to each sampler of the shader.
+    pub texture_views: Vec<vk::ImageView>,
     pub pipeline: vk::Pipeline,
     pub pipeline_layout: vk::PipelineLayout,
-    /// The pipeline's descriptor sets for this frame (set 0, 1, ...).
+    /// The pipeline's descriptor sets for this draw (set 0, 1, ...); filled in once the
+    /// frame's uniform buffer is ready.
     pub descriptor_sets: Vec<vk::DescriptorSet>,
     /// Offsets of the draw's uniform blocks in the frame's uniform buffer.
     pub dynamic_offsets: Vec<u32>,

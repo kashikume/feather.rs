@@ -25,13 +25,14 @@ What works today:
 - Uniforms on materials and nodes, inherited down the scene graph
 - Assets loaded through a platform-specific `AssetsProvider`
 - Perspective camera
-- Textures with mipmaps and MSAA
+- Textures from atlases, uploaded with mipmaps; textures that are part of an atlas pass their UV
+  rectangle to the shader
+- MSAA
 - Vulkan validation layers turned on automatically in debug builds
 
 > The renderer draws every visible node that has a mesh and a material, with the material's
-> shader and the node's uniforms. Textures don't come from atlases yet: every sampler gets one
-> hard-coded texture.
-> See [doc/todo](doc/todo/node-uniforms-rendering.md) for the plan.
+> shader, the node's uniforms and the textures they name. Only the first scene is drawn. See
+> [doc/todo](doc/todo/node-uniforms-rendering.md) for the plan and known limitations.
 
 ## Requirements
 
@@ -53,9 +54,8 @@ cargo test             # unit tests
 The development app (`src/testapp`) opens a 1024×768 window and renders the model in
 `resources/viking_room.obj`.
 
-Run from the repository root for now: the renderer's texture is still loaded from
-`resources/viking_room.png` using a relative path. Everything else is loaded from the `assets/`
-directory next to the executable.
+Everything the app loads comes from the `assets/` directory next to the executable, so it can be
+started from any directory.
 
 ### Shaders
 
@@ -149,6 +149,7 @@ src/
     mesh*.rs         meshes and mesh builders (.obj file, cuboid)
     atlas.rs, texture.rs
                      images loaded from PNG and textures cut from them
+    gpuimage.rs      atlases uploaded to the GPU, and the texture sampler
     shader.rs, material.rs
                      SPIR-V shaders and materials
     shaderlayout.rs  uniform blocks, push constants and samplers read from a shader's SPIR-V
@@ -229,6 +230,23 @@ node's final (dynamic) uniforms in three layers, each overriding the previous on
 
 A node's own uniforms are passed down to its children; its material's uniforms are not.
 
+### Textures
+
+A `sampler2D` uniform takes a `UniformValue::Texture(handle)`; the sampler is bound to that
+texture's atlas. A texture can cover a rectangle of its atlas (`Texture::new`). Shaders always
+sample the whole atlas, so to use only the texture's part, declare a `vec4` uniform named after
+the sampler plus `Rect` and map the texture coordinates with it:
+
+```glsl
+layout(binding = 1) uniform sampler2D texSampler;
+layout(binding = 2) uniform Material { vec4 texSamplerRect; } material;
+...
+outColor = texture(texSampler, material.texSamplerRect.xy + uv * material.texSamplerRect.zw);
+```
+
+The engine fills `texSamplerRect` with (u_min, v_min, u_range, v_range). A sampler without a
+valid texture shows magenta, and a warning is logged.
+
 When drawing, the engine adds the node's global transform and the camera's view and projection
 under the names given to `create_shader`, then writes every value into the shader's uniform
 blocks and push constants by name, at the offsets read from the shader's SPIR-V. A uniform with
@@ -237,6 +255,6 @@ warning.
 
 ## Roadmap
 
-- GPU textures created from atlases, bound by `Texture` uniforms
+- Render more than one scene
 - Android support (including an Android `AssetsProvider`)
 - Separate the engine into a library crate
