@@ -75,6 +75,9 @@ impl TestApp {
                 Some("Basic".to_string()),
                 include_bytes!(concat!(env!("OUT_DIR"), "/shaders/shader.vert.spv")),
                 include_bytes!(concat!(env!("OUT_DIR"), "/shaders/shader.frag.spv")),
+                Some("model".to_string()),
+                Some("view".to_string()),
+                Some("proj".to_string()),
             )
             .unwrap();
         let room_atlas = scene

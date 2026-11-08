@@ -107,18 +107,33 @@ impl Scene {
     }
 
     /// Creates a shader from vertex and fragment SPIR-V and adds it to the scene.
+    /// See `Shader::new` for the uniform name parameters.
     pub fn create_shader(
         &mut self,
         name: Option<String>,
         vertex: &[u8],
         fragment: &[u8],
+        uniform_model_name: Option<String>,
+        uniform_view_name: Option<String>,
+        uniform_proj_name: Option<String>,
     ) -> Result<usize> {
-        let shader = Shader::new(name, vertex, fragment)?;
+        let shader = Shader::new(
+            name,
+            vertex,
+            fragment,
+            uniform_model_name,
+            uniform_view_name,
+            uniform_proj_name,
+        )?;
         Ok(self.add_shader(shader))
     }
 
     pub fn get_shader(&self, handle: usize) -> Option<&Shader> {
         self.shaders.get(handle)
+    }
+
+    pub fn get_shader_mut(&mut self, handle: usize) -> Option<&mut Shader> {
+        self.shaders.get_mut(handle)
     }
 
     /// Creates a material using the given shader. Fails if the shader does not exist.
@@ -539,12 +554,22 @@ mod tests {
     fn create_shader_adds_it() {
         let mut scene = Scene::new();
         let shader = scene
-            .create_shader(Some("basic".to_string()), VERT, FRAG)
+            .create_shader(
+                Some("basic".to_string()),
+                VERT,
+                FRAG,
+                Some("model".to_string()),
+                Some("view".to_string()),
+                Some("proj".to_string()),
+            )
             .unwrap();
 
         let shader_obj = scene.get_shader(shader).unwrap();
         assert_eq!(shader_obj.get_handle(), shader);
         assert_eq!(shader_obj.get_vertex(), VERT);
+        assert_eq!(shader_obj.get_uniform_model_name(), Some("model"));
+        assert_eq!(shader_obj.get_uniform_view_name(), Some("view"));
+        assert_eq!(shader_obj.get_uniform_proj_name(), Some("proj"));
         assert_eq!(
             scene.shaders.get_by_name("basic").unwrap().get_handle(),
             shader
@@ -554,14 +579,18 @@ mod tests {
     #[test]
     fn create_shader_with_invalid_code_fails() {
         let mut scene = Scene::new();
-        assert!(scene.create_shader(None, &[1, 2, 3], FRAG).is_err());
+        assert!(scene
+            .create_shader(None, &[1, 2, 3], FRAG, None, None, None)
+            .is_err());
         assert_eq!(scene.shaders.iter().count(), 0);
     }
 
     #[test]
     fn create_material_uses_shader() {
         let mut scene = Scene::new();
-        let shader = scene.create_shader(None, VERT, FRAG).unwrap();
+        let shader = scene
+            .create_shader(None, VERT, FRAG, None, None, None)
+            .unwrap();
         let material = scene
             .create_material(Some("wood".to_string()), shader)
             .unwrap();
@@ -584,7 +613,9 @@ mod tests {
         let mut scene = Scene::new();
         let atlas = scene.add_atlas(test_atlas(None));
         let texture = scene.create_full_atlas_texture(None, atlas).unwrap();
-        let shader = scene.create_shader(None, VERT, FRAG).unwrap();
+        let shader = scene
+            .create_shader(None, VERT, FRAG, None, None, None)
+            .unwrap();
         let material = scene.create_material(None, shader).unwrap();
 
         scene
@@ -606,8 +637,12 @@ mod tests {
     #[test]
     fn material_set_shader() {
         let mut scene = Scene::new();
-        let s1 = scene.create_shader(None, VERT, FRAG).unwrap();
-        let s2 = scene.create_shader(None, VERT, FRAG).unwrap();
+        let s1 = scene
+            .create_shader(None, VERT, FRAG, None, None, None)
+            .unwrap();
+        let s2 = scene
+            .create_shader(None, VERT, FRAG, None, None, None)
+            .unwrap();
         let material = scene.create_material(None, s1).unwrap();
 
         scene.material_set_shader(material, s2).unwrap();
@@ -622,7 +657,9 @@ mod tests {
     fn node_set_material() {
         let mut scene = Scene::new();
         let node = scene.create_root_node(None);
-        let shader = scene.create_shader(None, VERT, FRAG).unwrap();
+        let shader = scene
+            .create_shader(None, VERT, FRAG, None, None, None)
+            .unwrap();
         let material = scene.create_material(None, shader).unwrap();
 
         scene.node_set_material(node, material).unwrap();
@@ -633,7 +670,9 @@ mod tests {
     fn node_set_material_with_invalid_handles_fails() {
         let mut scene = Scene::new();
         let node = scene.create_root_node(None);
-        let shader = scene.create_shader(None, VERT, FRAG).unwrap();
+        let shader = scene
+            .create_shader(None, VERT, FRAG, None, None, None)
+            .unwrap();
         let material = scene.create_material(None, shader).unwrap();
 
         assert!(scene.node_set_material(node, 42).is_err());
@@ -646,7 +685,9 @@ mod tests {
         let mut scene = Scene::new();
         let a = scene.create_root_node(None);
         let b = scene.create_root_node(None);
-        let shader = scene.create_shader(None, VERT, FRAG).unwrap();
+        let shader = scene
+            .create_shader(None, VERT, FRAG, None, None, None)
+            .unwrap();
         let material = scene.create_material(None, shader).unwrap();
 
         scene.node_set_material(a, material).unwrap();
@@ -828,7 +869,9 @@ mod tests {
 
     /// Creates a material with one uniform and returns its handle.
     fn material_with(scene: &mut Scene, name: &str, value: u32) -> usize {
-        let shader = scene.create_shader(None, VERT, FRAG).unwrap();
+        let shader = scene
+            .create_shader(None, VERT, FRAG, None, None, None)
+            .unwrap();
         let material = scene.create_material(None, shader).unwrap();
         scene
             .get_material_mut(material)
