@@ -1,0 +1,80 @@
+{
+  "atlases": [
+    { "name": "World map", "bitmap": "demo_005_globe_atlas.png" },
+    { "name": "Moon map", "bitmap": "demo_005_globe_moon.png" }
+  ],
+  "meshes": [
+    { "name": "Ball", "sphere": { "radius": 1.0, "segments": 96, "rings": 48 } },
+    { "name": "Small ball", "sphere": { "radius": 0.27, "segments": 48, "rings": 24 } }
+  ],
+  "shaders": [
+    {
+      "name": "Planet",
+      "vertex": "demo_005_globe_shader.vert.spv",
+      "fragment": "demo_005_globe_shader.frag.spv",
+      "model_uniform": "model",
+      "view_uniform": "view",
+      "projection_uniform": "proj"
+    }
+  ],
+  "materials": [
+    {
+      "name": "Earth",
+      "shader": "Planet",
+      "texture": { "atlas": "World map" },
+      "uniforms": {
+        "shininess": { "float": 40.0 },
+        "specularStrength": { "float": 0.9 },
+        "atmosphereStrength": { "float": 0.8 }
+      }
+    },
+    {
+      "name": "Moon",
+      "shader": "Planet",
+      "texture": { "atlas": "Moon map" },
+      "uniforms": {
+        "shininess": { "float": 1.0 },
+        "specularStrength": { "float": 0.0 },
+        "atmosphereStrength": { "float": 0.0 }
+      }
+    }
+  ],
+  "root": {
+    "name": "Scene root",
+    "uniforms": {
+      "light": { "vec3": [1.0, -0.2, 0.15] },
+      "lightIntensity": { "float": 1.6 }
+    },
+    "children": [
+      {
+        "name": "Orbit",
+        "children": [
+          {
+            "name": "Tilt",
+            "transform": { "rotation": [0, 23.4, 0] },
+            "children": [
+              { "name": "Globe", "mesh": "Ball", "material": "Earth" }
+            ]
+          },
+          {
+            "name": "Moon plane",
+            "transform": { "rotation": [5, 0, 0] },
+            "children": [
+              {
+                "name": "Moon orbit",
+                "children": [
+                  {
+                    "name": "Moon",
+                    "mesh": "Small ball",
+                    "material": "Moon",
+                    "transform": { "translation": [-2.1, 0, 0] }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

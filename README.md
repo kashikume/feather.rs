@@ -17,7 +17,8 @@ What works today:
   with a mesh and a material is drawn
 - Scene objects (meshes, nodes, atlases, shaders, materials) stored in the scene and referenced
   by handle
-- Mesh builders: Wavefront `.obj` loading (via `tobj`), procedural cuboids and subdivided planes
+- Mesh builders: Wavefront `.obj` loading (via `tobj`), procedural cuboids, subdivided planes and
+  balls (UV spheres)
 - Atlases loaded from PNG (any color type, converted to 8-bit RGBA) with optional `.atlas`
   metadata naming their textures; textures are plain values taken from an atlas
 - Shaders (SPIR-V) and materials (a shader, a texture and uniform values); each shader's uniform
@@ -70,6 +71,7 @@ only command line argument is the number of the demo to start with (default 0). 
 | 2    | Atlas       | 16 still plates in a 4×4 grid, each showing one texture of an atlas built from 16 images |
 | 3    | Waving atlas | The same plates waving in the wind, bent by the vertex shader       |
 | 4    | Lit cuboid  | The tumbling cuboid of demo 1 with diffuse and specular lighting, from the direction in the `light` uniform set on the scene's root node |
+| 5    | Globe       | A world map on a ball, spinning around its tilted axis while drifting along an oval path, with a cratered moon going around it; both lit by a strong light from the side: a dark night side, a highlight on water only and a glowing atmosphere on the globe |
 
 Each demo is in its own file, `apps/testapp/src/testapp/demo_NNN_<name>.rs`, and its resources
 are named `demo_NNN_<name>_<kind>` (`scene`, `atlas`, `mesh`, `shader`, ...). Demos are listed in
@@ -194,7 +196,7 @@ crates/
     scenefile.rs     loading a scene from a JSON file
     objdb.rs         handle-based object storage used by the scene
     node.rs          scene graph node (mesh, material, uniforms)
-    mesh*.rs         meshes and mesh builders (.obj file, cuboid, plane)
+    mesh*.rs         meshes and mesh builders (.obj file, cuboid, plane, sphere)
     atlas.rs, texture.rs
                      images loaded from PNG with their .atlas metadata, and textures cut from them
     gpuimage.rs      atlases uploaded to the GPU, and the texture sampler
@@ -263,7 +265,7 @@ let room_node = scene.find_node("Room").unwrap();
 ```
 
 Scenes can also be built in code, with `create_root_node`, `create_node`, `MeshBuilderCuboid`,
-`MeshBuilderPlane`, `MeshBuilderObjFile`, `create_shader`, `create_atlas_from_png`,
+`MeshBuilderPlane`, `MeshBuilderSphere`, `MeshBuilderObjFile`, `create_shader`, `create_atlas_from_png`,
 `create_material`, `material_set_texture` and the other `Scene` methods. Demos 2 and 3
 (`demo_002_atlas.rs`, `demo_003_waving_atlas.rs`) load their atlas, mesh and shader from a scene
 file and create a material and a node for every texture of the atlas in code.
@@ -347,7 +349,7 @@ so the scene file holds no binary data. The viking room:
 | Item | Fields |
 | ---- | ------ |
 | atlas | `name`, `bitmap` (PNG), optional `metadata` (`.atlas`) |
-| mesh | `name`, and one of `file` (OBJ), `cuboid` (optional `x`, `y`, `z` as `[min, max]`; `{}` is a 1×1×1 cube) or `plane` (optional `x`, `y` as `[min, max]` and `segments` `[columns, rows]`) |
+| mesh | `name`, and one of `file` (OBJ), `cuboid` (optional `x`, `y`, `z` as `[min, max]`; `{}` is a 1×1×1 cube), `plane` (optional `x`, `y` as `[min, max]` and `segments` `[columns, rows]`) or `sphere` (optional `radius`, `segments`, `rings`; `{}` is a ball of diameter 1) |
 | shader | `name`, `vertex`, `fragment` (SPIR-V), optional `model_uniform`, `view_uniform`, `projection_uniform`, `umin_uniform`, `umax_uniform`, `vmin_uniform`, `vmax_uniform` |
 | material | `name`, `shader`, optional `texture` (`{ "atlas": ..., "name": ... }`; without `name` the whole atlas), optional `uniforms` |
 | node | all optional: `name`, `mesh`, `material`, `transform`, `visible`, `uniforms`, `children` |

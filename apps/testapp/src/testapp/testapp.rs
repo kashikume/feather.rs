@@ -11,6 +11,7 @@ use super::demo_001_cuboid::CuboidDemo;
 use super::demo_002_atlas::AtlasDemo;
 use super::demo_003_waving_atlas::WavingAtlasDemo;
 use super::demo_004_lit_cuboid::LitCuboidDemo;
+use super::demo_005_globe::GlobeDemo;
 
 /// One demo of the test app: a scene, the camera looking at it, and its animation.
 pub trait Demo {
@@ -47,6 +48,10 @@ pub const DEMOS: &[DemoInfo] = &[
     DemoInfo {
         name: "Lit cuboid",
         create: |assets| Ok(Box::new(LitCuboidDemo::new(assets)?)),
+    },
+    DemoInfo {
+        name: "Globe",
+        create: |assets| Ok(Box::new(GlobeDemo::new(assets)?)),
     },
 ];
 
@@ -221,6 +226,60 @@ mod tests {
         assert!(cube.get_mesh().is_some());
         let material = scene.get_material(cube.get_material().unwrap()).unwrap();
         assert!(material.get_texture().is_some());
+    }
+
+    #[test]
+    fn globe_demo_moves_and_spins_the_globe() {
+        let mut demo = demo(5);
+        let scene = demo.scene();
+
+        let globe = scene.get_node(scene.find_node("Globe").unwrap()).unwrap();
+        let mesh = scene.get_mesh(globe.get_mesh().unwrap()).unwrap();
+        assert_eq!(mesh.gen_num_vertexes(), 97 * 49);
+        let material = scene.get_material(globe.get_material().unwrap()).unwrap();
+        let world_map = scene.find_atlas("World map").unwrap();
+        assert_eq!(material.get_texture().unwrap().get_atlas(), world_map);
+        let atlas = scene.get_atlas(world_map).unwrap();
+        assert_eq!((atlas.get_width(), atlas.get_height()), (2048, 1024));
+
+        let transforms = |demo: &mut Box<dyn Demo>| {
+            let scene = demo.scene();
+            let node = |name| scene.get_node(scene.find_node(name).unwrap()).unwrap();
+            [
+                node("Orbit").get_transform(),
+                node("Globe").get_transform(),
+                node("Moon orbit").get_transform(),
+            ]
+        };
+        demo.update(1.0).unwrap();
+        let first = transforms(&mut demo);
+        demo.update(2.0).unwrap();
+        let second = transforms(&mut demo);
+        assert_ne!(first[0], second[0], "the globe doesn't move");
+        assert_ne!(first[1], second[1], "the globe doesn't spin");
+        assert_ne!(first[2], second[2], "the moon doesn't go around the globe");
+
+        let scene = demo.scene();
+        scene.update_nodes();
+        let globe = scene.get_node(scene.find_node("Globe").unwrap()).unwrap();
+        assert!(globe.dynamic_uniforms().get("light").is_some());
+        assert!(globe.dynamic_uniforms().get("lightIntensity").is_some());
+
+        // The moon follows the globe's path and stays at the same distance from it.
+        let moon = scene.get_node(scene.find_node("Moon").unwrap()).unwrap();
+        assert_eq!(moon.dynamic_uniforms().get("light"), globe.dynamic_uniforms().get("light"));
+        let centre = |node: &feather::node::Node| {
+            let m = node.get_global_transform().unwrap();
+            feather::math::Vec3::new(m.w.x, m.w.y, m.w.z)
+        };
+        use cgmath::InnerSpace;
+        let distance = (centre(moon) - centre(globe)).magnitude();
+        assert!((distance - 2.1).abs() < 1e-4, "{distance}");
+        let moon_material = scene.get_material(moon.get_material().unwrap()).unwrap();
+        assert_eq!(
+            moon_material.get_texture().unwrap().get_atlas(),
+            scene.find_atlas("Moon map").unwrap()
+        );
     }
 
     /// Checks that `Plates` holds a plate per texture of atlas `Plates`, each with its own

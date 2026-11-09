@@ -10,7 +10,8 @@
 //!                { "name": "Icons", "bitmap": "icons.png", "metadata": "icons.atlas" }],
 //!   "meshes":   [{ "name": "Room", "file": "demo_000_viking_room_mesh.obj" },
 //!                { "name": "Box", "cuboid": { "x": [-1, 1], "y": [-1, 1], "z": [0, 2] } },
-//!                { "name": "Flag", "plane": { "x": [0, 2], "y": [-1, 0], "segments": [8, 4] } }],
+//!                { "name": "Flag", "plane": { "x": [0, 2], "y": [-1, 0], "segments": [8, 4] } },
+//!                { "name": "Ball", "sphere": { "radius": 1, "segments": 64, "rings": 32 } }],
 //!   "shaders":  [{ "name": "Basic",
 //!                  "vertex": "demo_000_viking_room_shader.vert.spv",
 //!                  "fragment": "demo_000_viking_room_shader.frag.spv",
@@ -39,8 +40,10 @@
 //!   metadata, or the whole atlas when `name` is missing.
 //! - A mesh is an OBJ `file`, a `cuboid` with optional `x`, `y`, `z` ranges (default
 //!   `[-0.5, 0.5]`, so `"cuboid": {}` is a 1x1x1 cube centred on the origin) and optional
-//!   per-wall `u`, `v` texture ranges, or a `plane` (`MeshBuilderPlane`) with optional `x`,
-//!   `y` ranges (default `[-0.5, 0.5]`) and `segments` (default `[1, 1]`).
+//!   per-wall `u`, `v` texture ranges, a `plane` (`MeshBuilderPlane`) with optional `x`,
+//!   `y` ranges (default `[-0.5, 0.5]`) and `segments` (default `[1, 1]`), or a `sphere`
+//!   (`MeshBuilderSphere`) with optional `radius` (default 0.5), `segments` (default 48) and
+//!   `rings` (default 24).
 //! - Uniform values are written as `{ "<glsl type>": value }`: `float`, `int`, `uint`, `bool`,
 //!   `vec2`-`vec4`, `ivec2`-`ivec4`, `uvec2`-`uvec4` (arrays), or `mat2`-`mat4` (column-major
 //!   arrays of 4, 9 or 16 numbers).
@@ -60,6 +63,7 @@ use super::math::{IVec2, IVec3, IVec4, Mat4, UVec2, UVec3, UVec4, Vec2, Vec3, Ve
 use super::meshbuildercuboid::MeshBuilderCuboid;
 use super::meshbuilderobjfile::MeshBuilderObjFile;
 use super::meshbuilderplane::MeshBuilderPlane;
+use super::meshbuildersphere::{self, MeshBuilderSphere};
 use super::scene::Scene;
 use super::shader::ShaderUniformNames;
 use super::uniform::UniformValue;
@@ -93,10 +97,11 @@ struct AtlasEntry {
 #[serde(deny_unknown_fields)]
 struct MeshEntry {
     name: String,
-    /// OBJ asset. Exactly one of `file`, `cuboid` and `plane` must be given.
+    /// OBJ asset. Exactly one of `file`, `cuboid`, `plane` and `sphere` must be given.
     file: Option<String>,
     cuboid: Option<CuboidEntry>,
     plane: Option<PlaneEntry>,
+    sphere: Option<SphereEntry>,
 }
 
 /// A box with walls parallel to the axes (`MeshBuilderCuboid`). `{}` is the default 1x1x1 cube
@@ -125,6 +130,18 @@ struct PlaneEntry {
     y: Option<[f32; 2]>,
     /// `[columns, rows]`; `[1, 1]` when missing.
     segments: Option<[u32; 2]>,
+}
+
+/// A ball centred on the origin with its poles on the Z axis (`MeshBuilderSphere`). `{}` is the
+/// default ball of diameter 1.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SphereEntry {
+    radius: Option<f32>,
+    /// Slices around the Z axis.
+    segments: Option<u32>,
+    /// Bands from pole to pole.
+    rings: Option<u32>,
 }
 
 #[derive(Deserialize)]
@@ -322,9 +339,9 @@ fn build_mesh(scene: &mut Scene, assets: &dyn AssetsProvider, entry: &MeshEntry)
         let [min, max] = r.unwrap_or([-0.5, 0.5]);
         (min, max)
     };
-    match (&entry.file, &entry.cuboid, &entry.plane) {
-        (Some(file), None, None) => MeshBuilderObjFile::new(assets, file)?.build(scene, name),
-        (None, Some(c), None) => {
+    match (&entry.file, &entry.cuboid, &entry.plane, &entry.sphere) {
+        (Some(file), None, None, None) => MeshBuilderObjFile::new(assets, file)?.build(scene, name),
+        (None, Some(c), None, None) => {
             let is_default =
                 c.x.is_none() && c.y.is_none() && c.z.is_none() && c.u.is_empty() && c.v.is_empty();
             let builder = if is_default {
@@ -341,11 +358,17 @@ fn build_mesh(scene: &mut Scene, assets: &dyn AssetsProvider, entry: &MeshEntry)
             };
             builder.build(scene, name)
         }
-        (None, None, Some(p)) => {
+        (None, None, Some(p), None) => {
             let [columns, rows] = p.segments.unwrap_or([1, 1]);
             MeshBuilderPlane::new(range(p.x), range(p.y), (columns, rows)).build(scene, name)
         }
-        _ => bail!("a mesh needs exactly one of `file`, `cuboid` and `plane`"),
+        (None, None, None, Some(sphere)) => MeshBuilderSphere::new(
+            sphere.radius.unwrap_or(meshbuildersphere::DEFAULT_RADIUS),
+            sphere.segments.unwrap_or(meshbuildersphere::DEFAULT_SEGMENTS),
+            sphere.rings.unwrap_or(meshbuildersphere::DEFAULT_RINGS),
+        )
+        .build(scene, name),
+        _ => bail!("a mesh needs exactly one of `file`, `cuboid`, `plane` and `sphere`"),
     }
 }
 
@@ -834,13 +857,43 @@ mod tests {
     }
 
     #[test]
+    fn sphere_mesh() {
+        let json = r#"{
+            "meshes": [
+                { "name": "Default", "sphere": {} },
+                { "name": "Globe", "sphere": { "radius": 2, "segments": 8, "rings": 4 } }
+            ],
+            "root": {}
+        }"#;
+        let scene = Scene::from_json(&assets(), json).unwrap();
+
+        let mut default_scene = Scene::new();
+        let default = MeshBuilderSphere::default().build(&mut default_scene, None).unwrap();
+        let expected = default_scene.get_mesh(default).unwrap();
+        let mesh = scene.meshes.get_by_name("Default").unwrap();
+        assert_eq!(mesh.vertices, expected.vertices);
+        assert_eq!(mesh.indices, expected.indices);
+
+        let globe = scene.meshes.get_by_name("Globe").unwrap();
+        assert_eq!(globe.gen_num_vertexes(), 9 * 5);
+        use cgmath::InnerSpace;
+        assert!((globe.vertices[10].pos.magnitude() - 2.0).abs() < 1e-5);
+
+        let error = load_error(r#"{ "meshes": [{ "name": "S", "sphere": { "rings": 1 } }],
+                                    "root": {} }"#);
+        assert!(error.contains("mesh `S`: a sphere needs at least"), "{error}");
+    }
+
+    #[test]
     fn mesh_needs_exactly_one_source() {
         let both = r#"{ "meshes": [{ "name": "M", "file": "triangle.obj",
                           "cuboid": { "x": [0, 1], "y": [0, 1], "z": [0, 1] } }], "root": {} }"#;
         let cuboid_and_plane =
             r#"{ "meshes": [{ "name": "M", "cuboid": {}, "plane": {} }], "root": {} }"#;
+        let plane_and_sphere =
+            r#"{ "meshes": [{ "name": "M", "plane": {}, "sphere": {} }], "root": {} }"#;
         let neither = r#"{ "meshes": [{ "name": "M" }], "root": {} }"#;
-        for json in [both, cuboid_and_plane, neither] {
+        for json in [both, cuboid_and_plane, plane_and_sphere, neither] {
             let error = load_error(json);
             assert!(error.contains("mesh `M`: a mesh needs exactly one of"), "{error}");
         }
