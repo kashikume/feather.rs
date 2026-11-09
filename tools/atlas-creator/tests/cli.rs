@@ -47,7 +47,7 @@ fn write_inputs(dir: &TempDir, images: &[(&str, u32, u32, [u8; 4])]) {
         list.push_str(name);
         list.push('\n');
     }
-    fs::write(dir.join("list.txt"), list).unwrap();
+    fs::write(dir.join("list.atlist"), list).unwrap();
 }
 
 fn run(args: &[&str]) -> Output {
@@ -57,11 +57,11 @@ fn run(args: &[&str]) -> Output {
         .unwrap()
 }
 
-/// Runs with `dir/list.txt` as input and `dir/atlas.png` / `dir/atlas.txt` as outputs.
+/// Runs with `dir/list.atlist` as input and `dir/atlas.png` / `dir/atlas.atlas` as outputs.
 fn run_in(dir: &TempDir, extra: &[&str]) -> Output {
-    let list = dir.join("list.txt");
+    let list = dir.join("list.atlist");
     let png = dir.join("atlas.png");
-    let meta = dir.join("atlas.txt");
+    let meta = dir.join("atlas.atlas");
     let mut args = vec![
         "--input",
         list.to_str().unwrap(),
@@ -103,11 +103,11 @@ fn unwritable_output_exits_with_5() {
     let missing_dir = dir.join("missing/atlas.png");
     let output = run(&[
         "-i",
-        dir.join("list.txt").to_str().unwrap(),
+        dir.join("list.atlist").to_str().unwrap(),
         "-o",
         missing_dir.to_str().unwrap(),
         "-m",
-        dir.join("atlas.txt").to_str().unwrap(),
+        dir.join("atlas.atlas").to_str().unwrap(),
     ]);
     assert_eq!(output.status.code(), Some(5));
 }
@@ -135,7 +135,7 @@ fn creates_atlas_and_meta_file() {
 
     // Each line of the meta file is `name x y width height`; every image is in it once, with
     // its size, and the atlas holds its pixels there.
-    let meta = fs::read_to_string(dir.join("atlas.txt")).unwrap();
+    let meta = fs::read_to_string(dir.join("atlas.atlas")).unwrap();
     assert_eq!(meta.lines().count(), images.len(), "{meta}");
     for (file, width, height, rgba) in images {
         let name = file.trim_end_matches(".png");
@@ -170,5 +170,5 @@ fn debug_rects_option_still_succeeds() {
     let output = run_in(&dir, &["-w", "16", "-h", "16", "--rects", "--verbose"]);
     assert_eq!(output.status.code(), Some(0), "{output:?}");
     assert!(dir.join("atlas.png").exists());
-    assert!(dir.join("atlas.txt").exists());
+    assert!(dir.join("atlas.atlas").exists());
 }

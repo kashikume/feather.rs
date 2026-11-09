@@ -57,15 +57,15 @@ pub fn read_png(path: &Path) -> (u32, u32, png::ColorType, Vec<u8>) {
     (info.width, info.height, info.color_type, buf)
 }
 
-/// Settings for a `width` x `height` atlas whose input list is `dir/list.txt` and outputs are
-/// `dir/atlas.png` and `dir/atlas.txt`.
+/// Settings for a `width` x `height` atlas whose input list is `dir/list.atlist` and outputs are
+/// `dir/atlas.png` and `dir/atlas.atlas`.
 pub fn input(dir: &TempDir, width: usize, height: usize, files: &[&str]) -> InputParser {
     InputParser {
         width,
         height,
         output_file_name: dir.join("atlas.png").to_string_lossy().into_owned(),
-        meta_file_name: dir.join("atlas.txt").to_string_lossy().into_owned(),
-        input_list_file_name: dir.join("list.txt"),
+        meta_file_name: dir.join("atlas.atlas").to_string_lossy().into_owned(),
+        input_list_file_name: dir.join("list.atlist"),
         verbose: false,
         debug: false,
         debug_rects: false,

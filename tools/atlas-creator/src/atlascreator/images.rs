@@ -285,9 +285,9 @@ mod test {
         let input = InputParser {
             width: 100,
             height: 100,
-            output_file_name: String::from("filename.txt"),
-            meta_file_name: String::from("filename.txt"),
-            input_list_file_name: PathBuf::from("filename.txt"),
+            output_file_name: String::from("filename.png"),
+            meta_file_name: String::from("filename.atlas"),
+            input_list_file_name: PathBuf::from("filename.atlist"),
             verbose: false,
             debug: false,
             debug_rects: false,
@@ -297,7 +297,7 @@ mod test {
         let mut images = Images::new(&input);
         for _ in 0..n {
             images.images.push(Image {
-                file_name: PathBuf::from("filename.txt"),
+                file_name: PathBuf::from("filename.png"),
                 name: String::from("name"),
                 rect: Rect::from_wh(8, 8),
             });
@@ -524,7 +524,7 @@ mod test {
         let (input, images) = build(&dir, 16, 16, &["small.png", "big.png"]);
         images.save_meta(&input).unwrap();
 
-        let meta = fs::read_to_string(dir.join("atlas.txt")).unwrap();
+        let meta = fs::read_to_string(dir.join("atlas.atlas")).unwrap();
         let expected: String = images
             .images
             .iter()

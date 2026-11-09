@@ -77,18 +77,18 @@ impl InputParser {
 
     pub fn show_usage() {
         println!("Usage:");
-        println!( "AtlasCreator --width 512 --height 512 --output output.png --meta output.txt --input input.txt" );
+        println!( "AtlasCreator --width 512 --height 512 --output sprites.png --meta sprites.atlas --input sprites.atlist" );
         println!(" --width [number] | -w [number] - sets width of output png file (default 512).");
         println!(
             " --height [number] | -h [number] - sets height of output png file (default 512)."
         );
-        println!( " --input [filename.txt] | -i [filename.txt] - input file name. The file should contain slit of png files to be included in the atlas." );
+        println!( " --input [filename.atlist] | -i [filename.atlist] - input file name. The .atlist file lists the png files to include in the atlas, one per line, relative to the .atlist file." );
         println!( " --output [filename.png] | -o [filename.png] - output png file name. Result atlas saved as png file." );
         println!(
-            " --meta [filename.txt] | -m [filename.txt] - output meda data about created atlas."
+            " --meta [filename.atlas] | -m [filename.atlas] - output .atlas file with the name, position and size of each image in the atlas."
         );
         println!(" --rects - enables debug rects in output.");
-        println!(" --verbose - additinal logs.");
+        println!(" --verbose - additional logs.");
         println!(" --debug - debug logs.");
     }
 
@@ -143,15 +143,20 @@ mod test {
     }
 
     const REQUIRED: &[&str] = &[
-        "--input", "in.txt", "--output", "out.png", "--meta", "out.txt",
+        "--input",
+        "in.atlist",
+        "--output",
+        "out.png",
+        "--meta",
+        "out.atlas",
     ];
 
     #[test]
     fn required_options_and_defaults() {
         let input = parse(REQUIRED).unwrap();
-        assert_eq!(input.input_list_file_name, PathBuf::from("in.txt"));
+        assert_eq!(input.input_list_file_name, PathBuf::from("in.atlist"));
         assert_eq!(input.output_file_name, "out.png");
-        assert_eq!(input.meta_file_name, "out.txt");
+        assert_eq!(input.meta_file_name, "out.atlas");
         assert_eq!((input.width, input.height), (512, 512));
         assert!(!input.verbose);
         assert!(!input.debug);
@@ -181,24 +186,24 @@ mod test {
     #[test]
     fn short_options() {
         let input = parse(&[
-            "-i", "a.txt", "-o", "b.png", "-m", "c.txt", "-w", "64", "-h", "32",
+            "-i", "a.atlist", "-o", "b.png", "-m", "c.atlas", "-w", "64", "-h", "32",
         ])
         .unwrap();
-        assert_eq!(input.input_list_file_name, PathBuf::from("a.txt"));
+        assert_eq!(input.input_list_file_name, PathBuf::from("a.atlist"));
         assert_eq!(input.output_file_name, "b.png");
-        assert_eq!(input.meta_file_name, "c.txt");
+        assert_eq!(input.meta_file_name, "c.atlas");
         assert_eq!((input.width, input.height), (64, 32));
     }
 
     #[test]
     fn options_in_any_order() {
         let input = parse(&[
-            "--meta", "m.txt", "-w", "8", "--output", "o.png", "-i", "l.txt",
+            "--meta", "m.atlas", "-w", "8", "--output", "o.png", "-i", "l.atlist",
         ])
         .unwrap();
-        assert_eq!(input.meta_file_name, "m.txt");
+        assert_eq!(input.meta_file_name, "m.atlas");
         assert_eq!(input.output_file_name, "o.png");
-        assert_eq!(input.input_list_file_name, PathBuf::from("l.txt"));
+        assert_eq!(input.input_list_file_name, PathBuf::from("l.atlist"));
         assert_eq!(input.width, 8);
     }
 
@@ -232,7 +237,7 @@ mod test {
     #[test]
     fn load_input_list_reads_one_file_per_line() {
         let dir = TempDir::new("load_input_list_reads_one_file_per_line");
-        let list = dir.join("list.txt");
+        let list = dir.join("list.atlist");
         fs::write(&list, "a.png\r\nsub/b.png\nc.png\n").unwrap();
 
         let mut input = parse(REQUIRED).unwrap();
@@ -250,7 +255,7 @@ mod test {
     fn load_input_list_of_missing_file_fails() {
         let dir = TempDir::new("load_input_list_of_missing_file_fails");
         let mut input = parse(REQUIRED).unwrap();
-        input.input_list_file_name = dir.join("does_not_exist.txt");
+        input.input_list_file_name = dir.join("does_not_exist.atlist");
         assert!(input.load_input_list().is_err());
     }
 }
