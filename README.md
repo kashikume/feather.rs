@@ -50,10 +50,14 @@ What works today:
 cargo run              # debug build, validation layers on
 cargo run --release    # release build, validation layers off
 cargo run -- 1         # start with demo 1
-cargo test             # unit tests
+cargo test --workspace # unit tests of every crate (plain `cargo test` tests only the test app)
+cargo run -p atlas-creator -- --help   # run a tool
 ```
 
-The development app (`src/testapp`) opens a 1024×768 window and shows one demo at a time. The
+The repository is a Cargo workspace. `cargo run` and `cargo build` at the root work on the test
+app (`default-members`); use `-p <package>` or `--workspace` for the others.
+
+The development app (`apps/testapp`) opens a 1024×768 window and shows one demo at a time. The
 only command line argument is the number of the demo to start with (default 0). **Left** and
 **right** arrows switch to the previous and next demo; after the last demo comes the first.
 
@@ -62,35 +66,37 @@ only command line argument is the number of the demo to start with (default 0). 
 | 0    | Viking room | A model with a texture, loaded from a [scene file](#scene-files)     |
 | 1    | Cuboid      | A textured cuboid from its scene file: a node spun in code holds a node scaled in the file |
 
-Each demo is in its own file, `src/testapp/demo_NNN_<name>.rs`, and its resources are named
-`demo_NNN_<name>_<kind>` (`scene`, `atlas`, `mesh`, `shader`, ...). Demos are listed in `DEMOS`
-in `src/testapp/testapp.rs`.
+Each demo is in its own file, `apps/testapp/src/testapp/demo_NNN_<name>.rs`, and its resources
+are named `demo_NNN_<name>_<kind>` (`scene`, `atlas`, `mesh`, `shader`, ...). Demos are listed in
+`DEMOS` in `apps/testapp/src/testapp/testapp.rs`.
 
 Everything the app loads comes from the `assets/` directory next to the executable, so it can be
 started from any directory.
 
 ### Shaders
 
-`build.rs` compiles every shader in `shaders/` (`.vert`, `.frag`, `.comp`, `.geom`, `.tesc`,
-`.tese`) with `glslc` during `cargo build`, and recompiles whenever anything in `shaders/` changes.
-Shaders are compiled without `-O`, also in release builds: optimization strips the debug names
-the engine reads uniform names from. A compiled shader keeps its path relative to `shaders/` and
-gets `.spv` added, so `shaders/demo_000_viking_room_shader.vert` becomes
-`demo_000_viking_room_shader.vert.spv`. It is written to:
+The test app's `build.rs` compiles every shader in `apps/testapp/shaders/` (`.vert`, `.frag`,
+`.comp`, `.geom`, `.tesc`, `.tese`) with `glslc` during `cargo build`, and recompiles whenever
+anything there changes. Shaders are compiled without `-O`, also in release builds: optimization
+strips the debug names the engine reads uniform names from. A compiled shader keeps its path
+relative to `shaders/` and gets `.spv` added, so `shaders/demo_000_viking_room_shader.vert`
+becomes `demo_000_viking_room_shader.vert.spv`. It is written to:
 
 - the `assets/` directory next to the executable, where applications load it through the assets
   provider as `"demo_000_viking_room_shader.vert.spv"` (see [Assets](#assets)),
 - `$OUT_DIR/shaders/`, for embedding with
   `include_bytes!(concat!(env!("OUT_DIR"), "/shaders/demo_000_viking_room_shader.vert.spv"))`.
 
-`build.rs` looks for `glslc` in this order: the `GLSLC` environment variable,
-`$VULKAN_SDK/Bin/glslc`, then `glslc` on `PATH`.
+The engine's own `build.rs` compiles the shaders its unit tests use, from
+`crates/feather/testdata/shaders/`. Both build scripts use the helpers in `crates/feather-build`,
+which look for `glslc` in this order: the `GLSLC` environment variable, `$VULKAN_SDK/Bin/glslc`,
+then `glslc` on `PATH`.
 
 ## Assets
 
-`build.rs` copies everything in `resources/` to an `assets/` directory next to the executable
-(e.g. `target/debug/assets/`), together with the compiled shaders. It copies
-again whenever anything in `resources/` changes.
+The test app's `build.rs` copies everything in `apps/testapp/resources/` to an `assets/`
+directory next to the executable (e.g. `target/debug/assets/`), together with the compiled
+shaders. It copies again whenever anything in `resources/` changes.
 
 At runtime assets are read through the `AssetsProvider` trait, which has one implementation per
 platform:
@@ -152,9 +158,12 @@ Tasks: `cargo build`, `cargo build --release`, `cargo run`, `cargo run --release
 ## Project layout
 
 ```
-src/
-  main.rs            entry point: creates the window and starts the engine with TestApp
-  feather/           the engine
+Cargo.toml           workspace: members and shared dependency versions
+crates/
+  feather/           the engine (library crate `feather`)
+    build.rs         compiles the shaders in testdata/shaders/ for the unit tests
+    testdata/        small files used only by the unit tests
+    src/             engine sources (lib.rs lists the modules):
     app.rs           Vulkan setup, main loop, frame rendering
     featherapp.rs    FeatherApp trait implemented by applications
     scene.rs         scene: owns all objects and the node graph
@@ -176,12 +185,23 @@ src/
     camera.rs, perspectivecamera.rs
     instance.rs, physicaldevice.rs, logicaldevice.rs, swapchain.rs, pipeline.rs, ...
                      Vulkan object wrappers
-  testapp/           development application: one file per demo, testapp.rs switches them
-shaders/             GLSL sources, compiled by build.rs; shaders/tests/ holds shaders used
-                     only by unit tests
-build.rs             compiles shaders to SPIR-V and copies assets next to the executable
-resources/           scene files, models and textures, copied to assets/ by build.rs
+  feather-build/     build script helpers: compiling shaders with glslc, copying assets
+apps/
+  testapp/           development application (binary `testapp`)
+    src/main.rs      entry point: creates the window and starts the engine with TestApp
+    src/testapp/     one file per demo, testapp.rs switches them
+    shaders/         GLSL sources, compiled by build.rs
+    resources/       scene files, models and textures, copied to assets/ by build.rs
+    build.rs         compiles shaders to SPIR-V and copies assets next to the executable
+tools/
+  atlas-creator/     command line tool packing PNG images into an atlas
+doc/                 scene file format and plans
 ```
+
+To add a tool, create `tools/<name>/` with its own `Cargo.toml` (use `edition.workspace = true`
+and `<dependency>.workspace = true` for dependencies listed in the root `Cargo.toml`). The
+workspace picks it up automatically; run it with `cargo run -p <name>`. Tools should not depend
+on the `feather` crate unless they need the engine: it requires the Vulkan SDK to build.
 
 ## Writing an application
 
@@ -209,7 +229,7 @@ The app may return a different scene at any time. The engine notices (each `Scen
 uploads the new one. Scenes hold no GPU objects themselves, so the app can simply drop them.
 
 Each demo of the test app loads its scene from a [scene file](#scene-files) and finds the node it
-animates by name, e.g. `src/testapp/demo_000_viking_room.rs`:
+animates by name, e.g. `apps/testapp/src/testapp/demo_000_viking_room.rs`:
 
 ```rust
 let scene = Scene::load(assets, "demo_000_viking_room_scene.json")?;

@@ -14,7 +14,7 @@ let room = scene.find_node("Room").unwrap();
 
 `Scene::from_json(assets, text)` does the same from JSON text that is already in memory.
 
-The loader is in [`src/feather/scenefile.rs`](../src/feather/scenefile.rs).
+The loader is in [`crates/feather/src/scenefile.rs`](../crates/feather/src/scenefile.rs).
 
 ## Principles
 
@@ -29,7 +29,7 @@ The loader is in [`src/feather/scenefile.rs`](../src/feather/scenefile.rs).
 
 ## Example
 
-The viking room used by the test app ([`resources/demo_000_viking_room_scene.json`](../resources/demo_000_viking_room_scene.json)):
+The viking room used by the test app ([`apps/testapp/resources/demo_000_viking_room_scene.json`](../apps/testapp/resources/demo_000_viking_room_scene.json)):
 
 ```json
 {
@@ -183,7 +183,7 @@ does.
 | `view_uniform`       | string | no       | Uniform that receives the camera's view matrix      |
 | `projection_uniform` | string | no       | Uniform that receives the camera's projection matrix |
 
-The build compiles GLSL files from `shaders/` into `assets/` as `<file>.spv`, so
+The test app's build compiles GLSL files from `apps/testapp/shaders/` into `assets/` as `<file>.spv`, so
 `shaders/demo_000_viking_room_shader.vert` is referenced as
 `"demo_000_viking_room_shader.vert.spv"`.
 

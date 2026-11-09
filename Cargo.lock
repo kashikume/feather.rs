@@ -107,6 +107,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "175571dd1d178ced59193a6fc02dde1b972eb0bc56c892cde9beeceac5bf0f6b"
 
 [[package]]
+name = "atlas-creator"
+version = "0.1.0"
+dependencies = [
+ "png",
+]
+
+[[package]]
 name = "atomic-waker"
 version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -414,14 +421,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "feather-rs"
+name = "feather"
 version = "0.0.1"
 dependencies = [
  "anyhow",
  "cgmath",
+ "feather-build",
  "log",
  "png",
- "pretty_env_logger",
  "serde",
  "serde_json",
  "spirq",
@@ -430,6 +437,10 @@ dependencies = [
  "vulkanalia",
  "winit",
 ]
+
+[[package]]
+name = "feather-build"
+version = "0.0.1"
 
 [[package]]
 name = "flate2"
@@ -1211,6 +1222,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "06794f8f6c5c898b3275aebefa6b8a1cb24cd2c6c79397ab15774837a0bc5755"
 dependencies = [
  "winapi-util",
+]
+
+[[package]]
+name = "testapp"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "cgmath",
+ "feather",
+ "feather-build",
+ "log",
+ "pretty_env_logger",
+ "winit",
 ]
 
 [[package]]

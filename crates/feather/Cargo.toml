@@ -1,0 +1,21 @@
+[package]
+name = "feather"
+version = "0.0.1"
+edition.workspace = true
+description = "A lightweight 3D engine on top of the Vulkan API."
+
+[dependencies]
+anyhow.workspace = true
+log.workspace = true
+cgmath.workspace = true
+png.workspace = true
+thiserror.workspace = true
+tobj.workspace = true
+vulkanalia.workspace = true
+winit.workspace = true
+spirq.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[build-dependencies]
+feather-build.workspace = true

@@ -1,7 +1,8 @@
 [package]
 name = "atlas-creator"
 version = "0.1.0"
-edition = "2021"
+edition.workspace = true
+publish = false
 
 [dependencies]
-png = "0.17.14"
+png.workspace = true

@@ -1,0 +1,17 @@
+[package]
+name = "testapp"
+version = "0.0.1"
+edition.workspace = true
+description = "Development app showing the feather demos."
+publish = false
+
+[dependencies]
+feather.workspace = true
+anyhow.workspace = true
+cgmath.workspace = true
+log.workspace = true
+pretty_env_logger.workspace = true
+winit.workspace = true
+
+[build-dependencies]
+feather-build.workspace = true

@@ -1,0 +1,8 @@
+[package]
+name = "feather-build"
+version = "0.0.1"
+edition.workspace = true
+description = "Build script helpers: compiling GLSL shaders and copying assets."
+publish = false
+
+[dependencies]

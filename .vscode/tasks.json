@@ -72,7 +72,7 @@
             "label": "cargo fmt",
             "type": "shell",
             "command": "cargo",
-            "args": ["fmt"],
+            "args": ["fmt", "--all"],
             "group": "none",
             "presentation": {
                 "reveal": "always",
