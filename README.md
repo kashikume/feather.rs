@@ -75,6 +75,7 @@ only command line argument is the number of the demo to start with (default 0). 
 | 4    | Lit cuboid  | The tumbling cuboid of demo 1 with diffuse and specular lighting, from the direction in the `light` uniform set on the scene's root node |
 | 5    | Globe       | A world map on a ball, spinning around its tilted axis while drifting along an oval path, with a cratered moon going around it; both lit by a strong light from the side: a dark night side, a highlight on water only and a glowing atmosphere on the globe |
 | 6    | Bouncing balls | Balls dropping onto a floor plate, bouncing off its edge and out of the screen, in a loop, with semi-transparent shadows; no textures, every object has its own `color` uniform |
+| 7    | Vases       | 12 vases of 3 shapes (generated OBJ files with thick walls) in different sizes and colours on a turning floor plate; some opaque, some see-through glass, all from the scene file |
 
 Each demo is in its own file, `apps/testapp/src/testapp/demo_NNN_<name>.rs`, and its resources
 are named `demo_NNN_<name>_<kind>` (`scene`, `atlas`, `mesh`, `shader`, ...). Demos are listed in

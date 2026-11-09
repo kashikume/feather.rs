@@ -13,6 +13,7 @@ use super::demo_003_waving_atlas::WavingAtlasDemo;
 use super::demo_004_lit_cuboid::LitCuboidDemo;
 use super::demo_005_globe::GlobeDemo;
 use super::demo_006_bouncing_balls::BouncingBallsDemo;
+use super::demo_007_vases::VasesDemo;
 
 /// One demo of the test app: a scene, the camera looking at it, and its animation.
 pub trait Demo {
@@ -57,6 +58,10 @@ pub const DEMOS: &[DemoInfo] = &[
     DemoInfo {
         name: "Bouncing balls",
         create: |assets| Ok(Box::new(BouncingBallsDemo::new(assets)?)),
+    },
+    DemoInfo {
+        name: "Vases",
+        create: |assets| Ok(Box::new(VasesDemo::new(assets)?)),
     },
 ];
 
@@ -328,6 +333,47 @@ mod tests {
         let (handle, before) = (first.get_handle(), first.get_transform());
         demo.update(0.5).unwrap();
         assert_ne!(demo.scene().get_node(handle).unwrap().get_transform(), before);
+    }
+
+    #[test]
+    fn vases_have_three_shapes_own_colours_and_some_are_transparent() {
+        let mut demo = demo(7);
+        let scene = demo.scene();
+
+        let vases = scene.get_node(scene.find_node("Vases").unwrap()).unwrap();
+        assert_eq!(vases.get_children().len(), 12);
+        let (mut meshes, mut colours, mut scales) = (Vec::new(), Vec::new(), Vec::new());
+        let mut transparent = 0;
+        for &vase in vases.get_children() {
+            let vase = scene.get_node(vase).unwrap();
+            meshes.push(vase.get_mesh().unwrap().to_string());
+            colours.push(format!("{:?}", vase.uniforms().get("color").unwrap()));
+            scales.push(format!("{:.3}", vase.get_transform().x.x.hypot(vase.get_transform().x.y)));
+            let material = scene.get_material(vase.get_material().unwrap()).unwrap();
+            let glass = material.get_name() == Some("Glass".to_string());
+            assert_eq!(vase.is_transparent(), glass, "{:?}", vase.get_name());
+            transparent += vase.is_transparent() as usize;
+        }
+        for list in [&mut meshes, &mut colours, &mut scales] {
+            list.sort();
+            list.dedup();
+        }
+        assert_eq!(meshes.len(), 3, "not 3 shapes");
+        assert_eq!(colours.len(), 12, "colours are not all different");
+        assert!(scales.len() >= 6, "too few sizes: {scales:?}");
+        assert!((3..=9).contains(&transparent), "{transparent} transparent vases");
+
+        // Each shape is a closed vase of height 1 standing on z = 0.
+        for name in ["Classic", "Bottle", "Urn"] {
+            let mesh = scene.get_mesh(scene.find_mesh(name).unwrap()).unwrap();
+            assert!(mesh.gen_num_indexes() > 1000, "{name}");
+        }
+
+        // The scene turns.
+        let turntable = scene.find_node("Turntable").unwrap();
+        demo.update(2.0).unwrap();
+        let turned = demo.scene().get_node(turntable).unwrap().get_transform();
+        assert_ne!(turned, <feather::math::Mat4 as cgmath::SquareMatrix>::identity());
     }
 
     /// Checks that `Plates` holds a plate per texture of atlas `Plates`, each with its own
