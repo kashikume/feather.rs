@@ -67,7 +67,8 @@ only command line argument is the number of the demo to start with (default 0). 
 | ---- | ----------- | -------------------------------------------------------------------- |
 | 0    | Viking room | A model with a texture, loaded from a [scene file](#scene-files)     |
 | 1    | Cuboid      | A textured cuboid from its scene file: a node spun in code holds a node scaled in the file |
-| 2    | Atlas       | 16 plates in a 4×4 grid waving in the wind, each showing one texture of an atlas built from 16 images |
+| 2    | Atlas       | 16 still plates in a 4×4 grid, each showing one texture of an atlas built from 16 images |
+| 3    | Waving atlas | The same plates waving in the wind, bent by the vertex shader       |
 
 Each demo is in its own file, `apps/testapp/src/testapp/demo_NNN_<name>.rs`, and its resources
 are named `demo_NNN_<name>_<kind>` (`scene`, `atlas`, `mesh`, `shader`, ...). Demos are listed in
@@ -105,7 +106,8 @@ list. The result is `<name>.png` (the atlas) and `<name>.atlas` (its metadata: o
 smallest size from 64×32, 64×64, 128×64, ... that its images fit in, with a 1-pixel frame
 around every image. The generated atlases are not in the repository, only the images and lists:
 demo 2's are `apps/testapp/atlases/demo_002_atlas_atlas.atlist` and
-`apps/testapp/atlases/demo_002_atlas/plate_01.png` ... `plate_16.png`.
+`apps/testapp/atlases/demo_002_atlas/plate_01.png` ... `plate_16.png` (demo 3 has its own copy
+under `demo_003_waving_atlas`).
 
 ## Assets
 
@@ -261,9 +263,9 @@ let room_node = scene.find_node("Room").unwrap();
 
 Scenes can also be built in code, with `create_root_node`, `create_node`, `MeshBuilderCuboid`,
 `MeshBuilderPlane`, `MeshBuilderObjFile`, `create_shader`, `create_atlas_from_png`,
-`create_material`, `material_set_texture` and the other `Scene` methods. Demo 2
-(`demo_002_atlas.rs`) loads its atlas, mesh and shader from a scene file and creates a material and
-a node for every texture of the atlas in code.
+`create_material`, `material_set_texture` and the other `Scene` methods. Demos 2 and 3
+(`demo_002_atlas.rs`, `demo_003_waving_atlas.rs`) load their atlas, mesh and shader from a scene
+file and create a material and a node for every texture of the atlas in code.
 
 `main.rs` passes the app to the engine:
 

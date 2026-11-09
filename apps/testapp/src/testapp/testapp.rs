@@ -9,6 +9,7 @@ use feather::scene::Scene;
 use super::demo_000_viking_room::VikingRoomDemo;
 use super::demo_001_cuboid::CuboidDemo;
 use super::demo_002_atlas::AtlasDemo;
+use super::demo_003_waving_atlas::WavingAtlasDemo;
 
 /// One demo of the test app: a scene, the camera looking at it, and its animation.
 pub trait Demo {
@@ -37,6 +38,10 @@ pub const DEMOS: &[DemoInfo] = &[
     DemoInfo {
         name: "Atlas",
         create: |assets| Ok(Box::new(AtlasDemo::new(assets)?)),
+    },
+    DemoInfo {
+        name: "Waving atlas",
+        create: |assets| Ok(Box::new(WavingAtlasDemo::new(assets)?)),
     },
 ];
 
@@ -194,10 +199,9 @@ mod tests {
         assert_ne!(cube.get_transform(), Mat4::identity());
     }
 
-    #[test]
-    fn atlas_demo_has_a_plate_per_atlas_texture() {
-        let mut demo = demo(2);
-        let scene = demo.scene();
+    /// Checks that `Plates` holds a plate per texture of atlas `Plates`, each with its own
+    /// material showing its own texture, drawn with `shader`.
+    fn check_plates(scene: &Scene, shader: &str) {
 
         let atlas_handle = scene.find_atlas("Plates").unwrap();
         let atlas = scene.get_atlas(atlas_handle).unwrap();
@@ -212,9 +216,6 @@ mod tests {
             let node = scene.get_node(scene.find_node(name).unwrap()).unwrap();
             assert_eq!(node.get_parent(), Some(plates));
             assert!(node.get_mesh().is_some());
-            for uniform in ["phase", "speed", "strength"] {
-                assert!(node.uniforms().contains(uniform), "{name}: {uniform}");
-            }
             let material = scene.get_material(node.get_material().unwrap()).unwrap();
             let texture = *material.get_texture().unwrap();
             assert_eq!(texture.get_atlas(), atlas_handle);
@@ -227,14 +228,40 @@ mod tests {
         rects.dedup();
         assert_eq!(rects.len(), 16);
 
-        let shader = scene.get_shader(scene.find_shader("Waving").unwrap()).unwrap();
+        let shader = scene.get_shader(scene.find_shader(shader).unwrap()).unwrap();
         assert_eq!(shader.get_uniform_umin_name(), Some("umin"));
         assert_eq!(shader.get_uniform_vmax_name(), Some("vmax"));
     }
 
     #[test]
-    fn atlas_demo_passes_the_time_to_the_plates() {
+    fn atlas_demo_has_a_plate_per_atlas_texture() {
         let mut demo = demo(2);
+        let scene = demo.scene();
+        check_plates(scene, "Textured");
+
+        // Nothing moves.
+        let plate = scene.find_node("plate_07").unwrap();
+        let before = scene.get_node(plate).unwrap().get_transform();
+        demo.update(3.0).unwrap();
+        assert_eq!(demo.scene().get_node(plate).unwrap().get_transform(), before);
+    }
+
+    #[test]
+    fn waving_atlas_demo_has_a_plate_per_atlas_texture() {
+        let mut demo = demo(3);
+        let scene = demo.scene();
+        check_plates(scene, "Waving");
+        for name in scene.get_atlas(scene.find_atlas("Plates").unwrap()).unwrap().get_texture_names() {
+            let node = scene.get_node(scene.find_node(name).unwrap()).unwrap();
+            for uniform in ["phase", "speed", "strength"] {
+                assert!(node.uniforms().contains(uniform), "{name}: {uniform}");
+            }
+        }
+    }
+
+    #[test]
+    fn waving_atlas_demo_passes_the_time_to_the_plates() {
+        let mut demo = demo(3);
         demo.update(2.5).unwrap();
         let scene = demo.scene();
         scene.update_nodes();

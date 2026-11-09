@@ -7,11 +7,11 @@
     }
   ],
   "meshes": [
-    { "name": "Plate", "plane": { "x": [-0.5, 0.5], "y": [-1, 0], "segments": [12, 12] } }
+    { "name": "Plate", "plane": {} }
   ],
   "shaders": [
     {
-      "name": "Waving",
+      "name": "Textured",
       "vertex": "demo_002_atlas_shader.vert.spv",
       "fragment": "demo_002_atlas_shader.frag.spv",
       "model_uniform": "model",
@@ -26,11 +26,7 @@
   "root": {
     "name": "Scene root",
     "children": [
-      {
-        "name": "Plates",
-        "transform": { "rotation": [90, 0, 0] },
-        "uniforms": { "time": { "float": 0 } }
-      }
+      { "name": "Plates", "transform": { "rotation": [90, 0, 0] } }
     ]
   }
 }

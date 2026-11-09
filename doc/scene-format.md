@@ -187,7 +187,7 @@ the origin, as one cell.
 | `segments` | `[columns, rows]`  | `[1, 1]`      | Number of cells, at least 1  |
 
 The whole texture covers the plane as seen from +Z: `u` goes from 0 at `x` min to 1 at `x` max,
-`v` from 0 at the top (`y` max) to 1 at the bottom. The plates of the atlas demo hang from their
+`v` from 0 at the top (`y` max) to 1 at the bottom. The plates of the waving atlas demo hang from their
 top edge:
 
 ```json
