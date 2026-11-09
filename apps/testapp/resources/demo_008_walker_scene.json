@@ -1,0 +1,230 @@
+{
+  "atlases": [
+    {
+      "name": "Walker",
+      "bitmap": "demo_008_walker_atlas.png",
+      "metadata": "demo_008_walker_atlas.atlas"
+    }
+  ],
+  "meshes": [
+    { "name": "Plate", "cuboid": { "x": [-4, 4], "y": [-4, 4], "z": [-0.25, 0] } },
+    { "name": "Shadow disc", "plane": {} },
+    { "name": "Ball", "sphere": { "radius": 1.0, "segments": 32, "rings": 16 } },
+    { "name": "Pelvis", "file": "demo_008_walker_pelvis_mesh.obj" },
+    { "name": "Torso", "file": "demo_008_walker_torso_mesh.obj" },
+    { "name": "Neck", "file": "demo_008_walker_neck_mesh.obj" },
+    { "name": "Upper arm", "file": "demo_008_walker_upper_arm_mesh.obj" },
+    { "name": "Forearm", "file": "demo_008_walker_forearm_mesh.obj" },
+    { "name": "Thigh", "file": "demo_008_walker_thigh_mesh.obj" },
+    { "name": "Shin", "file": "demo_008_walker_shin_mesh.obj" },
+    { "name": "Foot", "file": "demo_008_walker_foot_mesh.obj" }
+  ],
+  "shaders": [
+    {
+      "name": "Textured",
+      "vertex": "demo_008_walker_shader.vert.spv",
+      "fragment": "demo_008_walker_shader.frag.spv",
+      "model_uniform": "model",
+      "view_uniform": "view",
+      "projection_uniform": "proj",
+      "umin_uniform": "umin",
+      "umax_uniform": "umax",
+      "vmin_uniform": "vmin",
+      "vmax_uniform": "vmax"
+    }
+  ],
+  "materials": [
+    {
+      "name": "Skin",
+      "shader": "Textured",
+      "texture": { "atlas": "Walker", "name": "skin" },
+      "uniforms": { "shininess": { "float": 12.0 }, "specularStrength": { "float": 0.15 } }
+    },
+    {
+      "name": "Face",
+      "shader": "Textured",
+      "texture": { "atlas": "Walker", "name": "face" },
+      "uniforms": { "shininess": { "float": 12.0 }, "specularStrength": { "float": 0.15 } }
+    },
+    {
+      "name": "Shirt",
+      "shader": "Textured",
+      "texture": { "atlas": "Walker", "name": "shirt" },
+      "uniforms": { "shininess": { "float": 12.0 }, "specularStrength": { "float": 0.15 } }
+    },
+    {
+      "name": "Pants",
+      "shader": "Textured",
+      "texture": { "atlas": "Walker", "name": "pants" },
+      "uniforms": { "shininess": { "float": 8.0 }, "specularStrength": { "float": 0.05 } }
+    },
+    {
+      "name": "Shoes",
+      "shader": "Textured",
+      "texture": { "atlas": "Walker", "name": "shoes" },
+      "uniforms": { "shininess": { "float": 40.0 }, "specularStrength": { "float": 0.5 } }
+    },
+    {
+      "name": "Floor",
+      "shader": "Textured",
+      "texture": { "atlas": "Walker", "name": "floor" },
+      "uniforms": { "shininess": { "float": 8.0 }, "specularStrength": { "float": 0.1 } }
+    },
+    {
+      "name": "Shadow",
+      "shader": "Textured",
+      "texture": { "atlas": "Walker", "name": "shadow" },
+      "uniforms": { "shininess": { "float": 1.0 }, "specularStrength": { "float": 0.0 } }
+    }
+  ],
+  "root": {
+    "name": "Scene root",
+    "uniforms": { "light": { "vec3": [0.6, -0.8, 1.5] } },
+    "children": [
+      { "name": "Floor", "mesh": "Plate", "material": "Floor" },
+      {
+        "name": "Walker",
+        "children": [
+          {
+            "mesh": "Shadow disc",
+            "material": "Shadow",
+            "transparent": true,
+            "transform": { "translation": [0, 0.03, 0.004], "scale": [0.9, 0.75, 1] }
+          },
+          {
+            "name": "Hips",
+            "transform": { "translation": [0, 0, 0.97] },
+            "children": [
+              { "mesh": "Pelvis", "material": "Pants" },
+              {
+                "name": "Spine",
+                "transform": { "translation": [0, 0, 0.06] },
+                "children": [
+                  { "mesh": "Torso", "material": "Shirt" },
+                  {
+                    "name": "Neck",
+                    "transform": { "translation": [0, 0, 0.47] },
+                    "children": [
+                      { "mesh": "Neck", "material": "Skin" },
+                      {
+                        "name": "Head",
+                        "transform": { "translation": [0, 0, 0.09] },
+                        "children": [
+                          {
+                            "mesh": "Ball",
+                            "material": "Face",
+                            "transform": { "translation": [0, 0.01, 0.1], "scale": [0.105, 0.115, 0.125] }
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "name": "LeftShoulder",
+                    "transform": { "translation": [-0.2, 0, 0.44] },
+                    "children": [
+                      { "mesh": "Upper arm", "material": "Shirt" },
+                      {
+                        "name": "LeftElbow",
+                        "transform": { "translation": [0, 0, -0.29] },
+                        "children": [
+                          { "mesh": "Forearm", "material": "Skin" },
+                          {
+                            "name": "LeftWrist",
+                            "transform": { "translation": [0, 0, -0.26] },
+                            "children": [
+                              {
+                                "mesh": "Ball",
+                                "material": "Skin",
+                                "transform": { "translation": [0, 0, -0.045], "scale": [0.04, 0.03, 0.055] }
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "name": "RightShoulder",
+                    "transform": { "translation": [0.2, 0, 0.44] },
+                    "children": [
+                      { "mesh": "Upper arm", "material": "Shirt" },
+                      {
+                        "name": "RightElbow",
+                        "transform": { "translation": [0, 0, -0.29] },
+                        "children": [
+                          { "mesh": "Forearm", "material": "Skin" },
+                          {
+                            "name": "RightWrist",
+                            "transform": { "translation": [0, 0, -0.26] },
+                            "children": [
+                              {
+                                "mesh": "Ball",
+                                "material": "Skin",
+                                "transform": { "translation": [0, 0, -0.045], "scale": [0.04, 0.03, 0.055] }
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "name": "LeftHip",
+                "transform": { "translation": [-0.09, 0, -0.05] },
+                "children": [
+                  { "mesh": "Thigh", "material": "Pants" },
+                  {
+                    "name": "LeftKnee",
+                    "transform": { "translation": [0, 0, -0.44] },
+                    "children": [
+                      { "mesh": "Shin", "material": "Pants" },
+                      {
+                        "name": "LeftAnkle",
+                        "transform": { "translation": [0, 0, -0.44] },
+                        "children": [
+                          {
+                            "mesh": "Foot",
+                            "material": "Shoes",
+                            "transform": { "translation": [0, -0.05, -0.008], "rotation": [90, 0, 0] }
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "name": "RightHip",
+                "transform": { "translation": [0.09, 0, -0.05] },
+                "children": [
+                  { "mesh": "Thigh", "material": "Pants" },
+                  {
+                    "name": "RightKnee",
+                    "transform": { "translation": [0, 0, -0.44] },
+                    "children": [
+                      { "mesh": "Shin", "material": "Pants" },
+                      {
+                        "name": "RightAnkle",
+                        "transform": { "translation": [0, 0, -0.44] },
+                        "children": [
+                          {
+                            "mesh": "Foot",
+                            "material": "Shoes",
+                            "transform": { "translation": [0, -0.05, -0.008], "rotation": [90, 0, 0] }
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -33,6 +33,8 @@ What works today:
 - Atlases built from `.atlist` image lists by the atlas creator during the build
 - Transparent nodes, alpha-blended; draws sorted: opaque nodes by shader, then transparent nodes
   back to front
+- Skeletal animation (rigid): bones are scene nodes (`Skeleton`), moved by looping keyframe
+  clips loaded from JSON (`AnimationClip`)
 - MSAA
 - Vulkan validation layers turned on automatically in debug builds
 
@@ -76,6 +78,7 @@ only command line argument is the number of the demo to start with (default 0). 
 | 5    | Globe       | A world map on a ball, spinning around its tilted axis while drifting along an oval path, with a cratered moon going around it; both lit by a strong light from the side: a dark night side, a highlight on water only and a glowing atmosphere on the globe |
 | 6    | Bouncing balls | Balls dropping onto a floor plate, bouncing off its edge and out of the screen, in a loop, with semi-transparent shadows; no textures, every object has its own `color` uniform |
 | 7    | Vases       | 12 vases of 3 shapes (generated OBJ files with thick walls) in different sizes and colours on a turning floor plate; some opaque, some see-through glass, all from the scene file |
+| 8    | Walker      | A textured person walking in a circle: body parts hang from bones, moved by a walk-cycle animation clip |
 
 Each demo is in its own file, `apps/testapp/src/testapp/demo_NNN_<name>.rs`, and its resources
 are named `demo_NNN_<name>_<kind>` (`scene`, `atlas`, `mesh`, `shader`, ...). Demos are listed in
@@ -294,6 +297,37 @@ engine sorts the draws (`scene::sort_for_rendering`):
 Transparent nodes are drawn with a second pipeline of their shader: blending on, and the depth
 test on but depth writes off, so they are hidden by opaque objects in front of them but don't hide
 each other. The bouncing balls demo uses this for its shadows.
+
+### Bones and animation
+
+A `Skeleton` is made from a node's subtree: every named node in it is a bone, and its transform at
+that moment is the bone's rest pose. An `AnimationClip` (loaded from JSON with
+`AnimationClip::load`) has keyframes per bone: a rotation (degrees around X, Y, Z) and an offset
+from the rest position. It loops, interpolated smoothly between keys.
+
+```rust
+let skeleton = Skeleton::from_nodes(&scene, walker_node)?;
+let walk = AnimationClip::load(assets, "demo_008_walker_walk.json")?;
+skeleton.check(&walk)?; // every animated bone exists
+// every frame:
+skeleton.apply(&mut scene, &walk.sample(time))?;
+```
+
+```json
+{
+  "name": "Walk",
+  "duration": 1.1,
+  "bones": {
+    "LeftHip": { "rotation": [[0.0, [25, 0, 0]], [0.55, [-15, 0, 0]]] },
+    "Hips":    { "offset":   [[0.0, [0, 0, -0.02]], [0.275, [0, 0, 0.012]]] }
+  }
+}
+```
+
+Each key is `[time, [x, y, z]]`, times in seconds in `0..duration`, in increasing order. The
+animation is rigid: meshes hang from bones as child nodes (unnamed, so they aren't bones) and move
+as a whole; they don't bend at the joints (there is no mesh skinning). Demo 8 builds a person this
+way: see `demo_008_walker_scene.json`.
 
 ### Uniforms
 

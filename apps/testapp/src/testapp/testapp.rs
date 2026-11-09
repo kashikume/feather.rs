@@ -14,6 +14,7 @@ use super::demo_004_lit_cuboid::LitCuboidDemo;
 use super::demo_005_globe::GlobeDemo;
 use super::demo_006_bouncing_balls::BouncingBallsDemo;
 use super::demo_007_vases::VasesDemo;
+use super::demo_008_walker::WalkerDemo;
 
 /// One demo of the test app: a scene, the camera looking at it, and its animation.
 pub trait Demo {
@@ -62,6 +63,10 @@ pub const DEMOS: &[DemoInfo] = &[
     DemoInfo {
         name: "Vases",
         create: |assets| Ok(Box::new(VasesDemo::new(assets)?)),
+    },
+    DemoInfo {
+        name: "Walker",
+        create: |assets| Ok(Box::new(WalkerDemo::new(assets)?)),
     },
 ];
 
@@ -374,6 +379,69 @@ mod tests {
         demo.update(2.0).unwrap();
         let turned = demo.scene().get_node(turntable).unwrap().get_transform();
         assert_ne!(turned, <feather::math::Mat4 as cgmath::SquareMatrix>::identity());
+    }
+
+    /// World position of the origin of node `name`, after `update_nodes`.
+    fn node_position(scene: &mut Scene, name: &str) -> feather::math::Vec3 {
+        scene.update_nodes();
+        let node = scene.get_node(scene.find_node(name).unwrap()).unwrap();
+        let m = node.get_global_transform().unwrap();
+        feather::math::Vec3::new(m.w.x, m.w.y, m.w.z)
+    }
+
+    #[test]
+    fn walker_is_textured_from_one_atlas_and_walks() {
+        use cgmath::InnerSpace;
+
+        let mut demo = demo(8);
+        let scene = demo.scene();
+
+        // Every body part has a texture from the `Walker` atlas.
+        let atlas = scene.find_atlas("Walker").unwrap();
+        let names = scene.get_atlas(atlas).unwrap().get_texture_names();
+        for texture in ["face", "floor", "pants", "shadow", "shirt", "shoes", "skin"] {
+            assert!(names.contains(&texture), "{texture} missing from {names:?}");
+        }
+        assert!(scene
+            .materials
+            .iter()
+            .all(|m| m.get_texture().map(|t| t.get_atlas()) == Some(atlas)));
+
+        // Standing on the floor: the feet near z = 0, the head at about 1.75.
+        let head = node_position(scene, "Head");
+        assert!((1.4..1.9).contains(&head.z), "{head:?}");
+        let ankle = node_position(scene, "LeftAnkle");
+        assert!((0.0..0.15).contains(&ankle.z), "{ankle:?}");
+
+        // Half a cycle later the legs have swapped: the left foot was in front, now the
+        // right one is.
+        let forward = |demo: &mut Box<dyn Demo>, time: f32| {
+            demo.update(time).unwrap();
+            let scene = demo.scene();
+            let hips = node_position(scene, "Hips");
+            let walker = scene.get_node(scene.find_node("Walker").unwrap()).unwrap();
+            let m = walker.get_transform();
+            let facing = feather::math::Vec3::new(m.y.x, m.y.y, m.y.z);
+            let left = (node_position(scene, "LeftAnkle") - hips).dot(facing);
+            let right = (node_position(scene, "RightAnkle") - hips).dot(facing);
+            (left, right)
+        };
+        let (left, right) = forward(&mut demo, 0.0);
+        assert!(left > right + 0.2, "left {left}, right {right}");
+        let (left, right) = forward(&mut demo, 0.55);
+        assert!(right > left + 0.2, "left {left}, right {right}");
+
+        // It moves along the circle, facing where it goes.
+        let start = node_position(demo.scene(), "Walker");
+        demo.update(1.0).unwrap();
+        let later = node_position(demo.scene(), "Walker");
+        demo.update(1.01).unwrap();
+        let next = node_position(demo.scene(), "Walker");
+        assert!((later - start).magnitude() > 0.5);
+        let scene = demo.scene();
+        let m = scene.get_node(scene.find_node("Walker").unwrap()).unwrap().get_transform();
+        let facing = feather::math::Vec3::new(m.y.x, m.y.y, m.y.z);
+        assert!((next - later).normalize().dot(facing) > 0.99);
     }
 
     /// Checks that `Plates` holds a plate per texture of atlas `Plates`, each with its own

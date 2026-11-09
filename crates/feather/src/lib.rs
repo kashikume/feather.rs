@@ -1,3 +1,4 @@
+pub mod animationclip;
 pub mod app;
 pub mod appdata;
 pub mod assetsprovider;
@@ -37,6 +38,7 @@ pub mod scene;
 pub mod scenefile;
 pub mod shader;
 pub mod shaderlayout;
+pub mod skeleton;
 pub mod swapchain;
 pub mod swapchainsupport;
 pub mod syncobjects;
