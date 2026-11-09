@@ -69,6 +69,7 @@ only command line argument is the number of the demo to start with (default 0). 
 | 1    | Cuboid      | A textured cuboid from its scene file: a node spun in code holds a node scaled in the file |
 | 2    | Atlas       | 16 still plates in a 4×4 grid, each showing one texture of an atlas built from 16 images |
 | 3    | Waving atlas | The same plates waving in the wind, bent by the vertex shader       |
+| 4    | Lit cuboid  | The tumbling cuboid of demo 1 with diffuse and specular lighting, from the direction in the `light` uniform set on the scene's root node |
 
 Each demo is in its own file, `apps/testapp/src/testapp/demo_NNN_<name>.rs`, and its resources
 are named `demo_NNN_<name>_<kind>` (`scene`, `atlas`, `mesh`, `shader`, ...). Demos are listed in

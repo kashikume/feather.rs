@@ -84,7 +84,7 @@ impl MeshBuilderCuboid {
             (self.z.0, self.z.0),
             self.u[0 % self.u.len()],
             self.v[0 % self.v.len()],
-            (0.0, 0.0, 1.0),
+            (0.0, 0.0, -1.0),
         )?;
 
         // 1
@@ -104,7 +104,7 @@ impl MeshBuilderCuboid {
             (self.z.1, self.z.1),
             self.u[2 % self.u.len()],
             self.v[2 % self.v.len()],
-            (0.0, 0.0, -1.0),
+            (0.0, 0.0, 1.0),
         )?;
 
         // 3
@@ -124,7 +124,7 @@ impl MeshBuilderCuboid {
             (self.z.1, self.z.0),
             self.u[4 % self.u.len()],
             self.v[4 % self.v.len()],
-            (0.0, 1.0, 0.0),
+            (0.0, -1.0, 0.0),
         )?;
 
         // 5
@@ -134,7 +134,7 @@ impl MeshBuilderCuboid {
             (self.z.1, self.z.0),
             self.u[5 % self.u.len()],
             self.v[5 % self.v.len()],
-            (0.0, -1.0, 0.0),
+            (0.0, 1.0, 0.0),
         )?;
 
         let mesh = Mesh::new(name, self.vertices, self.indices);
@@ -208,6 +208,27 @@ mod tests {
             }
             for t in [v.tex_coord.x, v.tex_coord.y] {
                 assert!(t == 0.0 || t == 1.0, "{:?}", v.tex_coord);
+            }
+        }
+    }
+
+    #[test]
+    fn normals_point_outward_like_the_triangles() {
+        use cgmath::InnerSpace;
+
+        let mut scene = Scene::new();
+        let mesh = MeshBuilderCuboid::new_same_walls((0.0, 2.0), (-1.0, 1.0), (1.0, 4.0))
+            .build(&mut scene, None)
+            .unwrap();
+        let mesh = scene.get_mesh(mesh).unwrap();
+        let centre = Vec3::new(1.0, 0.0, 2.5);
+        for triangle in mesh.indices.chunks(3) {
+            let [a, b, c] = [0, 1, 2].map(|k| mesh.vertices[triangle[k] as usize]);
+            // Counter-clockwise seen from outside, the side the normal points to.
+            let facing = (b.pos - a.pos).cross(c.pos - a.pos).normalize();
+            for v in [a, b, c] {
+                assert_eq!(v.normal, facing, "{triangle:?}");
+                assert!(v.normal.dot(v.pos - centre) > 0.0, "{triangle:?} points inward");
             }
         }
     }

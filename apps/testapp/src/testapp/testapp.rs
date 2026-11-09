@@ -10,6 +10,7 @@ use super::demo_000_viking_room::VikingRoomDemo;
 use super::demo_001_cuboid::CuboidDemo;
 use super::demo_002_atlas::AtlasDemo;
 use super::demo_003_waving_atlas::WavingAtlasDemo;
+use super::demo_004_lit_cuboid::LitCuboidDemo;
 
 /// One demo of the test app: a scene, the camera looking at it, and its animation.
 pub trait Demo {
@@ -42,6 +43,10 @@ pub const DEMOS: &[DemoInfo] = &[
     DemoInfo {
         name: "Waving atlas",
         create: |assets| Ok(Box::new(WavingAtlasDemo::new(assets)?)),
+    },
+    DemoInfo {
+        name: "Lit cuboid",
+        create: |assets| Ok(Box::new(LitCuboidDemo::new(assets)?)),
     },
 ];
 
@@ -197,6 +202,25 @@ mod tests {
         assert!(cube.get_mesh().is_some());
         assert!(cube.get_material().is_some());
         assert_ne!(cube.get_transform(), Mat4::identity());
+    }
+
+    #[test]
+    fn lit_cuboid_demo_inherits_the_light_from_the_root() {
+        let mut demo = demo(4);
+        demo.update(1.0).unwrap();
+        let scene = demo.scene();
+        scene.update_nodes();
+
+        let root = scene.get_node(scene.find_node("Scene root").unwrap()).unwrap();
+        let light = feather::uniform::UniformValue::Vec3(feather::math::Vec3::new(1.0, -0.5, 2.0));
+        assert_eq!(root.uniforms().get("light"), Some(&light));
+
+        let cube = scene.get_node(scene.find_node("Cube").unwrap()).unwrap();
+        assert!(cube.uniforms().get("light").is_none());
+        assert_eq!(cube.dynamic_uniforms().get("light"), Some(&light));
+        assert!(cube.get_mesh().is_some());
+        let material = scene.get_material(cube.get_material().unwrap()).unwrap();
+        assert!(material.get_texture().is_some());
     }
 
     /// Checks that `Plates` holds a plate per texture of atlas `Plates`, each with its own
