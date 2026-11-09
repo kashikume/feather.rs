@@ -38,7 +38,7 @@
       "uniforms": {
         "shininess": { "float": 1.0 },
         "specularStrength": { "float": 0.0 },
-        "opacity": { "float": 0.55 }
+        "opacity": { "float": 0.3 }
       }
     }
   ],
@@ -57,7 +57,7 @@
       { "name": "Balls" },
       {
         "name": "Shadows",
-        "uniforms": { "color": { "vec3": [0.05, 0.05, 0.08] } }
+        "uniforms": { "color": { "vec3": [0.0, 0.0, 0.0] } }
       }
     ]
   }
