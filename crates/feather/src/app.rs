@@ -32,7 +32,8 @@ use super::framebuffers::create_framebuffers;
 use super::instance::create_instance;
 use super::logicaldevice::create_logical_device;
 use super::physicaldevice::pick_physical_device;
-use super::pipeline::{create_render_pass, PipelineTarget, ShaderPipeline};
+use super::pipeline::{create_render_pass, PipelineKey, PipelineTarget, ShaderPipeline};
+use super::scene::sort_for_rendering;
 use super::swapchain::Swapchain;
 use super::syncobjects::create_sync_objects;
 use super::gpuimage::{create_texture_sampler, GpuImage, UploadContext};
@@ -66,7 +67,7 @@ impl App {
             swapchain: Swapchain::default(),
             render_pass: vk::RenderPass::default(),
             shader_pipelines: HashMap::new(),
-            failed_shaders: HashSet::new(),
+            failed_pipelines: HashSet::new(),
             reported_uniform_issues: HashSet::new(),
             min_uniform_alignment: 1,
             framebuffers: Vec::new(),
@@ -148,13 +149,14 @@ impl App {
         self.data.shader_pipelines.drain().for_each(|(_, p)| p.destroy(device));
         self.data.gpu_atlases.drain().for_each(|(_, a)| a.destroy(device));
         self.data.gpu_mesh_buffers.drain().for_each(|(_, b)| b.destroy(device));
-        self.data.failed_shaders.clear();
+        self.data.failed_pipelines.clear();
         self.data.failed_atlases.clear();
         self.data.reported_uniform_issues.clear();
         Ok(())
     }
 
-    /// Collects the draw calls of the rendered scene, sorted by shader, and packs their
+    /// Collects the draw calls of the rendered scene in drawing order (`sort_for_rendering`:
+    /// opaque by shader, then transparent back to front), and packs their
     /// uniforms into the returned arena. Creates the pipelines of
     /// shaders drawn for the first time.
     ///
@@ -179,25 +181,26 @@ impl App {
 
         // Pipelines of shaders that no longer exist. They may still be used by frames in
         // flight, so wait for the GPU before destroying them.
-        let removed: Vec<usize> = self
+        let removed: Vec<PipelineKey> = self
             .data
             .shader_pipelines
             .keys()
             .copied()
-            .filter(|&h| scene.get_shader(h).is_none())
+            .filter(|key| scene.get_shader(key.shader).is_none())
             .collect();
         if !removed.is_empty() {
             self.device.device_wait_idle()?;
-            for handle in removed {
-                self.data.shader_pipelines.remove(&handle).unwrap().destroy(&self.device);
+            for key in removed {
+                self.data.shader_pipelines.remove(&key).unwrap().destroy(&self.device);
             }
         }
         self.data
-            .failed_shaders
-            .retain(|&h| scene.get_shader(h).is_some());
+            .failed_pipelines
+            .retain(|key| scene.get_shader(key.shader).is_some());
 
+        // Opaque nodes first, by shader; then transparent ones, back to front.
         let mut items = scene.draw_items();
-        items.sort_by_key(|item| item.shader);
+        sort_for_rendering(&mut items, &view);
 
         let target = PipelineTarget {
             render_pass: self.data.render_pass,
@@ -207,26 +210,31 @@ impl App {
         let mut draws = Vec::with_capacity(items.len());
         let mut issues = Vec::new();
         for item in items {
-            if self.data.failed_shaders.contains(&item.shader) {
+            let key = PipelineKey {
+                shader: item.shader,
+                transparent: item.transparent,
+            };
+            if self.data.failed_pipelines.contains(&key) {
                 continue;
             }
             let shader = scene.get_shader(item.shader).unwrap();
-            if !self.data.shader_pipelines.contains_key(&item.shader) {
-                match ShaderPipeline::create(&self.device, &target, shader) {
+            if !self.data.shader_pipelines.contains_key(&key) {
+                match ShaderPipeline::create(&self.device, &target, shader, key.transparent) {
                     Ok(pipeline) => {
-                        self.data.shader_pipelines.insert(item.shader, pipeline);
+                        self.data.shader_pipelines.insert(key, pipeline);
                     }
                     Err(e) => {
                         log::error!(
-                            "Cannot draw with shader {}: {e:#}",
-                            shader.get_name().unwrap_or_else(|| item.shader.to_string())
+                            "Cannot draw with shader {}{}: {e:#}",
+                            shader.get_name().unwrap_or_else(|| item.shader.to_string()),
+                            if key.transparent { " (transparent)" } else { "" }
                         );
-                        self.data.failed_shaders.insert(item.shader);
+                        self.data.failed_pipelines.insert(key);
                         continue;
                     }
                 }
             }
-            let pipeline = &self.data.shader_pipelines[&item.shader];
+            let pipeline = &self.data.shader_pipelines[&key];
             let Some(buffer) = self.data.gpu_mesh_buffers.get(&item.mesh_buffer) else {
                 continue;
             };
@@ -285,7 +293,7 @@ impl App {
             }
 
             draws.push(GpuDraw {
-                shader: item.shader,
+                pipeline_key: key,
                 texture_views,
                 pipeline: pipeline.pipeline,
                 pipeline_layout: pipeline.layout,
@@ -329,7 +337,7 @@ impl App {
         buffer.write(arena.bytes());
 
         for draw in draws {
-            let pipeline = self.data.shader_pipelines.get_mut(&draw.shader).unwrap();
+            let pipeline = self.data.shader_pipelines.get_mut(&draw.pipeline_key).unwrap();
             draw.descriptor_sets = pipeline.descriptor_sets(
                 &self.device,
                 image_index,
@@ -578,7 +586,7 @@ impl App {
         self.data.framebuffers.iter().for_each(|f| self.device.destroy_framebuffer(*f, None));
         // Pipelines depend on the render pass and the extent; they are recreated when needed.
         self.data.shader_pipelines.drain().for_each(|(_, p)| p.destroy(&self.device));
-        self.data.failed_shaders.clear();
+        self.data.failed_pipelines.clear();
         self.device.destroy_render_pass(self.data.render_pass, None);
         self.data.swapchain.destroy(&self.device);
     }

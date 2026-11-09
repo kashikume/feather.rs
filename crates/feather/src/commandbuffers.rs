@@ -2,6 +2,7 @@ use anyhow::Result;
 use vulkanalia::prelude::v1_0::*;
 
 use super::appdata::AppData;
+use super::pipeline::PipelineKey;
 
 //================================================
 // Command Buffers
@@ -9,8 +10,8 @@ use super::appdata::AppData;
 
 /// One draw call with the Vulkan objects it uses.
 pub struct GpuDraw {
-    /// Handle of the shader; its pipeline provides the descriptor sets.
-    pub shader: usize,
+    /// The pipeline (shader and transparency); it provides the descriptor sets.
+    pub pipeline_key: PipelineKey,
     /// Image view bound to each sampler of the shader.
     pub texture_views: Vec<vk::ImageView>,
     pub pipeline: vk::Pipeline,

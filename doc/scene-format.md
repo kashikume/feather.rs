@@ -276,6 +276,7 @@ material without a texture draws magenta, and a warning is logged.
 | `material`  | string           | no       | Name of a material                             |
 | `transform` | object           | no       | Position relative to the parent, see [Transforms](#transforms) |
 | `visible`   | boolean          | no       | `false` hides the node and its descendants (default `true`) |
+| `transparent` | boolean        | no       | `true` blends the node over what is behind it, using its shader's output alpha; drawn after opaque nodes, back to front (default `false`, not inherited) |
 | `uniforms`  | object           | no       | Uniform values, see [Uniforms](#uniforms)      |
 | `children`  | array of nodes   | no       | Child nodes                                    |
 

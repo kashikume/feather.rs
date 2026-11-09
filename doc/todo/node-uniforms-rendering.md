@@ -174,7 +174,11 @@ Each step should leave the app running.
 - [ ] An atlas removed and another added under the same handle in one frame keeps the old GPU
       image; give objects a generation counter
 - [ ] Render more than one scene (per-scene camera data instead of one uniform buffer per frame)
-- [ ] Sort draws by shader and material; skip redundant binds
+- [x] Sort draws: opaque by shader, transparent back to front (`scene::sort_for_rendering`);
+      transparent nodes get a blending pipeline variant without depth writes (`PipelineKey`)
+- [ ] Sort opaque draws by material and front to back too; skip redundant descriptor binds
+- [ ] Sort transparent draws per triangle or with order-independent transparency: sorting by
+      node origin is wrong for large or intersecting transparent objects
 - [ ] Transparent nodes drawn after opaque ones, back to front
 - [ ] Re-upload uniforms only for nodes that changed
 - [ ] Per-frame data (camera) in its own set, filled once per frame instead of per node

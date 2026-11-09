@@ -20,6 +20,9 @@ use super::{
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DrawItem {
     pub node: usize,
+    /// Whether the node is transparent (`Node::is_transparent`): blended, and drawn after the
+    /// opaque nodes, back to front.
+    pub transparent: bool,
     /// Handle of the node's material (in `Scene::materials`).
     pub material: usize,
     /// Handle of the shader (in `Scene::shaders`) of the node's material.
@@ -32,6 +35,24 @@ pub struct DrawItem {
     pub index_count: u32,
     /// Added to every index: where the mesh's vertices start in the buffer's vertex buffer.
     pub vertex_offset: i32,
+}
+
+/// Puts draw items in the order to draw them:
+/// 1. opaque items, grouped by shader so the renderer switches pipelines as little as possible;
+/// 2. transparent items, from the farthest to the nearest, so each is blended over everything
+///    behind it.
+///
+/// Distances are measured along the view direction of `view` (the camera's view matrix) to each
+/// node's origin. Items at the same place keep their order.
+pub fn sort_for_rendering(items: &mut [DrawItem], view: &Mat4) {
+    // Distance in front of the camera; the camera looks down -Z in view space.
+    let depth = |item: &DrawItem| -(view * item.model.w).z;
+    items.sort_by(|a, b| match (a.transparent, b.transparent) {
+        (false, false) => a.shader.cmp(&b.shader),
+        (false, true) => std::cmp::Ordering::Less,
+        (true, false) => std::cmp::Ordering::Greater,
+        (true, true) => depth(b).total_cmp(&depth(a)),
+    });
 }
 
 /// Source of `Scene::get_id` values.
@@ -307,6 +328,7 @@ impl Scene {
             }
             items.push(DrawItem {
                 node: handle,
+                transparent: node.is_transparent(),
                 material: material.get_handle(),
                 shader,
                 mesh_buffer: data.buffer_handle,
@@ -1387,6 +1409,7 @@ mod tests {
             item(a),
             DrawItem {
                 node: a,
+                transparent: false,
                 material,
                 shader,
                 mesh_buffer: buffer,
@@ -1400,6 +1423,7 @@ mod tests {
             item(b),
             DrawItem {
                 node: b,
+                transparent: false,
                 material,
                 shader,
                 mesh_buffer: buffer,
@@ -1471,6 +1495,80 @@ mod tests {
         let shader_of = |node| items.iter().find(|i| i.node == node).unwrap().shader;
         assert_eq!(shader_of(a), shader_a);
         assert_eq!(shader_of(b), shader_b);
+    }
+
+    #[test]
+    fn draw_items_report_transparent_nodes() {
+        let mut scene = Scene::new();
+        let root = scene.create_root_node(None);
+        let opaque = scene.create_node(None, root).unwrap();
+        let glass = scene.create_node(None, root).unwrap();
+        let mesh = scene.add_mesh(test_mesh(3, 3));
+        let (_, material) = test_material(&mut scene);
+        for node in [opaque, glass] {
+            scene.node_set_mesh(node, mesh).unwrap();
+            scene.node_set_material(node, material).unwrap();
+        }
+        assert!(!scene.get_node(glass).unwrap().is_transparent());
+        scene.get_node_mut(glass).unwrap().set_transparent(true);
+        assert!(scene.get_node(glass).unwrap().is_transparent());
+        scene.build_missing_mesh_buffers().unwrap();
+        scene.update_nodes();
+
+        let items = scene.draw_items();
+        let item = |node| items.iter().find(|i| i.node == node).unwrap();
+        assert!(!item(opaque).transparent);
+        assert!(item(glass).transparent);
+    }
+
+    fn item_at(node: usize, shader: usize, transparent: bool, y: f32) -> DrawItem {
+        DrawItem {
+            node,
+            transparent,
+            material: 0,
+            shader,
+            mesh_buffer: 0,
+            model: translation(0.0, y, 0.0),
+            first_index: 0,
+            index_count: 3,
+            vertex_offset: 0,
+        }
+    }
+
+    #[test]
+    fn opaque_items_come_first_grouped_by_shader() {
+        let view = <Mat4 as cgmath::SquareMatrix>::identity();
+        let mut items = vec![
+            item_at(0, 2, false, 0.0),
+            item_at(1, 1, true, 0.0),
+            item_at(2, 1, false, 0.0),
+            item_at(3, 2, false, 0.0),
+            item_at(4, 0, false, 0.0),
+        ];
+        sort_for_rendering(&mut items, &view);
+        let order: Vec<usize> = items.iter().map(|i| i.node).collect();
+        // Shader 0, then 1, then 2 (in their original order), then the transparent item.
+        assert_eq!(order, [4, 2, 0, 3, 1]);
+    }
+
+    #[test]
+    fn transparent_items_go_from_far_to_near() {
+        // A camera at the origin looking along +Y, Z up: farther means larger Y.
+        let view = Mat4::look_at_rh(
+            crate::math::Point3::new(0.0, 0.0, 0.0),
+            crate::math::Point3::new(0.0, 1.0, 0.0),
+            Vec3::new(0.0, 0.0, 1.0),
+        );
+        let mut items = vec![
+            item_at(0, 0, true, 2.0),
+            item_at(1, 0, true, 9.0),
+            item_at(2, 5, false, 1.0),
+            item_at(3, 0, true, 5.0),
+            item_at(4, 3, true, -3.0), // behind the camera: nearest
+        ];
+        sort_for_rendering(&mut items, &view);
+        let order: Vec<usize> = items.iter().map(|i| i.node).collect();
+        assert_eq!(order, [2, 1, 3, 0, 4]);
     }
 
     #[test]

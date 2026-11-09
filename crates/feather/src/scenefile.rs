@@ -49,7 +49,8 @@
 //!   arrays of 4, 9 or 16 numbers).
 //! - A node transform is either `matrix` (16 numbers, column-major) or any of `translation`
 //!   `[x, y, z]`, `rotation` `[x, y, z]` in degrees (applied around X, then Y, then Z) and
-//!   `scale` (a number or `[x, y, z]`). Nodes may also set `"visible": false`.
+//!   `scale` (a number or `[x, y, z]`). Nodes may also set `"visible": false` and
+//!   `"transparent": true` (see `Node::set_transparent`).
 //! - Unknown fields are errors, so typos don't go unnoticed.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -188,6 +189,8 @@ struct NodeEntry {
     transform: Option<TransformEntry>,
     #[serde(default = "default_visible")]
     visible: bool,
+    #[serde(default)]
+    transparent: bool,
     #[serde(default)]
     uniforms: BTreeMap<String, UniformEntry>,
     #[serde(default)]
@@ -422,6 +425,7 @@ fn setup_node(scene: &mut Scene, handle: usize, entry: &NodeEntry, names: &Names
             node.set_transform(transform.to_matrix()?);
         }
         node.set_visible(entry.visible);
+        node.set_transparent(entry.transparent);
         set_uniforms(node.uniforms_mut(), &entry.uniforms)
     })()
     .with_context(what)?;
@@ -574,7 +578,7 @@ mod tests {
                     "uniforms": { "count": { "uint": 3 } },
                     "children": [{ "name": "A1", "visible": false }]
                 },
-                { "name": "B", "transform": { "rotation": [0, 0, 90] } }
+                { "name": "B", "transform": { "rotation": [0, 0, 90] }, "transparent": true }
             ]
         }
     }"#;
@@ -629,6 +633,8 @@ mod tests {
         assert_eq!(root_node.get_children().len(), 2);
         assert_eq!(scene.get_node(a1).unwrap().get_parent(), Some(a));
         assert!(!scene.get_node(a1).unwrap().is_visible());
+        assert!(scene.get_node(b).unwrap().is_transparent());
+        assert!(!scene.get_node(a).unwrap().is_transparent());
 
         let node_a = scene.get_node(a).unwrap();
         assert_eq!(node_a.get_mesh(), Some(scene.meshes.get_by_name("Triangle").unwrap().get_handle()));

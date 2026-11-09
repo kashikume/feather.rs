@@ -1,0 +1,64 @@
+{
+  "meshes": [
+    { "name": "Plate", "cuboid": { "x": [-4, 4], "y": [-4, 4], "z": [-0.25, 0] } },
+    { "name": "Ball", "sphere": { "radius": 1.0, "segments": 40, "rings": 20 } }
+  ],
+  "shaders": [
+    {
+      "name": "Colored",
+      "vertex": "demo_006_bouncing_balls_shader.vert.spv",
+      "fragment": "demo_006_bouncing_balls_shader.frag.spv",
+      "model_uniform": "model",
+      "view_uniform": "view",
+      "projection_uniform": "proj"
+    }
+  ],
+  "materials": [
+    {
+      "name": "Glossy",
+      "shader": "Colored",
+      "uniforms": {
+        "shininess": { "float": 48.0 },
+        "specularStrength": { "float": 0.8 },
+        "opacity": { "float": 1.0 }
+      }
+    },
+    {
+      "name": "Matte",
+      "shader": "Colored",
+      "uniforms": {
+        "shininess": { "float": 8.0 },
+        "specularStrength": { "float": 0.1 },
+        "opacity": { "float": 1.0 }
+      }
+    },
+    {
+      "name": "Shadow",
+      "shader": "Colored",
+      "uniforms": {
+        "shininess": { "float": 1.0 },
+        "specularStrength": { "float": 0.0 },
+        "opacity": { "float": 0.55 }
+      }
+    }
+  ],
+  "root": {
+    "name": "Scene root",
+    "uniforms": {
+      "light": { "vec3": [0.5, -0.7, 1.4] }
+    },
+    "children": [
+      {
+        "name": "Floor",
+        "mesh": "Plate",
+        "material": "Matte",
+        "uniforms": { "color": { "vec3": [0.45, 0.5, 0.58] } }
+      },
+      { "name": "Balls" },
+      {
+        "name": "Shadows",
+        "uniforms": { "color": { "vec3": [0.05, 0.05, 0.08] } }
+      }
+    ]
+  }
+}

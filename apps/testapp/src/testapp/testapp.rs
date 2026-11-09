@@ -12,6 +12,7 @@ use super::demo_002_atlas::AtlasDemo;
 use super::demo_003_waving_atlas::WavingAtlasDemo;
 use super::demo_004_lit_cuboid::LitCuboidDemo;
 use super::demo_005_globe::GlobeDemo;
+use super::demo_006_bouncing_balls::BouncingBallsDemo;
 
 /// One demo of the test app: a scene, the camera looking at it, and its animation.
 pub trait Demo {
@@ -52,6 +53,10 @@ pub const DEMOS: &[DemoInfo] = &[
     DemoInfo {
         name: "Globe",
         create: |assets| Ok(Box::new(GlobeDemo::new(assets)?)),
+    },
+    DemoInfo {
+        name: "Bouncing balls",
+        create: |assets| Ok(Box::new(BouncingBallsDemo::new(assets)?)),
     },
 ];
 
@@ -280,6 +285,49 @@ mod tests {
             moon_material.get_texture().unwrap().get_atlas(),
             scene.find_atlas("Moon map").unwrap()
         );
+    }
+
+    #[test]
+    fn bouncing_balls_have_no_textures_and_their_own_colours() {
+        let mut demo = demo(6);
+        let scene = demo.scene();
+
+        let floor = scene.get_node(scene.find_node("Floor").unwrap()).unwrap();
+        let balls = scene.get_node(scene.find_node("Balls").unwrap()).unwrap();
+        assert_eq!(balls.get_children().len(), 12);
+
+        let mut colours = vec![format!("{:?}", floor.uniforms().get("color").unwrap())];
+        for &ball in balls.get_children() {
+            let ball = scene.get_node(ball).unwrap();
+            assert!(ball.get_mesh().is_some());
+            colours.push(format!("{:?}", ball.uniforms().get("color").unwrap()));
+        }
+        colours.sort();
+        colours.dedup();
+        assert_eq!(colours.len(), 13, "colours are not all different");
+        assert!(scene.materials.iter().all(|m| m.get_texture().is_none()));
+
+        // Only the shadows are transparent, and their material lets the floor show through.
+        assert!(!floor.is_transparent());
+        let shadows = scene.get_node(scene.find_node("Shadows").unwrap()).unwrap();
+        assert_eq!(shadows.get_children().len(), 12);
+        for &shadow in shadows.get_children() {
+            let shadow = scene.get_node(shadow).unwrap();
+            assert!(shadow.is_transparent());
+            let material = scene.get_material(shadow.get_material().unwrap()).unwrap();
+            let opacity = material.uniforms().get("opacity").unwrap();
+            assert!(matches!(opacity, feather::uniform::UniformValue::Float(o) if *o < 1.0));
+        }
+        for &ball in balls.get_children() {
+            assert!(!scene.get_node(ball).unwrap().is_transparent());
+        }
+        assert_eq!(scene.atlases.iter().count(), 0);
+
+        // The balls move.
+        let first = scene.get_node(*balls.get_children().iter().next().unwrap()).unwrap();
+        let (handle, before) = (first.get_handle(), first.get_transform());
+        demo.update(0.5).unwrap();
+        assert_ne!(demo.scene().get_node(handle).unwrap().get_transform(), before);
     }
 
     /// Checks that `Plates` holds a plate per texture of atlas `Plates`, each with its own

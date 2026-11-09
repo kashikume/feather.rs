@@ -122,6 +122,18 @@ impl Node {
         self.visible
     }
 
+    /// Sets whether the node is drawn as transparent: blended over what is behind it, using
+    /// the alpha its shader outputs. Transparent nodes are drawn after all opaque ones, from
+    /// the farthest to the nearest, and don't hide what is drawn after them. Applies to this
+    /// node only, not to its children.
+    pub fn set_transparent(&mut self, transparent: bool) {
+        self.transparent = transparent;
+    }
+
+    pub fn is_transparent(&self) -> bool {
+        self.transparent
+    }
+
     pub fn set_mesh(&mut self, mesh: usize) {
         self.mesh = Some(mesh);
     }

@@ -31,6 +31,8 @@ What works today:
 - Atlases uploaded with mipmaps; a material's texture passes its UV rectangle to the shader
   (`umin`, `umax`, `vmin`, `vmax` uniforms)
 - Atlases built from `.atlist` image lists by the atlas creator during the build
+- Transparent nodes, alpha-blended; draws sorted: opaque nodes by shader, then transparent nodes
+  back to front
 - MSAA
 - Vulkan validation layers turned on automatically in debug builds
 
@@ -72,6 +74,7 @@ only command line argument is the number of the demo to start with (default 0). 
 | 3    | Waving atlas | The same plates waving in the wind, bent by the vertex shader       |
 | 4    | Lit cuboid  | The tumbling cuboid of demo 1 with diffuse and specular lighting, from the direction in the `light` uniform set on the scene's root node |
 | 5    | Globe       | A world map on a ball, spinning around its tilted axis while drifting along an oval path, with a cratered moon going around it; both lit by a strong light from the side: a dark night side, a highlight on water only and a glowing atmosphere on the globe |
+| 6    | Bouncing balls | Balls dropping onto a floor plate, bouncing off its edge and out of the screen, in a loop, with semi-transparent shadows; no textures, every object has its own `color` uniform |
 
 Each demo is in its own file, `apps/testapp/src/testapp/demo_NNN_<name>.rs`, and its resources
 are named `demo_NNN_<name>_<kind>` (`scene`, `atlas`, `mesh`, `shader`, ...). Demos are listed in
@@ -277,6 +280,20 @@ let mut app = unsafe { App::create(&window, Box::new(TestApp::new(demo)?))? };
 app.run(&window, event_loop)?;
 ```
 
+### Drawing order and transparency
+
+A node marked transparent (`Node::set_transparent(true)`, or `"transparent": true` in a scene
+file) is blended over what is behind it, using the alpha its shader outputs. Each frame the
+engine sorts the draws (`scene::sort_for_rendering`):
+
+1. opaque nodes, grouped by shader, so the pipeline changes as rarely as possible;
+2. transparent nodes, from the farthest to the nearest (by the distance of each node's origin
+   along the camera's view direction), so each one is blended over everything behind it.
+
+Transparent nodes are drawn with a second pipeline of their shader: blending on, and the depth
+test on but depth writes off, so they are hidden by opaque objects in front of them but don't hide
+each other. The bouncing balls demo uses this for its shadows.
+
 ### Uniforms
 
 Materials and nodes each have a list of named uniforms. Before rendering, the engine computes each
@@ -352,7 +369,7 @@ so the scene file holds no binary data. The viking room:
 | mesh | `name`, and one of `file` (OBJ), `cuboid` (optional `x`, `y`, `z` as `[min, max]`; `{}` is a 1×1×1 cube), `plane` (optional `x`, `y` as `[min, max]` and `segments` `[columns, rows]`) or `sphere` (optional `radius`, `segments`, `rings`; `{}` is a ball of diameter 1) |
 | shader | `name`, `vertex`, `fragment` (SPIR-V), optional `model_uniform`, `view_uniform`, `projection_uniform`, `umin_uniform`, `umax_uniform`, `vmin_uniform`, `vmax_uniform` |
 | material | `name`, `shader`, optional `texture` (`{ "atlas": ..., "name": ... }`; without `name` the whole atlas), optional `uniforms` |
-| node | all optional: `name`, `mesh`, `material`, `transform`, `visible`, `uniforms`, `children` |
+| node | all optional: `name`, `mesh`, `material`, `transform`, `visible`, `transparent`, `uniforms`, `children` |
 
 - Names must be unique within each list. Nodes are found with `Scene::find_node(name)`.
 - Uniform values are written as `{ "<glsl type>": value }`: `float`, `int`, `uint`, `bool`,

@@ -119,6 +119,15 @@ pub struct PipelineTarget {
     pub extent: vk::Extent2D,
 }
 
+/// Identifies a pipeline: a shader drawn either opaque or transparent (`Node::is_transparent`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct PipelineKey {
+    /// Handle of the shader in `Scene::shaders`.
+    pub shader: usize,
+    /// Alpha blending on and depth writes off.
+    pub transparent: bool,
+}
+
 /// Descriptor sets for one swapchain image and one combination of textures.
 struct CachedSets {
     sets: Vec<vk::DescriptorSet>,
@@ -150,7 +159,15 @@ pub struct ShaderPipeline {
 }
 
 impl ShaderPipeline {
-    pub unsafe fn create(device: &Device, target: &PipelineTarget, shader: &Shader) -> Result<Self> {
+    /// Creates the pipeline of `shader`. A `transparent` pipeline blends the shader's output
+    /// over the framebuffer by its alpha (`src * a + dst * (1 - a)`) and tests depth without
+    /// writing it, so transparent surfaces don't hide each other.
+    pub unsafe fn create(
+        device: &Device,
+        target: &PipelineTarget,
+        shader: &Shader,
+        transparent: bool,
+    ) -> Result<Self> {
         let shader_layout = shader.get_layout();
         let mut pipeline = Self {
             layout_info: shader_layout.clone(),
@@ -165,7 +182,7 @@ impl ShaderPipeline {
             descriptor_sets: HashMap::new(),
         };
         // On error, destroy whatever was created so far.
-        match pipeline.create_objects(device, target, shader) {
+        match pipeline.create_objects(device, target, shader, transparent) {
             Ok(()) => Ok(pipeline),
             Err(e) => {
                 pipeline.destroy(device);
@@ -179,6 +196,7 @@ impl ShaderPipeline {
         device: &Device,
         target: &PipelineTarget,
         shader: &Shader,
+        transparent: bool,
     ) -> Result<()> {
         let shader_layout = shader.get_layout();
 
@@ -229,7 +247,7 @@ impl ShaderPipeline {
             .push_constant_ranges(&push_constant_ranges);
         self.layout = device.create_pipeline_layout(&layout_info, None)?;
 
-        self.pipeline = create_graphics_pipeline(device, target, shader, self.layout)?;
+        self.pipeline = create_graphics_pipeline(device, target, shader, self.layout, transparent)?;
         Ok(())
     }
 
@@ -412,6 +430,7 @@ unsafe fn create_graphics_pipeline(
     target: &PipelineTarget,
     shader: &Shader,
     layout: vk::PipelineLayout,
+    transparent: bool,
 ) -> Result<vk::Pipeline> {
     // Stages
 
@@ -490,7 +509,7 @@ unsafe fn create_graphics_pipeline(
 
     let depth_stencil_state = vk::PipelineDepthStencilStateCreateInfo::builder()
         .depth_test_enable(true)
-        .depth_write_enable(true)
+        .depth_write_enable(!transparent)
         .depth_compare_op(vk::CompareOp::LESS)
         .depth_bounds_test_enable(false)
         .stencil_test_enable(false);
@@ -499,7 +518,13 @@ unsafe fn create_graphics_pipeline(
 
     let attachment = vk::PipelineColorBlendAttachmentState::builder()
         .color_write_mask(vk::ColorComponentFlags::all())
-        .blend_enable(false);
+        .blend_enable(transparent)
+        .src_color_blend_factor(vk::BlendFactor::SRC_ALPHA)
+        .dst_color_blend_factor(vk::BlendFactor::ONE_MINUS_SRC_ALPHA)
+        .color_blend_op(vk::BlendOp::ADD)
+        .src_alpha_blend_factor(vk::BlendFactor::ONE)
+        .dst_alpha_blend_factor(vk::BlendFactor::ONE_MINUS_SRC_ALPHA)
+        .alpha_blend_op(vk::BlendOp::ADD);
 
     let attachments = &[attachment];
     let color_blend_state = vk::PipelineColorBlendStateCreateInfo::builder()

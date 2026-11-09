@@ -1,5 +1,4 @@
 use std::f32::consts::TAU;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{anyhow, bail, Result};
 
@@ -9,6 +8,7 @@ use feather::math::{Mat4, Point3, Vec3};
 use feather::perspectivecamera::PerspectiveCamera;
 use feather::scene::Scene;
 
+use super::random::Random;
 use super::testapp::Demo;
 
 /// Number of plates in a row and in a column.
@@ -117,42 +117,5 @@ impl Demo for WavingAtlasDemo {
             .uniforms_mut()
             .set("time", time);
         Ok(())
-    }
-}
-
-/// A small pseudo-random number generator (xorshift32), enough for wind settings.
-struct Random(u32);
-
-impl Random {
-    /// Seeded from the clock, so the plates wave differently every run.
-    fn from_clock() -> Self {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_or(0, |d| d.subsec_nanos());
-        Self(nanos | 1)
-    }
-
-    /// A number in `0.0..1.0`.
-    fn next(&mut self) -> f32 {
-        let mut x = self.0;
-        x ^= x << 13;
-        x ^= x >> 17;
-        x ^= x << 5;
-        self.0 = x;
-        (x >> 8) as f32 / (1u32 << 24) as f32
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::Random;
-
-    #[test]
-    fn random_numbers_are_in_range_and_vary() {
-        let mut random = Random(12345);
-        let values: Vec<f32> = (0..1000).map(|_| random.next()).collect();
-        assert!(values.iter().all(|v| (0.0..1.0).contains(v)));
-        let mean = values.iter().sum::<f32>() / values.len() as f32;
-        assert!((0.4..0.6).contains(&mean), "{mean}");
     }
 }

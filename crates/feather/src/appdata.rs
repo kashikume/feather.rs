@@ -6,7 +6,7 @@ use super::buffers::FrameUniformBuffer;
 use super::featherapp::FeatherApp;
 use super::gpuimage::GpuImage;
 use super::gpumeshbuffer::GpuMeshBuffer;
-use super::pipeline::ShaderPipeline;
+use super::pipeline::{PipelineKey, ShaderPipeline};
 use super::uniformdata::UniformIssue;
 use super::swapchain::Swapchain;
 
@@ -26,11 +26,11 @@ pub struct AppData {
     pub swapchain: Swapchain,
     // Pipeline
     pub render_pass: vk::RenderPass,
-    /// Pipelines of the rendered scene's shaders, by shader handle. Created when first
-    /// needed; destroyed with the swapchain.
-    pub shader_pipelines: HashMap<usize, ShaderPipeline>,
-    /// Shaders whose pipeline could not be created; their nodes are not drawn.
-    pub failed_shaders: HashSet<usize>,
+    /// Pipelines of the rendered scene's shaders, by shader handle and transparency. Created
+    /// when first needed; destroyed with the swapchain.
+    pub shader_pipelines: HashMap<PipelineKey, ShaderPipeline>,
+    /// Pipelines that could not be created; their nodes are not drawn.
+    pub failed_pipelines: HashSet<PipelineKey>,
     /// Uniform problems already logged, per shader handle, so each is logged once.
     pub reported_uniform_issues: HashSet<(usize, UniformIssue)>,
     /// `minUniformBufferOffsetAlignment` of the device: uniform blocks of a frame start at
