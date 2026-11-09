@@ -248,4 +248,72 @@ mod test {
             false
         );
     }
+
+    #[test]
+    fn test_area() {
+        assert_eq!(Rect::from_wh(4, 5).area(), 20);
+        assert_eq!(Rect::from_wh(0, 5).area(), 0);
+        let inverted = Rect {
+            x1: 10,
+            y1: 0,
+            x2: 5,
+            y2: 5,
+        };
+        assert_eq!(inverted.area(), 0);
+    }
+
+    #[test]
+    fn test_fits() {
+        let rc = Rect::from_wh(10, 20);
+        assert!(rc.fits(10, 20));
+        assert!(rc.fits(1, 1));
+        assert!(rc.fits(0, 0));
+        assert!(!rc.fits(11, 20));
+        assert!(!rc.fits(10, 21));
+    }
+
+    #[test]
+    fn test_expand() {
+        let mut rc = Rect {
+            x1: 5,
+            y1: 6,
+            x2: 10,
+            y2: 12,
+        };
+        rc.expand(2);
+        assert_eq!(
+            rc,
+            Rect {
+                x1: 3,
+                y1: 4,
+                x2: 12,
+                y2: 14
+            }
+        );
+        assert_eq!((rc.width(), rc.height()), (9, 10));
+    }
+
+    #[test]
+    fn test_overlap_is_symmetric() {
+        let a = Rect {
+            x1: 0,
+            y1: 0,
+            x2: 10,
+            y2: 10,
+        };
+        let b = Rect {
+            x1: 9,
+            y1: 9,
+            x2: 20,
+            y2: 20,
+        };
+        let touching = Rect {
+            x1: 10,
+            y1: 0,
+            x2: 20,
+            y2: 10,
+        };
+        assert!(a.overlap(&b) && b.overlap(&a));
+        assert!(!a.overlap(&touching) && !touching.overlap(&a));
+    }
 }
