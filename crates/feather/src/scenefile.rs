@@ -1,23 +1,26 @@
 //! Loading a scene from a JSON file.
 //!
-//! The file lists the scene's atlases, textures, meshes, shaders and materials, and describes the
-//! node tree starting from the root. Objects refer to each other by name; files (PNG, OBJ,
+//! The file lists the scene's atlases, meshes, shaders and materials, and describes the node
+//! tree starting from the root. Objects refer to each other by name; files (PNG, `.atlas`, OBJ,
 //! SPIR-V) are asset names read through an `AssetsProvider`. Example:
 //!
 //! ```json
 //! {
-//!   "atlases":  [{ "name": "Room", "file": "demo_000_viking_room_atlas.png" }],
-//!   "textures": [{ "name": "Room", "atlas": "Room" },
-//!                { "name": "Corner", "atlas": "Room", "rect": [0.0, 0.0, 0.5, 0.5] }],
+//!   "atlases":  [{ "name": "Room", "bitmap": "demo_000_viking_room_atlas.png" },
+//!                { "name": "Icons", "bitmap": "icons.png", "metadata": "icons.atlas" }],
 //!   "meshes":   [{ "name": "Room", "file": "demo_000_viking_room_mesh.obj" },
-//!                { "name": "Box", "cuboid": { "x": [-1, 1], "y": [-1, 1], "z": [0, 2] } }],
+//!                { "name": "Box", "cuboid": { "x": [-1, 1], "y": [-1, 1], "z": [0, 2] } },
+//!                { "name": "Flag", "plane": { "x": [0, 2], "y": [-1, 0], "segments": [8, 4] } }],
 //!   "shaders":  [{ "name": "Basic",
 //!                  "vertex": "demo_000_viking_room_shader.vert.spv",
 //!                  "fragment": "demo_000_viking_room_shader.frag.spv",
 //!                  "model_uniform": "model", "view_uniform": "view",
-//!                  "projection_uniform": "proj" }],
-//!   "materials": [{ "name": "Room", "shader": "Basic",
-//!                   "uniforms": { "texSampler": { "texture": "Room" } } }],
+//!                  "projection_uniform": "proj",
+//!                  "umin_uniform": "umin", "umax_uniform": "umax",
+//!                  "vmin_uniform": "vmin", "vmax_uniform": "vmax" }],
+//!   "materials": [{ "name": "Room", "shader": "Basic", "texture": { "atlas": "Room" } },
+//!                 { "name": "Star", "shader": "Basic",
+//!                   "texture": { "atlas": "Icons", "name": "star" } }],
 //!   "root": {
 //!     "name": "Scene root",
 //!     "children": [{
@@ -30,14 +33,17 @@
 //! ```
 //!
 //! - Every list item needs a name, unique within its list. All lists are optional.
-//! - A mesh is either an OBJ `file` or a `cuboid` with optional `x`, `y`, `z` ranges (default
+//! - An atlas is a PNG `bitmap` with optional `metadata` (a `.atlas` file naming rectangles of
+//!   the bitmap, see `atlas::parse_metadata`).
+//! - A material's `texture` is a texture of an atlas: the rectangle `name` from the atlas's
+//!   metadata, or the whole atlas when `name` is missing.
+//! - A mesh is an OBJ `file`, a `cuboid` with optional `x`, `y`, `z` ranges (default
 //!   `[-0.5, 0.5]`, so `"cuboid": {}` is a 1x1x1 cube centred on the origin) and optional
-//!   per-wall `u`, `v` texture ranges.
-//! - A texture without `rect` covers its whole atlas and becomes the atlas's full texture;
-//!   `rect` is `[u_min, v_min, u_range, v_range]` in UV space.
+//!   per-wall `u`, `v` texture ranges, or a `plane` (`MeshBuilderPlane`) with optional `x`,
+//!   `y` ranges (default `[-0.5, 0.5]`) and `segments` (default `[1, 1]`).
 //! - Uniform values are written as `{ "<glsl type>": value }`: `float`, `int`, `uint`, `bool`,
-//!   `vec2`-`vec4`, `ivec2`-`ivec4`, `uvec2`-`uvec4` (arrays), `mat2`-`mat4` (column-major
-//!   arrays of 4, 9 or 16 numbers), or `texture` (a texture name).
+//!   `vec2`-`vec4`, `ivec2`-`ivec4`, `uvec2`-`uvec4` (arrays), or `mat2`-`mat4` (column-major
+//!   arrays of 4, 9 or 16 numbers).
 //! - A node transform is either `matrix` (16 numbers, column-major) or any of `translation`
 //!   `[x, y, z]`, `rotation` `[x, y, z]` in degrees (applied around X, then Y, then Z) and
 //!   `scale` (a number or `[x, y, z]`). Nodes may also set `"visible": false`.
@@ -53,8 +59,9 @@ use super::assetsprovider::AssetsProvider;
 use super::math::{IVec2, IVec3, IVec4, Mat4, UVec2, UVec3, UVec4, Vec2, Vec3, Vec4};
 use super::meshbuildercuboid::MeshBuilderCuboid;
 use super::meshbuilderobjfile::MeshBuilderObjFile;
+use super::meshbuilderplane::MeshBuilderPlane;
 use super::scene::Scene;
-use super::texture::Texture;
+use super::shader::ShaderUniformNames;
 use super::uniform::UniformValue;
 use super::uniforms::Uniforms;
 
@@ -63,8 +70,6 @@ use super::uniforms::Uniforms;
 struct SceneFile {
     #[serde(default)]
     atlases: Vec<AtlasEntry>,
-    #[serde(default)]
-    textures: Vec<TextureEntry>,
     #[serde(default)]
     meshes: Vec<MeshEntry>,
     #[serde(default)]
@@ -79,25 +84,19 @@ struct SceneFile {
 struct AtlasEntry {
     name: String,
     /// PNG asset.
-    file: String,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct TextureEntry {
-    name: String,
-    atlas: String,
-    /// `[u_min, v_min, u_range, v_range]`; the whole atlas when missing.
-    rect: Option<[f32; 4]>,
+    bitmap: String,
+    /// `.atlas` asset naming rectangles of the bitmap.
+    metadata: Option<String>,
 }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct MeshEntry {
     name: String,
-    /// OBJ asset. Exactly one of `file` and `cuboid` must be given.
+    /// OBJ asset. Exactly one of `file`, `cuboid` and `plane` must be given.
     file: Option<String>,
     cuboid: Option<CuboidEntry>,
+    plane: Option<PlaneEntry>,
 }
 
 /// A box with walls parallel to the axes (`MeshBuilderCuboid`). `{}` is the default 1x1x1 cube
@@ -117,6 +116,17 @@ struct CuboidEntry {
     v: Vec<[f32; 2]>,
 }
 
+/// A flat rectangle in the XY plane split into a grid (`MeshBuilderPlane`).
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PlaneEntry {
+    /// `[min, max]` along each axis; `[-0.5, 0.5]` when missing.
+    x: Option<[f32; 2]>,
+    y: Option<[f32; 2]>,
+    /// `[columns, rows]`; `[1, 1]` when missing.
+    segments: Option<[u32; 2]>,
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ShaderEntry {
@@ -128,6 +138,10 @@ struct ShaderEntry {
     model_uniform: Option<String>,
     view_uniform: Option<String>,
     projection_uniform: Option<String>,
+    umin_uniform: Option<String>,
+    umax_uniform: Option<String>,
+    vmin_uniform: Option<String>,
+    vmax_uniform: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -135,8 +149,17 @@ struct ShaderEntry {
 struct MaterialEntry {
     name: String,
     shader: String,
+    texture: Option<TextureEntry>,
     #[serde(default)]
     uniforms: BTreeMap<String, UniformEntry>,
+}
+
+/// A texture of an atlas: the rectangle `name` from the atlas's metadata, or the whole atlas.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TextureEntry {
+    atlas: String,
+    name: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -195,8 +218,6 @@ enum UniformEntry {
     Mat2([f32; 4]),
     Mat3([f32; 9]),
     Mat4([f32; 16]),
-    /// Name of a texture.
-    Texture(String),
 }
 
 impl Scene {
@@ -216,7 +237,6 @@ impl Scene {
         let mut scene = Scene::new();
 
         check_unique("atlas", file.atlases.iter().map(|a| &a.name))?;
-        check_unique("texture", file.textures.iter().map(|t| &t.name))?;
         check_unique("mesh", file.meshes.iter().map(|m| &m.name))?;
         check_unique("shader", file.shaders.iter().map(|s| &s.name))?;
         check_unique("material", file.materials.iter().map(|m| &m.name))?;
@@ -224,74 +244,40 @@ impl Scene {
         let mut atlases = HashMap::new();
         for entry in &file.atlases {
             let handle = scene
-                .create_atlas_from_png(assets, &entry.file, Some(entry.name.clone()))
+                .create_atlas_from_png(
+                    assets,
+                    &entry.bitmap,
+                    entry.metadata.as_deref(),
+                    Some(entry.name.clone()),
+                )
                 .with_context(|| format!("atlas `{}`", entry.name))?;
             atlases.insert(entry.name.as_str(), handle);
         }
 
-        let mut textures = HashMap::new();
-        for entry in &file.textures {
-            let what = || format!("texture `{}`", entry.name);
-            let atlas = *atlases
-                .get(entry.atlas.as_str())
-                .ok_or_else(|| anyhow!("unknown atlas `{}`", entry.atlas))
-                .with_context(what)?;
-            let name = Some(entry.name.clone());
-            let handle = match entry.rect {
-                None => scene.create_full_atlas_texture(name, atlas),
-                Some([u, v, w, h]) => scene.add_texture(Texture::new(name, atlas, u, v, w, h)),
-            }
-            .with_context(what)?;
-            textures.insert(entry.name.as_str(), handle);
-        }
-
         let mut meshes = HashMap::new();
         for entry in &file.meshes {
-            let name = Some(entry.name.clone());
-            let handle = match (&entry.file, &entry.cuboid) {
-                (Some(file), None) => MeshBuilderObjFile::new(assets, file)
-                    .and_then(|b| b.build(&mut scene, name)),
-                (None, Some(c)) => {
-                    let is_default = c.x.is_none()
-                        && c.y.is_none()
-                        && c.z.is_none()
-                        && c.u.is_empty()
-                        && c.v.is_empty();
-                    let builder = if is_default {
-                        MeshBuilderCuboid::default()
-                    } else {
-                        let range = |r: Option<[f32; 2]>| {
-                            let [min, max] = r.unwrap_or([-0.5, 0.5]);
-                            (min, max)
-                        };
-                        let pairs =
-                            |list: &[[f32; 2]]| list.iter().map(|[a, b]| (*a, *b)).collect();
-                        MeshBuilderCuboid::new(
-                            range(c.x),
-                            range(c.y),
-                            range(c.z),
-                            Some(pairs(&c.u)),
-                            Some(pairs(&c.v)),
-                        )
-                    };
-                    builder.build(&mut scene, name)
-                }
-                _ => Err(anyhow!("a mesh needs exactly one of `file` and `cuboid`")),
-            }
-            .with_context(|| format!("mesh `{}`", entry.name))?;
+            let handle = build_mesh(&mut scene, assets, entry)
+                .with_context(|| format!("mesh `{}`", entry.name))?;
             meshes.insert(entry.name.as_str(), handle);
         }
 
         let mut shaders = HashMap::new();
         for entry in &file.shaders {
             let handle = (|| {
+                let names = ShaderUniformNames {
+                    model: entry.model_uniform.clone(),
+                    view: entry.view_uniform.clone(),
+                    projection: entry.projection_uniform.clone(),
+                    umin: entry.umin_uniform.clone(),
+                    umax: entry.umax_uniform.clone(),
+                    vmin: entry.vmin_uniform.clone(),
+                    vmax: entry.vmax_uniform.clone(),
+                };
                 scene.create_shader(
                     Some(entry.name.clone()),
                     &assets.get_asset(&entry.vertex)?,
                     &assets.get_asset(&entry.fragment)?,
-                    entry.model_uniform.clone(),
-                    entry.view_uniform.clone(),
-                    entry.projection_uniform.clone(),
+                    names,
                 )
             })()
             .with_context(|| format!("shader `{}`", entry.name))?;
@@ -305,19 +291,19 @@ impl Scene {
                     .get(entry.shader.as_str())
                     .ok_or_else(|| anyhow!("unknown shader `{}`", entry.shader))?;
                 let material = scene.create_material(Some(entry.name.clone()), shader)?;
+                if let Some(texture) = &entry.texture {
+                    let texture = find_texture(&scene, &atlases, texture)?;
+                    scene.material_set_texture(material, Some(texture))?;
+                }
                 let uniforms = scene.get_material_mut(material).unwrap().uniforms_mut();
-                set_uniforms(uniforms, &entry.uniforms, &textures)?;
+                set_uniforms(uniforms, &entry.uniforms)?;
                 Ok::<_, anyhow::Error>(material)
             })()
             .with_context(|| format!("material `{}`", entry.name))?;
             materials.insert(entry.name.as_str(), handle);
         }
 
-        let names = Names {
-            meshes,
-            materials,
-            textures,
-        };
+        let names = Names { meshes, materials };
         let root = scene.create_root_node(file.root.name.clone());
         setup_node(&mut scene, root, &file.root, &names)?;
         Ok(scene)
@@ -330,11 +316,61 @@ impl Scene {
     }
 }
 
+fn build_mesh(scene: &mut Scene, assets: &dyn AssetsProvider, entry: &MeshEntry) -> Result<usize> {
+    let name = Some(entry.name.clone());
+    let range = |r: Option<[f32; 2]>| {
+        let [min, max] = r.unwrap_or([-0.5, 0.5]);
+        (min, max)
+    };
+    match (&entry.file, &entry.cuboid, &entry.plane) {
+        (Some(file), None, None) => MeshBuilderObjFile::new(assets, file)?.build(scene, name),
+        (None, Some(c), None) => {
+            let is_default =
+                c.x.is_none() && c.y.is_none() && c.z.is_none() && c.u.is_empty() && c.v.is_empty();
+            let builder = if is_default {
+                MeshBuilderCuboid::default()
+            } else {
+                let pairs = |list: &[[f32; 2]]| list.iter().map(|[a, b]| (*a, *b)).collect();
+                MeshBuilderCuboid::new(
+                    range(c.x),
+                    range(c.y),
+                    range(c.z),
+                    Some(pairs(&c.u)),
+                    Some(pairs(&c.v)),
+                )
+            };
+            builder.build(scene, name)
+        }
+        (None, None, Some(p)) => {
+            let [columns, rows] = p.segments.unwrap_or([1, 1]);
+            MeshBuilderPlane::new(range(p.x), range(p.y), (columns, rows)).build(scene, name)
+        }
+        _ => bail!("a mesh needs exactly one of `file`, `cuboid` and `plane`"),
+    }
+}
+
+/// The texture `entry` refers to, from an atlas loaded earlier.
+fn find_texture(
+    scene: &Scene,
+    atlases: &HashMap<&str, usize>,
+    entry: &TextureEntry,
+) -> Result<super::texture::Texture> {
+    let atlas = *atlases
+        .get(entry.atlas.as_str())
+        .ok_or_else(|| anyhow!("unknown atlas `{}`", entry.atlas))?;
+    let atlas = scene.get_atlas(atlas).unwrap();
+    match &entry.name {
+        None => Ok(atlas.get_full_texture()),
+        Some(name) => atlas
+            .get_texture(name)
+            .ok_or_else(|| anyhow!("atlas `{}` has no texture `{name}`", entry.atlas)),
+    }
+}
+
 /// Handles of the scene's named objects that nodes refer to.
 struct Names<'a> {
     meshes: HashMap<&'a str, usize>,
     materials: HashMap<&'a str, usize>,
-    textures: HashMap<&'a str, usize>,
 }
 
 /// Applies `entry` to the existing node `handle` and creates its children, recursively.
@@ -363,7 +399,7 @@ fn setup_node(scene: &mut Scene, handle: usize, entry: &NodeEntry, names: &Names
             node.set_transform(transform.to_matrix()?);
         }
         node.set_visible(entry.visible);
-        set_uniforms(node.uniforms_mut(), &entry.uniforms, &names.textures)
+        set_uniforms(node.uniforms_mut(), &entry.uniforms)
     })()
     .with_context(what)?;
 
@@ -376,16 +412,9 @@ fn setup_node(scene: &mut Scene, handle: usize, entry: &NodeEntry, names: &Names
     Ok(())
 }
 
-fn set_uniforms(
-    uniforms: &mut Uniforms,
-    entries: &BTreeMap<String, UniformEntry>,
-    textures: &HashMap<&str, usize>,
-) -> Result<()> {
+fn set_uniforms(uniforms: &mut Uniforms, entries: &BTreeMap<String, UniformEntry>) -> Result<()> {
     for (name, entry) in entries {
-        let value = entry
-            .to_value(textures)
-            .with_context(|| format!("uniform `{name}`"))?;
-        uniforms.set(name.clone(), value);
+        uniforms.set(name.clone(), entry.to_value());
     }
     Ok(())
 }
@@ -401,9 +430,9 @@ fn check_unique<'a>(kind: &str, names: impl Iterator<Item = &'a String>) -> Resu
 }
 
 impl UniformEntry {
-    fn to_value(&self, textures: &HashMap<&str, usize>) -> Result<UniformValue> {
+    fn to_value(&self) -> UniformValue {
         use UniformEntry as E;
-        Ok(match *self {
+        match *self {
             E::Float(v) => UniformValue::Float(v),
             E::Int(v) => UniformValue::Int(v),
             E::Uint(v) => UniformValue::UInt(v),
@@ -424,12 +453,7 @@ impl UniformEntry {
                 [m[6], m[7], m[8]],
             ])),
             E::Mat4(m) => UniformValue::Mat4(mat4_from_columns(&m)),
-            E::Texture(ref name) => UniformValue::Texture(
-                *textures
-                    .get(name.as_str())
-                    .ok_or_else(|| anyhow!("unknown texture `{name}`"))?,
-            ),
-        })
+        }
     }
 }
 
@@ -469,17 +493,19 @@ mod tests {
     use crate::assetsprovider::tests::MemoryAssetsProvider;
     use crate::object::Object;
     use crate::shader::tests::{FRAG, VERT};
+    use crate::texture::Texture;
     use cgmath::{vec4, InnerSpace, SquareMatrix};
 
     const TRIANGLE: &str = "v 0 0 0\nv 1 0 0\nv 0 1 0\nvt 0 0\nvt 1 0\nvt 0 1\nvn 0 0 1\nf 1/1/1 2/2/1 3/3/1\n";
 
-    fn png_2x2() -> Vec<u8> {
+    /// A 4x2 PNG, with metadata naming its left and right halves.
+    fn png_4x2() -> Vec<u8> {
         let mut png = Vec::new();
-        let mut encoder = png::Encoder::new(&mut png, 2, 2);
+        let mut encoder = png::Encoder::new(&mut png, 4, 2);
         encoder.set_color(png::ColorType::Rgba);
         encoder.set_depth(png::BitDepth::Eight);
         let mut writer = encoder.write_header().unwrap();
-        writer.write_image_data(&[255; 16]).unwrap();
+        writer.write_image_data(&[255; 32]).unwrap();
         writer.finish().unwrap();
         png
     }
@@ -487,7 +513,8 @@ mod tests {
     fn assets() -> MemoryAssetsProvider {
         let mut assets = MemoryAssetsProvider::default();
         for (name, bytes) in [
-            ("atlas.png", png_2x2()),
+            ("atlas.png", png_4x2()),
+            ("atlas.atlas", b"left 0 0 2 2\nright 2 0 2 2\n".to_vec()),
             ("triangle.obj", TRIANGLE.as_bytes().to_vec()),
             ("basic.vert.spv", VERT.to_vec()),
             ("basic.frag.spv", FRAG.to_vec()),
@@ -498,27 +525,30 @@ mod tests {
     }
 
     const SCENE: &str = r#"{
-        "atlases": [{ "name": "Atlas", "file": "atlas.png" }],
-        "textures": [
-            { "name": "Full", "atlas": "Atlas" },
-            { "name": "Corner", "atlas": "Atlas", "rect": [0.5, 0.0, 0.5, 0.25] }
+        "atlases": [
+            { "name": "Atlas", "bitmap": "atlas.png", "metadata": "atlas.atlas" },
+            { "name": "Plain", "bitmap": "atlas.png" }
         ],
         "meshes": [{ "name": "Triangle", "file": "triangle.obj" }],
         "shaders": [{
             "name": "Basic", "vertex": "basic.vert.spv", "fragment": "basic.frag.spv",
             "model_uniform": "model", "view_uniform": "view", "projection_uniform": "proj"
         }],
-        "materials": [{
-            "name": "Mat", "shader": "Basic",
-            "uniforms": { "texSampler": { "texture": "Full" }, "tint": { "vec4": [1, 0.5, 0.25, 1] } }
-        }],
+        "materials": [
+            {
+                "name": "Mat", "shader": "Basic", "texture": { "atlas": "Atlas", "name": "right" },
+                "uniforms": { "tint": { "vec4": [1, 0.5, 0.25, 1] } }
+            },
+            { "name": "Full", "shader": "Basic", "texture": { "atlas": "Plain" } },
+            { "name": "Untextured", "shader": "Basic" }
+        ],
         "root": {
             "name": "Root",
             "children": [
                 {
                     "name": "A", "mesh": "Triangle", "material": "Mat",
                     "transform": { "translation": [1, 2, 3], "scale": 2 },
-                    "uniforms": { "texSampler": { "texture": "Corner" }, "count": { "uint": 3 } },
+                    "uniforms": { "count": { "uint": 3 } },
                     "children": [{ "name": "A1", "visible": false }]
                 },
                 { "name": "B", "transform": { "rotation": [0, 0, 90] } }
@@ -531,29 +561,35 @@ mod tests {
         let scene = Scene::from_json(&assets(), SCENE).unwrap();
 
         let atlas = scene.atlases.get_by_name("Atlas").unwrap();
-        assert_eq!((atlas.get_width(), atlas.get_height()), (2, 2));
-
-        let full = scene.textures.get_by_name("Full").unwrap();
-        assert_eq!(full.get_atlas(), atlas.get_handle());
-        assert_eq!(atlas.get_full_texture(), Some(full.get_handle()));
-        let corner = scene.textures.get_by_name("Corner").unwrap();
-        assert_eq!(corner.get_uv_rect(), vec4(0.5, 0.0, 0.5, 0.25));
+        assert_eq!((atlas.get_width(), atlas.get_height()), (4, 2));
+        assert_eq!(atlas.get_texture_names(), ["left", "right"]);
+        let plain = scene.atlases.get_by_name("Plain").unwrap();
+        assert!(plain.get_texture_names().is_empty());
 
         let mesh = scene.meshes.get_by_name("Triangle").unwrap();
         assert_eq!(mesh.gen_num_indexes(), 3);
 
         let shader = scene.shaders.get_by_name("Basic").unwrap();
         assert_eq!(shader.get_uniform_proj_name(), Some("proj"));
+        assert_eq!(shader.get_uniform_umin_name(), None);
 
         let material = scene.materials.get_by_name("Mat").unwrap();
         assert_eq!(material.get_shader(), shader.get_handle());
         assert_eq!(
-            material.uniforms().get("texSampler"),
-            Some(&UniformValue::Texture(full.get_handle()))
+            material.get_texture(),
+            Some(&Texture::new(atlas.get_handle(), 0.5, 1.0, 0.0, 1.0))
         );
         assert_eq!(
             material.uniforms().get("tint"),
             Some(&UniformValue::Vec4(vec4(1.0, 0.5, 0.25, 1.0)))
+        );
+        assert_eq!(
+            scene.materials.get_by_name("Full").unwrap().get_texture(),
+            Some(&Texture::full(plain.get_handle()))
+        );
+        assert_eq!(
+            scene.materials.get_by_name("Untextured").unwrap().get_texture(),
+            None
         );
     }
 
@@ -578,12 +614,36 @@ mod tests {
             node_a.get_transform(),
             Mat4::from_translation(Vec3::new(1.0, 2.0, 3.0)) * Mat4::from_scale(2.0)
         );
-        let corner = scene.textures.get_by_name("Corner").unwrap().get_handle();
-        assert_eq!(node_a.uniforms().get("texSampler"), Some(&UniformValue::Texture(corner)));
         assert_eq!(node_a.uniforms().get("count"), Some(&UniformValue::UInt(3)));
 
         let rotated = scene.get_node(b).unwrap().get_transform() * vec4(1.0, 0.0, 0.0, 1.0);
         assert!((rotated - vec4(0.0, 1.0, 0.0, 1.0)).magnitude() < 1e-6, "{rotated:?}");
+    }
+
+    #[test]
+    fn texture_rect_uniform_names_are_read() {
+        let mut assets = assets();
+        assets.assets.insert(
+            "types.vert.spv".to_string(),
+            include_bytes!(concat!(env!("OUT_DIR"), "/shaders/types.vert.spv")).to_vec(),
+        );
+        assets.assets.insert(
+            "types.frag.spv".to_string(),
+            include_bytes!(concat!(env!("OUT_DIR"), "/shaders/types.frag.spv")).to_vec(),
+        );
+        // `time` is the only float uniform of the types shaders.
+        let json = r#"{
+            "shaders": [{ "name": "S", "vertex": "types.vert.spv", "fragment": "types.frag.spv",
+                          "umin_uniform": "time", "umax_uniform": "time",
+                          "vmin_uniform": "time", "vmax_uniform": "time" }],
+            "root": {}
+        }"#;
+        let scene = Scene::from_json(&assets, json).unwrap();
+        let names = scene.shaders.get_by_name("S").unwrap().get_uniform_names();
+        assert_eq!(
+            names,
+            &ShaderUniformNames::default().with_texture_rect("time", "time", "time", "time")
+        );
     }
 
     #[test]
@@ -629,19 +689,32 @@ mod tests {
     fn errors_name_the_problem() {
         let cases = [
             (r#"{ "root": {}, "extra": 1 }"#, "unknown field `extra`"),
+            (r#"{ "root": {}, "textures": [] }"#, "unknown field `textures`"),
             (r#"{ "root": { "mesh": "Nope" } }"#, "unknown mesh `Nope`"),
             (r#"{ "root": { "material": "Nope" } }"#, "unknown material `Nope`"),
-            (
-                r#"{ "textures": [{ "name": "T", "atlas": "Nope" }], "root": {} }"#,
-                "texture `T`: unknown atlas `Nope`",
-            ),
             (
                 r#"{ "materials": [{ "name": "M", "shader": "Nope" }], "root": {} }"#,
                 "material `M`: unknown shader `Nope`",
             ),
             (
-                r#"{ "root": { "name": "R", "uniforms": { "t": { "texture": "Nope" } } } }"#,
-                "node `R`: uniform `t`: unknown texture `Nope`",
+                r#"{ "shaders": [{ "name": "S", "vertex": "basic.vert.spv",
+                                   "fragment": "basic.frag.spv" }],
+                     "materials": [{ "name": "M", "shader": "S", "texture": { "atlas": "Nope" } }],
+                     "root": {} }"#,
+                "material `M`: unknown atlas `Nope`",
+            ),
+            (
+                r#"{ "atlases": [{ "name": "A", "bitmap": "atlas.png", "metadata": "atlas.atlas" }],
+                     "shaders": [{ "name": "S", "vertex": "basic.vert.spv",
+                                   "fragment": "basic.frag.spv" }],
+                     "materials": [{ "name": "M", "shader": "S",
+                                     "texture": { "atlas": "A", "name": "middle" } }],
+                     "root": {} }"#,
+                "material `M`: atlas `A` has no texture `middle`",
+            ),
+            (
+                r#"{ "root": { "name": "R", "uniforms": { "t": { "texture": "T" } } } }"#,
+                "unknown variant `texture`",
             ),
             (
                 r#"{ "meshes": [{ "name": "M", "file": "a.obj" }, { "name": "M", "file": "b.obj" }],
@@ -649,8 +722,17 @@ mod tests {
                 "more than one mesh named `M`",
             ),
             (
-                r#"{ "atlases": [{ "name": "A", "file": "missing.png" }], "root": {} }"#,
+                r#"{ "atlases": [{ "name": "A", "bitmap": "missing.png" }], "root": {} }"#,
                 "atlas `A`: asset missing.png not found",
+            ),
+            (
+                r#"{ "atlases": [{ "name": "A", "bitmap": "atlas.png", "metadata": "missing.atlas" }],
+                     "root": {} }"#,
+                "atlas `A`: Cannot read atlas metadata missing.atlas",
+            ),
+            (
+                r#"{ "atlases": [{ "name": "A", "file": "atlas.png" }], "root": {} }"#,
+                "unknown field `file`",
             ),
             (
                 r#"{ "root": { "transform": { "matrix": [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1],
@@ -724,11 +806,41 @@ mod tests {
     }
 
     #[test]
-    fn mesh_needs_file_or_cuboid() {
+    fn plane_mesh() {
+        let json = r#"{
+            "meshes": [
+                { "name": "Unit", "plane": {} },
+                { "name": "Grid", "plane": { "x": [0, 2], "y": [-1, 0], "segments": [4, 2] } }
+            ],
+            "root": {}
+        }"#;
+        let scene = Scene::from_json(&assets(), json).unwrap();
+
+        let unit = scene.meshes.get_by_name("Unit").unwrap();
+        assert_eq!((unit.gen_num_vertexes(), unit.gen_num_indexes()), (4, 6));
+        for v in &unit.vertices {
+            assert!(v.pos.x.abs() == 0.5 && v.pos.y.abs() == 0.5, "{:?}", v.pos);
+        }
+
+        let grid = scene.meshes.get_by_name("Grid").unwrap();
+        assert_eq!(grid.gen_num_vertexes(), 5 * 3);
+        assert_eq!(grid.gen_num_indexes(), 4 * 2 * 6);
+        assert_eq!(grid.vertices[0].pos, Vec3::new(0.0, 0.0, 0.0));
+        assert_eq!(grid.vertices[14].pos, Vec3::new(2.0, -1.0, 0.0));
+
+        let error = load_error(r#"{ "meshes": [{ "name": "P", "plane": { "segments": [0, 1] } }],
+                                    "root": {} }"#);
+        assert!(error.contains("mesh `P`: a plane needs at least 1 segment"), "{error}");
+    }
+
+    #[test]
+    fn mesh_needs_exactly_one_source() {
         let both = r#"{ "meshes": [{ "name": "M", "file": "triangle.obj",
                           "cuboid": { "x": [0, 1], "y": [0, 1], "z": [0, 1] } }], "root": {} }"#;
+        let cuboid_and_plane =
+            r#"{ "meshes": [{ "name": "M", "cuboid": {}, "plane": {} }], "root": {} }"#;
         let neither = r#"{ "meshes": [{ "name": "M" }], "root": {} }"#;
-        for json in [both, neither] {
+        for json in [both, cuboid_and_plane, neither] {
             let error = load_error(json);
             assert!(error.contains("mesh `M`: a mesh needs exactly one of"), "{error}");
         }

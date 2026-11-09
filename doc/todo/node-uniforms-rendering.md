@@ -6,7 +6,8 @@ names.
 
 ## Where we are
 
-- Scene, nodes, materials, shaders, atlases, textures and uniforms exist on the CPU side.
+- Scene, nodes, materials, shaders, atlases and uniforms exist on the CPU side; textures are
+  values held by materials.
   `Scene::update_nodes` computes the final uniforms and the global transform of each node.
 - Step 1 is done: every visible node with a mesh and a material is drawn with its global
   transform as the model matrix (push constant). Command buffers are recorded every frame from
@@ -17,10 +18,10 @@ names.
 - Step 3 is done: each draw's uniform blocks and push constants are filled from the node's
   `dynamic_uniforms()` plus model/view/proj (`uniformdata.rs`), stored in one uniform buffer per
   swapchain image, and bound with dynamic offsets through each shader's own descriptor sets.
-- Step 4 is done: atlases are uploaded as GPU images with mipmaps (`gpuimage.rs`), each sampler
-  is bound to the atlas of the `Texture` stored under its name, and the texture's UV rectangle
-  goes to the `<sampler>Rect` uniform. Descriptor sets are cached per (swapchain image, textures).
-  The app runs from any directory.
+- Step 4 is done: atlases are uploaded as GPU images with mipmaps (`gpuimage.rs`), every sampler
+  is bound to the atlas of the material's `Texture`, and the texture's UV rectangle goes to the
+  shader's `umin`/`umax`/`vmin`/`vmax` uniforms. Descriptor sets are cached per (swapchain image,
+  textures). The app runs from any directory.
 - Still limited:
   - only the first scene is drawn, with the first scene's camera.
 
@@ -69,12 +70,14 @@ are logged once per shader and uniform; the uniform keeps zero bytes.
 
 - Each atlas gets one GPU image (RGBA8 sRGB, with mipmaps), uploaded when the scene first has
   it. All textures share one sampler (linear, anisotropic, repeat).
-- A sampler's value is `UniformValue::Texture(handle)`; the sampler is bound to that texture's
-  atlas. Image views can't crop, so a texture that is part of an atlas reaches the shader as a
-  UV rectangle: the engine fills `vec4 <sampler>Rect` (u_min, v_min, u_range, v_range) if the
-  shader declares it, and the shader maps `rect.xy + uv * rect.zw`. Full-atlas textures don't
-  need it.
-- Samplers without a valid texture get a 1x1 magenta fallback image, and the problem is logged.
+- A material has at most one `Texture` (an atlas handle and a UV rectangle, taken from the
+  atlas with `Atlas::get_texture(name)` or `get_full_texture()`); every sampler of its shader is
+  bound to that atlas. Image views can't crop, so a texture that is part of an atlas reaches the
+  shader as a UV rectangle: the engine fills the `float` uniforms named by the shader's
+  `ShaderUniformNames` `umin`, `umax`, `vmin`, `vmax`, and the shader maps
+  `mix(vec2(umin, vmin), vec2(umax, vmax), uv)`. Full-atlas textures don't need them.
+- Samplers of a material without a texture (or whose atlas is gone) get a 1x1 magenta fallback
+  image, and the problem is logged.
 - Each shader pipeline caches descriptor sets per (swapchain image, image view of each sampler),
   allocated from pools that grow when full. Nodes using the same atlases share sets.
 
@@ -151,18 +154,22 @@ Each step should leave the app running.
 ### 4. Textures from atlases
 
 - [x] Upload each atlas as a GPU image (with mipmaps) (`GpuImage`, `App::sync_atlases`)
-- [x] Decide how a texture that is part of an atlas reaches the shader: UV rectangle uniform
-      `<sampler>Rect` (`Texture::new`, `Texture::get_uv_rect`)
+- [x] Decide how a texture that is part of an atlas reaches the shader: `umin`, `umax`,
+      `vmin`, `vmax` uniforms named by the shader (`ShaderUniformNames`)
 - [x] Sampler descriptor sets cached per (shader, swapchain image, textures)
-- [x] Bind `Texture(handle)` uniforms to the reflected sampler bindings
-      (`uniformdata::resolve_samplers`); fallback texture and warnings for bad values
+- [x] Bind the material's texture to the reflected sampler bindings
+      (`uniformdata::sampler_atlases`); fallback texture and warnings when it is missing
+- [x] Textures as values from the atlas's `.atlas` metadata (`Atlas::get_texture`), stored in
+      materials; no texture objects in the scene
 - [x] Remove the hard-coded texture code from `texture.rs` and the
       `resources/demo_000_viking_room_atlas.png` path; the app then runs from any directory
 
 ### Later
 
-- [ ] Sub-textures: mipmaps and linear filtering bleed across texture borders in an atlas, and
-      `REPEAT` wraps around the whole atlas; add padding or per-texture sampler modes
+- [ ] Sub-textures: the atlas creator's 1-pixel frame stops linear filtering from bleeding at
+      full size, but smaller mipmap levels still mix neighbouring textures, and `REPEAT` wraps
+      around the whole atlas; add more padding, limit the mip level, or per-texture sampler modes
+- [ ] More than one texture per material (e.g. a texture per sampler)
 - [ ] Re-upload an atlas when its pixels change (no API changes pixels yet)
 - [ ] An atlas removed and another added under the same handle in one frame keeps the old GPU
       image; give objects a generation counter

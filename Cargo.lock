@@ -441,6 +441,9 @@ dependencies = [
 [[package]]
 name = "feather-build"
 version = "0.0.1"
+dependencies = [
+ "atlas-creator",
+]
 
 [[package]]
 name = "flate2"

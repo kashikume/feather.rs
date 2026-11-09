@@ -19,12 +19,10 @@ pub enum UniformValue {
     Mat2(Mat2),
     Mat3(Mat3),
     Mat4(Mat4),
-    /// Handle of a texture in `Scene::textures`, for `sampler2D` uniforms.
-    Texture(usize),
 }
 
 impl UniformValue {
-    /// The matching GLSL type name, e.g. `vec3` or `sampler2D`.
+    /// The matching GLSL type name, e.g. `vec3`.
     pub fn glsl_type(&self) -> &'static str {
         match self {
             UniformValue::Float(_) => "float",
@@ -43,7 +41,6 @@ impl UniformValue {
             UniformValue::Mat2(_) => "mat2",
             UniformValue::Mat3(_) => "mat3",
             UniformValue::Mat4(_) => "mat4",
-            UniformValue::Texture(_) => "sampler2D",
         }
     }
 
@@ -51,8 +48,7 @@ impl UniformValue {
     /// store it: 4-byte scalars (`bool` as a `uint` 0 or 1), vector components packed, and
     /// matrix column `c` at `offset + c * matrix_stride` (16 for every matrix in std140).
     ///
-    /// Returns `false` and writes nothing for `Texture` (samplers have no bytes) or when the
-    /// value doesn't fit in `buf`.
+    /// Returns `false` and writes nothing when the value doesn't fit in `buf`.
     pub fn write_bytes(&self, buf: &mut [u8], offset: usize, matrix_stride: usize) -> bool {
         let f = |v: f32| v.to_bits();
         let i = |v: i32| v as u32;
@@ -82,7 +78,6 @@ impl UniformValue {
                 .iter()
                 .map(|c| vec![f(c.x), f(c.y), f(c.z), f(c.w)])
                 .collect(),
-            UniformValue::Texture(_) => return false,
         };
 
         let column_offset = |c: usize| offset + c * matrix_stride;
@@ -247,9 +242,8 @@ mod tests {
     }
 
     #[test]
-    fn write_fails_for_texture_and_overflow() {
+    fn write_fails_on_overflow() {
         let mut buf = vec![0u8; 16];
-        assert!(!UniformValue::Texture(1).write_bytes(&mut buf, 0, 16));
         assert!(!UniformValue::Vec4(Vec4::new(1.0, 1.0, 1.0, 1.0)).write_bytes(&mut buf, 4, 16));
         assert!(!UniformValue::Mat2(Mat2::identity()).write_bytes(&mut buf, 0, 16));
         assert_eq!(buf, [0; 16]);
@@ -274,7 +268,6 @@ mod tests {
             (UniformValue::Mat2(Mat2::identity()), "mat2"),
             (UniformValue::Mat3(Mat3::identity()), "mat3"),
             (UniformValue::Mat4(Mat4::identity()), "mat4"),
-            (UniformValue::Texture(0), "sampler2D"),
         ];
         for (value, expected) in cases {
             assert_eq!(value.glsl_type(), expected);

@@ -1,19 +1,32 @@
+use std::collections::HashMap;
+
 use anyhow::{bail, Context, Result};
 
 use super::assetsprovider::AssetsProvider;
 use super::object::Object;
+use super::texture::Texture;
+
+/// A named rectangle of an atlas, in pixels, as listed in its metadata.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AtlasRegion {
+    pub x: u32,
+    pub y: u32,
+    pub width: u32,
+    pub height: u32,
+}
 
 /// An image that textures are cut from. Pixels are stored as 8-bit RGBA, row by row.
+///
+/// The optional metadata (a `.atlas` file, as written by the atlas creator tool) names
+/// rectangles of the image; `get_texture` turns one into a `Texture`.
 pub struct Atlas {
     name: Option<String>,
     handle: usize,
     width: u32,
     height: u32,
     pixels: Vec<u8>,
-    /// Handles (in `Scene::textures`) of all textures in this atlas, including the full texture.
-    textures: Vec<usize>,
-    /// Handle of the texture covering the whole atlas, if there is one.
-    full_texture: Option<usize>,
+    /// Named rectangles, from the metadata.
+    regions: HashMap<String, AtlasRegion>,
 }
 
 impl Object for Atlas {
@@ -31,26 +44,37 @@ impl Object for Atlas {
 }
 
 impl Atlas {
-    /// Loads an atlas from the PNG asset `asset` (e.g. `"textures/wall.png"`). Any PNG color
-    /// type and bit depth is converted to 8-bit RGBA. When `name` is `None` or empty, the
-    /// asset's file name (e.g. `wall.png`) is used.
+    /// Loads an atlas from the PNG asset `bitmap` (e.g. `"textures/wall.png"`) and, when given,
+    /// the metadata asset `metadata` (e.g. `"textures/wall.atlas"`, see `parse_metadata`). Any
+    /// PNG color type and bit depth is converted to 8-bit RGBA. When `name` is `None` or empty,
+    /// the bitmap's file name (e.g. `wall.png`) is used.
     pub fn new_from_png(
         assets: &dyn AssetsProvider,
-        asset: &str,
+        bitmap: &str,
+        metadata: Option<&str>,
         name: Option<String>,
     ) -> Result<Self> {
         let name = match name {
             Some(name) if !name.is_empty() => name,
-            _ => asset.rsplit('/').next().unwrap_or(asset).to_string(),
+            _ => bitmap.rsplit('/').next().unwrap_or(bitmap).to_string(),
         };
 
-        let bytes = assets.get_asset(asset)?;
-        Self::new_from_png_bytes(&bytes, Some(name))
-            .with_context(|| format!("Cannot read PNG asset {asset}"))
+        let bytes = assets.get_asset(bitmap)?;
+        let mut atlas = Self::new_from_png_bytes(&bytes, Some(name))
+            .with_context(|| format!("Cannot read PNG asset {bitmap}"))?;
+        if let Some(metadata) = metadata {
+            (|| {
+                let bytes = assets.get_asset(metadata)?;
+                let text = std::str::from_utf8(&bytes).context("not UTF-8")?;
+                atlas.set_metadata(text)
+            })()
+            .with_context(|| format!("Cannot read atlas metadata {metadata}"))?;
+        }
+        Ok(atlas)
     }
 
     /// Decodes an atlas from PNG data in memory. Any PNG color type and bit depth is converted
-    /// to 8-bit RGBA.
+    /// to 8-bit RGBA. The atlas has no metadata; see `set_metadata`.
     pub fn new_from_png_bytes(png: &[u8], name: Option<String>) -> Result<Self> {
         let (width, height, pixels) = read_png_rgba(png)?;
         Ok(Self::from_rgba(name, width, height, pixels))
@@ -70,9 +94,31 @@ impl Atlas {
             width,
             height,
             pixels,
-            textures: Vec::new(),
-            full_texture: None,
+            regions: HashMap::new(),
         }
+    }
+
+    /// Replaces the named rectangles with those in `text` (see `parse_metadata`). Fails, keeping
+    /// the old ones, if the text is invalid or a rectangle doesn't fit in the atlas.
+    pub fn set_metadata(&mut self, text: &str) -> Result<()> {
+        let regions = parse_metadata(text)?;
+        for (name, r) in &regions {
+            let fits = r.x as u64 + r.width as u64 <= self.width as u64
+                && r.y as u64 + r.height as u64 <= self.height as u64;
+            if !fits {
+                bail!(
+                    "`{name}` ({} {} {} {}) is outside the {}x{} atlas",
+                    r.x,
+                    r.y,
+                    r.width,
+                    r.height,
+                    self.width,
+                    self.height
+                );
+            }
+        }
+        self.regions = regions;
+        Ok(())
     }
 
     pub fn get_width(&self) -> u32 {
@@ -88,34 +134,86 @@ impl Atlas {
         &self.pixels
     }
 
-    /// Adds a texture handle. Adding the same handle twice keeps one copy.
-    pub fn add_texture(&mut self, texture: usize) {
-        if !self.textures.contains(&texture) {
-            self.textures.push(texture);
+    /// The texture named `name` in the metadata, or `None` if there is no such name.
+    ///
+    /// The texture refers to the atlas by handle, so get it once the atlas is in a scene
+    /// (`Scene::get_atlas`).
+    pub fn get_texture(&self, name: &str) -> Option<Texture> {
+        let r = self.regions.get(name)?;
+        let (w, h) = (self.width as f32, self.height as f32);
+        Some(Texture::new(
+            self.handle,
+            r.x as f32 / w,
+            (r.x + r.width) as f32 / w,
+            r.y as f32 / h,
+            (r.y + r.height) as f32 / h,
+        ))
+    }
+
+    /// A texture covering the whole atlas. See `get_texture` about the handle.
+    pub fn get_full_texture(&self) -> Texture {
+        Texture::full(self.handle)
+    }
+
+    /// Whether the metadata names a texture `name`.
+    pub fn has_texture(&self, name: &str) -> bool {
+        self.regions.contains_key(name)
+    }
+
+    /// Names of the textures in the metadata, sorted.
+    pub fn get_texture_names(&self) -> Vec<&str> {
+        let mut names: Vec<&str> = self.regions.keys().map(String::as_str).collect();
+        names.sort_unstable();
+        names
+    }
+
+    /// The rectangle, in pixels, of texture `name`.
+    pub fn get_region(&self, name: &str) -> Option<AtlasRegion> {
+        self.regions.get(name).copied()
+    }
+}
+
+/// Parses atlas metadata (a `.atlas` file): one texture per line, `name x y width height`,
+/// in pixels from the top-left corner of the image. The name is everything before the last
+/// four numbers, so it may contain spaces. Empty lines are skipped; names must be unique.
+pub fn parse_metadata(text: &str) -> Result<HashMap<String, AtlasRegion>> {
+    let mut regions = HashMap::new();
+    for (index, line) in text.lines().enumerate() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let (name, region) = parse_metadata_line(line)
+            .with_context(|| format!("line {}: `{line}`", index + 1))?;
+        if regions.insert(name.to_string(), region).is_some() {
+            bail!("line {}: texture `{name}` is listed twice", index + 1);
         }
     }
+    Ok(regions)
+}
 
-    /// Removes a texture handle. If it was the full texture, the atlas no longer has one.
-    pub fn remove_texture(&mut self, texture: usize) {
-        self.textures.retain(|&t| t != texture);
-        if self.full_texture == Some(texture) {
-            self.full_texture = None;
-        }
+fn parse_metadata_line(line: &str) -> Result<(&str, AtlasRegion)> {
+    let mut parts = line.rsplitn(5, char::is_whitespace);
+    let mut number = || -> Result<u32> {
+        let part = parts.next().unwrap_or("");
+        part.parse().with_context(|| {
+            format!("expected `name x y width height`, `{part}` is not a number")
+        })
+    };
+    let (height, width, y, x) = (number()?, number()?, number()?, number()?);
+    let name = parts.next().map(str::trim_end).unwrap_or("");
+    if name.is_empty() {
+        bail!("expected `name x y width height`, the name is missing");
     }
-
-    pub fn get_textures(&self) -> &[usize] {
-        &self.textures
-    }
-
-    /// Sets the texture covering the whole atlas. It is also added to the texture list.
-    pub fn set_full_texture(&mut self, texture: usize) {
-        self.add_texture(texture);
-        self.full_texture = Some(texture);
-    }
-
-    pub fn get_full_texture(&self) -> Option<usize> {
-        self.full_texture
-    }
+    Ok((
+        name,
+        AtlasRegion {
+            x,
+            y,
+            width,
+            height,
+        },
+    ))
 }
 
 /// Decodes a PNG into 8-bit RGBA pixels. Returns `(width, height, pixels)`.
@@ -164,6 +262,11 @@ mod tests {
         )
     }
 
+    /// 4x2 atlas with no metadata.
+    fn atlas_4x2() -> Atlas {
+        Atlas::from_rgba(None, 4, 2, vec![0; 4 * 2 * 4])
+    }
+
     /// Encodes a PNG in memory.
     fn write_png(
         width: u32,
@@ -186,35 +289,37 @@ mod tests {
         png
     }
 
+    fn load(asset: &str, name: Option<String>) -> Result<Atlas> {
+        Atlas::new_from_png(&*test_resources(), asset, None, name)
+    }
+
     // --- loading ---
 
     #[test]
     fn new_from_png_loads_resource() {
-        let atlas = Atlas::new_from_png(&*test_resources(), TEST_PNG, None).unwrap();
+        let atlas = load(TEST_PNG, None).unwrap();
         assert_eq!(atlas.get_width(), 512);
         assert_eq!(atlas.get_height(), 512);
         assert_eq!(atlas.get_pixels().len(), 512 * 512 * 4);
         assert_eq!(atlas.get_handle(), usize::MAX);
-        assert!(atlas.get_textures().is_empty());
-        assert_eq!(atlas.get_full_texture(), None);
+        assert!(atlas.get_texture_names().is_empty());
     }
 
     #[test]
     fn name_defaults_to_file_name() {
-        let atlas = Atlas::new_from_png(&*test_resources(), TEST_PNG, None).unwrap();
+        let atlas = load(TEST_PNG, None).unwrap();
         assert_eq!(atlas.get_name(), Some(TEST_PNG.to_string()));
     }
 
     #[test]
     fn empty_name_defaults_to_file_name() {
-        let atlas = Atlas::new_from_png(&*test_resources(), TEST_PNG, Some(String::new())).unwrap();
+        let atlas = load(TEST_PNG, Some(String::new())).unwrap();
         assert_eq!(atlas.get_name(), Some(TEST_PNG.to_string()));
     }
 
     #[test]
     fn explicit_name_is_kept() {
-        let atlas =
-            Atlas::new_from_png(&*test_resources(), TEST_PNG, Some("bricks".to_string())).unwrap();
+        let atlas = load(TEST_PNG, Some("bricks".to_string())).unwrap();
         assert_eq!(atlas.get_name(), Some("bricks".to_string()));
     }
 
@@ -308,13 +413,12 @@ mod tests {
 
     #[test]
     fn missing_file_fails() {
-        assert!(Atlas::new_from_png(&*test_resources(), "does_not_exist.png", None).is_err());
+        assert!(load("does_not_exist.png", None).is_err());
     }
 
     #[test]
     fn non_png_asset_fails() {
-        let mesh = "quad.obj";
-        assert!(Atlas::new_from_png(&*test_resources(), mesh, None).is_err());
+        assert!(load("quad.obj", None).is_err());
         assert!(Atlas::new_from_png_bytes(b"not a png", None).is_err());
     }
 
@@ -331,15 +435,13 @@ mod tests {
         let mut assets = MemoryAssetsProvider::default();
         assets.assets.insert("sub/dir/tiny.png".to_string(), png);
 
-        let atlas = Atlas::new_from_png(&assets, "sub/dir/tiny.png", None).unwrap();
+        let atlas = Atlas::new_from_png(&assets, "sub/dir/tiny.png", None, None).unwrap();
         assert_eq!(atlas.get_name(), Some("tiny.png".to_string()));
     }
 
     #[test]
     fn missing_asset_error_names_the_asset() {
-        let err = Atlas::new_from_png(&*test_resources(), "does_not_exist.png", None)
-            .err()
-            .unwrap();
+        let err = load("does_not_exist.png", None).err().unwrap();
         assert!(format!("{err:#}").contains("does_not_exist.png"));
     }
 
@@ -358,66 +460,130 @@ mod tests {
         assert_eq!(Atlas::new_from_png_bytes(&png, None).unwrap().get_name(), None);
     }
 
-    // --- textures ---
-
     #[test]
     fn from_rgba_keeps_data() {
         let atlas = test_atlas(Some("atlas"));
         assert_eq!(atlas.get_name(), Some("atlas".to_string()));
         assert_eq!((atlas.get_width(), atlas.get_height()), (2, 1));
         assert_eq!(atlas.get_pixels(), &[255, 0, 0, 255, 0, 255, 0, 255]);
+        assert!(atlas.get_texture_names().is_empty());
+    }
+
+    // --- metadata and textures ---
+
+    #[test]
+    fn parse_metadata_reads_name_and_rectangle() {
+        let regions = parse_metadata("a 1 2 3 4\r\n\n  b c 0 0 10 20  \n").unwrap();
+        assert_eq!(regions.len(), 2);
+        assert_eq!(
+            regions["a"],
+            AtlasRegion {
+                x: 1,
+                y: 2,
+                width: 3,
+                height: 4
+            }
+        );
+        // Names may contain spaces.
+        assert_eq!(
+            regions["b c"],
+            AtlasRegion {
+                x: 0,
+                y: 0,
+                width: 10,
+                height: 20
+            }
+        );
+        assert!(parse_metadata("").unwrap().is_empty());
     }
 
     #[test]
-    fn add_and_remove_textures() {
-        let mut atlas = test_atlas(None);
-        atlas.add_texture(1);
-        atlas.add_texture(2);
-        atlas.add_texture(1);
-        assert_eq!(atlas.get_textures(), &[1, 2]);
-
-        atlas.remove_texture(1);
-        assert_eq!(atlas.get_textures(), &[2]);
-
-        atlas.remove_texture(42); // missing handle is ignored
-        assert_eq!(atlas.get_textures(), &[2]);
+    fn parse_metadata_rejects_bad_lines() {
+        for text in [
+            "a 1 2 3",
+            "1 2 3 4",
+            "a 1 2 3 x",
+            "a -1 2 3 4",
+            "a 1 2 3 4\na 0 0 1 1",
+        ] {
+            assert!(parse_metadata(text).is_err(), "accepted `{text}`");
+        }
+        let err = parse_metadata("ok 0 0 1 1\nbad 1 2").unwrap_err();
+        assert!(format!("{err:#}").contains("line 2"), "{err:#}");
     }
 
     #[test]
-    fn full_texture_is_in_texture_list() {
-        let mut atlas = test_atlas(None);
-        atlas.add_texture(1);
-        atlas.set_full_texture(2);
+    fn get_texture_converts_pixels_to_uv() {
+        let mut atlas = atlas_4x2();
+        atlas.set_handle(7);
+        atlas.set_metadata("left 0 0 2 2\ncorner 3 1 1 1\n").unwrap();
 
-        assert_eq!(atlas.get_full_texture(), Some(2));
-        assert_eq!(atlas.get_textures(), &[1, 2]);
+        assert_eq!(
+            atlas.get_texture("left"),
+            Some(Texture::new(7, 0.0, 0.5, 0.0, 1.0))
+        );
+        assert_eq!(
+            atlas.get_texture("corner"),
+            Some(Texture::new(7, 0.75, 1.0, 0.5, 1.0))
+        );
+        assert_eq!(atlas.get_texture("missing"), None);
+        assert!(atlas.has_texture("left"));
+        assert!(!atlas.has_texture("missing"));
+        assert_eq!(atlas.get_texture_names(), ["corner", "left"]);
+        assert_eq!(
+            atlas.get_region("corner"),
+            Some(AtlasRegion {
+                x: 3,
+                y: 1,
+                width: 1,
+                height: 1
+            })
+        );
     }
 
     #[test]
-    fn set_full_texture_to_existing_texture_does_not_duplicate() {
-        let mut atlas = test_atlas(None);
-        atlas.add_texture(1);
-        atlas.set_full_texture(1);
-        assert_eq!(atlas.get_textures(), &[1]);
+    fn full_texture_covers_the_atlas() {
+        let mut atlas = atlas_4x2();
+        atlas.set_handle(2);
+        assert_eq!(atlas.get_full_texture(), Texture::full(2));
     }
 
     #[test]
-    fn replacing_full_texture_keeps_old_one_in_list() {
-        let mut atlas = test_atlas(None);
-        atlas.set_full_texture(1);
-        atlas.set_full_texture(2);
-
-        assert_eq!(atlas.get_full_texture(), Some(2));
-        assert_eq!(atlas.get_textures(), &[1, 2]);
+    fn metadata_outside_the_atlas_is_rejected() {
+        let mut atlas = atlas_4x2();
+        atlas.set_metadata("a 0 0 1 1").unwrap();
+        assert!(atlas.set_metadata("b 3 0 2 1").is_err());
+        assert!(atlas.set_metadata("b 0 1 1 2").is_err());
+        // The old metadata stays.
+        assert_eq!(atlas.get_texture_names(), ["a"]);
     }
 
     #[test]
-    fn removing_full_texture_clears_it() {
-        let mut atlas = test_atlas(None);
-        atlas.set_full_texture(1);
-        atlas.remove_texture(1);
+    fn new_from_png_reads_metadata() {
+        let png = write_png(
+            4,
+            2,
+            png::ColorType::Rgba,
+            png::BitDepth::Eight,
+            &[0; 4 * 2 * 4],
+            None,
+        );
+        let mut assets = MemoryAssetsProvider::default();
+        assets.assets.insert("a.png".to_string(), png);
+        assets
+            .assets
+            .insert("a.atlas".to_string(), b"one 0 0 4 1\ntwo 0 1 4 1\n".to_vec());
+        assets
+            .assets
+            .insert("bad.atlas".to_string(), b"one 0 0 5 1".to_vec());
 
-        assert_eq!(atlas.get_full_texture(), None);
-        assert!(atlas.get_textures().is_empty());
+        let atlas = Atlas::new_from_png(&assets, "a.png", Some("a.atlas"), None).unwrap();
+        assert_eq!(atlas.get_texture_names(), ["one", "two"]);
+
+        let err = Atlas::new_from_png(&assets, "a.png", Some("bad.atlas"), None)
+            .err()
+            .unwrap();
+        assert!(format!("{err:#}").contains("bad.atlas"), "{err:#}");
+        assert!(Atlas::new_from_png(&assets, "a.png", Some("missing.atlas"), None).is_err());
     }
 }

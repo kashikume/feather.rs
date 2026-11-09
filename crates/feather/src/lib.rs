@@ -22,6 +22,7 @@ pub mod mesh;
 pub mod meshbuffer;
 pub mod meshbufferdata;
 pub mod meshbuildercuboid;
+pub mod meshbuilderplane;
 pub mod meshbuilderobjfile;
 pub mod node;
 pub mod objdb;

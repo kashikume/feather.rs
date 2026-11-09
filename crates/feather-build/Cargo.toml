@@ -2,7 +2,8 @@
 name = "feather-build"
 version = "0.0.1"
 edition.workspace = true
-description = "Build script helpers: compiling GLSL shaders and copying assets."
+description = "Build script helpers: compiling GLSL shaders, creating atlases and copying assets."
 publish = false
 
 [dependencies]
+atlas-creator.workspace = true

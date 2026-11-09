@@ -3,18 +3,25 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use anyhow::Result;
 
 use crate::{
-    assetsprovider::AssetsProvider, atlas::Atlas, material::Material, object::Object, shader::Shader, texture::Texture,
+    assetsprovider::AssetsProvider,
+    atlas::Atlas,
+    material::Material,
+    object::Object,
+    shader::{Shader, ShaderUniformNames},
+    texture::Texture,
 };
 
 use super::{
     math::Mat4, mesh::Mesh, meshbuffer::MeshBuffer, node::Node, objdb::ObjDB, uniforms::Uniforms,
 };
 
-/// One draw call: a node's mesh, located in a mesh buffer, drawn with the shader of the node's
-/// material and the node's model matrix.
+/// One draw call: a node's mesh, located in a mesh buffer, drawn with the node's material (its
+/// shader and texture) and the node's model matrix.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DrawItem {
     pub node: usize,
+    /// Handle of the node's material (in `Scene::materials`).
+    pub material: usize,
     /// Handle of the shader (in `Scene::shaders`) of the node's material.
     pub shader: usize,
     /// Handle of the mesh buffer (in `Scene::buffers`) holding the mesh.
@@ -37,7 +44,6 @@ pub struct Scene {
     pub buffers: ObjDB<MeshBuffer>,
     pub nodes: ObjDB<Node>,
     pub atlases: ObjDB<Atlas>,
-    pub textures: ObjDB<Texture>,
     pub shaders: ObjDB<Shader>,
     pub materials: ObjDB<Material>,
     needs_create_mesh_buffer: bool,
@@ -51,7 +57,6 @@ impl Scene {
             buffers: ObjDB::new(),
             nodes: ObjDB::new(),
             atlases: ObjDB::new(),
-            textures: ObjDB::new(),
             shaders: ObjDB::new(),
             materials: ObjDB::new(),
             needs_create_mesh_buffer: false,
@@ -140,24 +145,15 @@ impl Scene {
     }
 
     /// Creates a shader from vertex and fragment SPIR-V and adds it to the scene.
-    /// See `Shader::new` for the uniform name parameters.
+    /// See `Shader::new` and `ShaderUniformNames` for `uniform_names`.
     pub fn create_shader(
         &mut self,
         name: Option<String>,
         vertex: &[u8],
         fragment: &[u8],
-        uniform_model_name: Option<String>,
-        uniform_view_name: Option<String>,
-        uniform_proj_name: Option<String>,
+        uniform_names: ShaderUniformNames,
     ) -> Result<usize> {
-        let shader = Shader::new(
-            name,
-            vertex,
-            fragment,
-            uniform_model_name,
-            uniform_view_name,
-            uniform_proj_name,
-        )?;
+        let shader = Shader::new(name, vertex, fragment, uniform_names)?;
         Ok(self.add_shader(shader))
     }
 
@@ -198,6 +194,26 @@ impl Scene {
             .get_mut(material_handle)
             .ok_or_else(|| anyhow::anyhow!("Material {material_handle} not found"))?
             .set_shader(shader_handle);
+        Ok(())
+    }
+
+    /// Sets the texture of a material (`None` for no texture). Fails if the material or the
+    /// texture's atlas does not exist.
+    pub fn material_set_texture(
+        &mut self,
+        material_handle: usize,
+        texture: Option<Texture>,
+    ) -> Result<()> {
+        if let Some(texture) = &texture {
+            let atlas = texture.get_atlas();
+            if self.atlases.get(atlas).is_none() {
+                anyhow::bail!("Atlas {atlas} not found");
+            }
+        }
+        self.materials
+            .get_mut(material_handle)
+            .ok_or_else(|| anyhow::anyhow!("Material {material_handle} not found"))?
+            .set_texture(texture);
         Ok(())
     }
 
@@ -282,16 +298,16 @@ impl Scene {
             else {
                 continue;
             };
-            let Some(shader) = node
-                .get_material()
-                .and_then(|m| self.materials.get(m))
-                .map(|m| m.get_shader())
-                .filter(|&s| self.shaders.get(s).is_some())
-            else {
+            let Some(material) = node.get_material().and_then(|m| self.materials.get(m)) else {
                 continue;
             };
+            let shader = material.get_shader();
+            if self.shaders.get(shader).is_none() {
+                continue;
+            }
             items.push(DrawItem {
                 node: handle,
+                material: material.get_handle(),
                 shader,
                 mesh_buffer: data.buffer_handle,
                 model: node.get_global_transform().unwrap_or(node.get_transform()),
@@ -307,15 +323,17 @@ impl Scene {
         self.atlases.add(atlas)
     }
 
-    /// Loads an atlas from the PNG asset `asset` and adds it to the scene. When `name` is `None`
-    /// or empty, the asset's file name is used.
+    /// Loads an atlas from the PNG asset `bitmap` and, when given, its metadata asset
+    /// `metadata` (a `.atlas` file), and adds it to the scene. When `name` is `None` or empty,
+    /// the bitmap's file name is used. See `Atlas::new_from_png`.
     pub fn create_atlas_from_png(
         &mut self,
         assets: &dyn AssetsProvider,
-        asset: &str,
+        bitmap: &str,
+        metadata: Option<&str>,
         name: Option<String>,
     ) -> Result<usize> {
-        let atlas = Atlas::new_from_png(assets, asset, name)?;
+        let atlas = Atlas::new_from_png(assets, bitmap, metadata, name)?;
         Ok(self.add_atlas(atlas))
     }
 
@@ -323,36 +341,24 @@ impl Scene {
         self.atlases.get(handle)
     }
 
-    pub fn get_texture(&self, handle: usize) -> Option<&Texture> {
-        self.textures.get(handle)
+    /// Handle of the first atlas named `name`.
+    pub fn find_atlas(&self, name: &str) -> Option<usize> {
+        self.atlases.get_by_name(name).map(|a| a.get_handle())
     }
 
-    /// Adds a texture and registers it with its atlas. Fails if the atlas does not exist.
-    pub fn add_texture(&mut self, texture: Texture) -> Result<usize> {
-        let atlas_handle = texture.get_atlas();
-        if self.atlases.get(atlas_handle).is_none() {
-            anyhow::bail!("Atlas {atlas_handle} not found");
-        }
-        let texture_handle = self.textures.add(texture);
-        self.atlases
-            .get_mut(atlas_handle)
-            .unwrap()
-            .add_texture(texture_handle);
-        Ok(texture_handle)
+    /// Handle of the first shader named `name`.
+    pub fn find_shader(&self, name: &str) -> Option<usize> {
+        self.shaders.get_by_name(name).map(|s| s.get_handle())
     }
 
-    /// Creates a texture covering the whole atlas and makes it the atlas's full texture.
-    pub fn create_full_atlas_texture(
-        &mut self,
-        name: Option<String>,
-        atlas_handle: usize,
-    ) -> Result<usize> {
-        let texture_handle = self.add_texture(Texture::full_atlas(name, atlas_handle))?;
-        self.atlases
-            .get_mut(atlas_handle)
-            .unwrap()
-            .set_full_texture(texture_handle);
-        Ok(texture_handle)
+    /// Handle of the first mesh named `name`.
+    pub fn find_mesh(&self, name: &str) -> Option<usize> {
+        self.meshes.get_by_name(name).map(|m| m.get_handle())
+    }
+
+    /// Handle of the first material named `name`.
+    pub fn find_material(&self, name: &str) -> Option<usize> {
+        self.materials.get_by_name(name).map(|m| m.get_handle())
     }
 
     pub fn create_mesh_buffer(&mut self) -> usize {
@@ -654,9 +660,7 @@ mod tests {
                 Some("basic".to_string()),
                 VERT,
                 FRAG,
-                Some("model".to_string()),
-                Some("view".to_string()),
-                Some("proj".to_string()),
+                ShaderUniformNames::matrices("model", "view", "proj"),
             )
             .unwrap();
 
@@ -676,7 +680,7 @@ mod tests {
     fn create_shader_with_invalid_code_fails() {
         let mut scene = Scene::new();
         assert!(scene
-            .create_shader(None, &[1, 2, 3], FRAG, None, None, None)
+            .create_shader(None, &[1, 2, 3], FRAG, ShaderUniformNames::default())
             .is_err());
         assert_eq!(scene.shaders.iter().count(), 0);
     }
@@ -685,7 +689,7 @@ mod tests {
     fn create_material_uses_shader() {
         let mut scene = Scene::new();
         let shader = scene
-            .create_shader(None, VERT, FRAG, None, None, None)
+            .create_shader(None, VERT, FRAG, ShaderUniformNames::default())
             .unwrap();
         let material = scene
             .create_material(Some("wood".to_string()), shader)
@@ -705,39 +709,48 @@ mod tests {
     }
 
     #[test]
-    fn material_uniforms_can_hold_texture() {
+    fn material_set_texture() {
         let mut scene = Scene::new();
         let atlas = scene.add_atlas(test_atlas(None));
-        let texture = scene.create_full_atlas_texture(None, atlas).unwrap();
         let shader = scene
-            .create_shader(None, VERT, FRAG, None, None, None)
+            .create_shader(None, VERT, FRAG, ShaderUniformNames::default())
             .unwrap();
         let material = scene.create_material(None, shader).unwrap();
 
-        scene
-            .get_material_mut(material)
-            .unwrap()
-            .uniforms_mut()
-            .set("texSampler", UniformValue::Texture(texture));
-
+        let texture = scene.get_atlas(atlas).unwrap().get_full_texture();
+        assert_eq!(texture.get_atlas(), atlas);
+        scene.material_set_texture(material, Some(texture)).unwrap();
         assert_eq!(
-            scene
-                .get_material(material)
-                .unwrap()
-                .uniforms()
-                .get("texSampler"),
-            Some(&UniformValue::Texture(texture))
+            scene.get_material(material).unwrap().get_texture(),
+            Some(&texture)
         );
+
+        scene.material_set_texture(material, None).unwrap();
+        assert_eq!(scene.get_material(material).unwrap().get_texture(), None);
+    }
+
+    #[test]
+    fn material_set_texture_with_invalid_handles_fails() {
+        let mut scene = Scene::new();
+        let atlas = scene.add_atlas(test_atlas(None));
+        let shader = scene
+            .create_shader(None, VERT, FRAG, ShaderUniformNames::default())
+            .unwrap();
+        let material = scene.create_material(None, shader).unwrap();
+
+        assert!(scene.material_set_texture(material, Some(Texture::full(42))).is_err());
+        assert!(scene.material_set_texture(42, Some(Texture::full(atlas))).is_err());
+        assert_eq!(scene.get_material(material).unwrap().get_texture(), None);
     }
 
     #[test]
     fn material_set_shader() {
         let mut scene = Scene::new();
         let s1 = scene
-            .create_shader(None, VERT, FRAG, None, None, None)
+            .create_shader(None, VERT, FRAG, ShaderUniformNames::default())
             .unwrap();
         let s2 = scene
-            .create_shader(None, VERT, FRAG, None, None, None)
+            .create_shader(None, VERT, FRAG, ShaderUniformNames::default())
             .unwrap();
         let material = scene.create_material(None, s1).unwrap();
 
@@ -754,7 +767,7 @@ mod tests {
         let mut scene = Scene::new();
         let node = scene.create_root_node(None);
         let shader = scene
-            .create_shader(None, VERT, FRAG, None, None, None)
+            .create_shader(None, VERT, FRAG, ShaderUniformNames::default())
             .unwrap();
         let material = scene.create_material(None, shader).unwrap();
 
@@ -767,7 +780,7 @@ mod tests {
         let mut scene = Scene::new();
         let node = scene.create_root_node(None);
         let shader = scene
-            .create_shader(None, VERT, FRAG, None, None, None)
+            .create_shader(None, VERT, FRAG, ShaderUniformNames::default())
             .unwrap();
         let material = scene.create_material(None, shader).unwrap();
 
@@ -782,7 +795,7 @@ mod tests {
         let a = scene.create_root_node(None);
         let b = scene.create_root_node(None);
         let shader = scene
-            .create_shader(None, VERT, FRAG, None, None, None)
+            .create_shader(None, VERT, FRAG, ShaderUniformNames::default())
             .unwrap();
         let material = scene.create_material(None, shader).unwrap();
 
@@ -966,7 +979,7 @@ mod tests {
     /// Creates a material with one uniform and returns its handle.
     fn material_with(scene: &mut Scene, name: &str, value: u32) -> usize {
         let shader = scene
-            .create_shader(None, VERT, FRAG, None, None, None)
+            .create_shader(None, VERT, FRAG, ShaderUniformNames::default())
             .unwrap();
         let material = scene.create_material(None, shader).unwrap();
         scene
@@ -1107,7 +1120,7 @@ mod tests {
     fn create_atlas_from_png_adds_atlas() {
         let mut scene = Scene::new();
         let atlas = scene
-            .create_atlas_from_png(&*test_resources(), TEST_PNG, None)
+            .create_atlas_from_png(&*test_resources(), TEST_PNG, None, None)
             .unwrap();
 
         let atlas_obj = scene.get_atlas(atlas).unwrap();
@@ -1128,7 +1141,7 @@ mod tests {
     fn create_atlas_from_png_with_name() {
         let mut scene = Scene::new();
         let atlas = scene
-            .create_atlas_from_png(&*test_resources(), TEST_PNG, Some("bricks".to_string()))
+            .create_atlas_from_png(&*test_resources(), TEST_PNG, None, Some("bricks".to_string()))
             .unwrap();
         assert_eq!(
             scene.get_atlas(atlas).unwrap().get_name(),
@@ -1140,82 +1153,45 @@ mod tests {
     fn create_atlas_from_png_with_missing_file_fails() {
         let mut scene = Scene::new();
         assert!(scene
-            .create_atlas_from_png(&*test_resources(), "does_not_exist.png", None)
+            .create_atlas_from_png(&*test_resources(), "does_not_exist.png", None, None)
             .is_err());
         assert_eq!(scene.atlases.iter().count(), 0);
     }
 
     #[test]
-    fn full_texture_of_loaded_atlas() {
+    fn textures_of_an_atlas_in_the_scene_refer_to_it() {
         let mut scene = Scene::new();
-        let atlas = scene
-            .create_atlas_from_png(&*test_resources(), TEST_PNG, None)
-            .unwrap();
-        let full = scene.create_full_atlas_texture(None, atlas).unwrap();
+        scene.add_atlas(test_atlas(Some("first")));
+        let mut atlas = Atlas::from_rgba(Some("b".to_string()), 4, 4, vec![0; 64]);
+        atlas.set_metadata("quarter 0 0 2 2").unwrap();
+        let b = scene.add_atlas(atlas);
 
+        let atlas = scene.get_atlas(b).unwrap();
+        assert_eq!(atlas.get_full_texture(), Texture::full(b));
         assert_eq!(
-            scene.get_atlas(atlas).unwrap().get_full_texture(),
-            Some(full)
+            atlas.get_texture("quarter"),
+            Some(Texture::new(b, 0.0, 0.5, 0.0, 0.5))
         );
-        assert_eq!(scene.get_texture(full).unwrap().get_atlas(), atlas);
     }
 
     #[test]
-    fn add_texture_registers_it_with_atlas() {
+    fn find_objects_by_name() {
         let mut scene = Scene::new();
-        let atlas = scene.add_atlas(test_atlas(None));
-        let t1 = scene
-            .add_texture(Texture::full_atlas(Some("t1".to_string()), atlas))
+        let atlas = scene.add_atlas(test_atlas(Some("atlas")));
+        let shader = scene
+            .create_shader(Some("shader".to_string()), VERT, FRAG, ShaderUniformNames::default())
             .unwrap();
-        let t2 = scene.add_texture(Texture::full_atlas(None, atlas)).unwrap();
+        let material = scene
+            .create_material(Some("material".to_string()), shader)
+            .unwrap();
+        let mesh = scene.add_mesh(Mesh::new(Some("mesh".to_string()), Vec::new(), Vec::new()));
 
-        assert_ne!(t1, t2);
-        assert_eq!(scene.get_texture(t1).unwrap().get_handle(), t1);
-        assert_eq!(scene.get_texture(t1).unwrap().get_atlas(), atlas);
-        assert_eq!(scene.get_atlas(atlas).unwrap().get_textures(), &[t1, t2]);
-        // Plain textures do not become the full texture.
-        assert_eq!(scene.get_atlas(atlas).unwrap().get_full_texture(), None);
-    }
-
-    #[test]
-    fn add_texture_with_invalid_atlas_fails() {
-        let mut scene = Scene::new();
-        assert!(scene.add_texture(Texture::full_atlas(None, 42)).is_err());
-        assert_eq!(scene.textures.iter().count(), 0);
-    }
-
-    #[test]
-    fn create_full_atlas_texture() {
-        let mut scene = Scene::new();
-        let atlas = scene.add_atlas(test_atlas(None));
-        let other = scene.add_texture(Texture::full_atlas(None, atlas)).unwrap();
-        let full = scene.create_full_atlas_texture(None, atlas).unwrap();
-
-        let atlas_obj = scene.get_atlas(atlas).unwrap();
-        assert_eq!(atlas_obj.get_full_texture(), Some(full));
-        assert_eq!(atlas_obj.get_textures(), &[other, full]);
-        assert_eq!(scene.get_texture(full).unwrap().get_atlas(), atlas);
-    }
-
-    #[test]
-    fn create_full_atlas_texture_with_invalid_atlas_fails() {
-        let mut scene = Scene::new();
-        assert!(scene.create_full_atlas_texture(None, 42).is_err());
-        assert_eq!(scene.textures.iter().count(), 0);
-    }
-
-    #[test]
-    fn textures_stay_with_their_own_atlas() {
-        let mut scene = Scene::new();
-        let a = scene.add_atlas(test_atlas(Some("a")));
-        let b = scene.add_atlas(test_atlas(Some("b")));
-        let ta = scene.create_full_atlas_texture(None, a).unwrap();
-        let tb = scene.create_full_atlas_texture(None, b).unwrap();
-
-        assert_eq!(scene.get_atlas(a).unwrap().get_textures(), &[ta]);
-        assert_eq!(scene.get_atlas(b).unwrap().get_textures(), &[tb]);
-        assert_eq!(scene.get_atlas(a).unwrap().get_full_texture(), Some(ta));
-        assert_eq!(scene.get_atlas(b).unwrap().get_full_texture(), Some(tb));
+        assert_eq!(scene.find_atlas("atlas"), Some(atlas));
+        assert_eq!(scene.find_shader("shader"), Some(shader));
+        assert_eq!(scene.find_material("material"), Some(material));
+        assert_eq!(scene.find_mesh("mesh"), Some(mesh));
+        assert_eq!(scene.find_atlas("shader"), None);
+        assert_eq!(scene.find_mesh("missing"), None);
     }
 
     // --- mesh buffers ---
@@ -1339,7 +1315,7 @@ mod tests {
 
     /// Creates a shader and a material using it; returns (shader, material).
     fn test_material(scene: &mut Scene) -> (usize, usize) {
-        let shader = scene.create_shader(None, VERT, FRAG, None, None, None).unwrap();
+        let shader = scene.create_shader(None, VERT, FRAG, ShaderUniformNames::default()).unwrap();
         let material = scene.create_material(None, shader).unwrap();
         (shader, material)
     }
@@ -1411,6 +1387,7 @@ mod tests {
             item(a),
             DrawItem {
                 node: a,
+                material,
                 shader,
                 mesh_buffer: buffer,
                 model: translation(1.0, 0.0, 0.0),
@@ -1423,6 +1400,7 @@ mod tests {
             item(b),
             DrawItem {
                 node: b,
+                material,
                 shader,
                 mesh_buffer: buffer,
                 model: translation(1.0, 1.0, 0.0),

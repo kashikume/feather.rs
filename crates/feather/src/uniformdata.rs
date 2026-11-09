@@ -1,18 +1,16 @@
 //! Turning uniform values into what a shader reads: bytes for uniform blocks (one aligned
-//! slice per block in a per-frame buffer) and push constants, and a texture for each sampler.
+//! slice per block in a per-frame buffer) and push constants, and an atlas for each sampler.
 
-use super::objdb::ObjDB;
+use super::math::Mat4;
+use super::shader::ShaderUniformNames;
 use super::shaderlayout::{ShaderLayout, UniformMember, UniformType};
 use super::texture::Texture;
 use super::uniform::UniformValue;
 use super::uniforms::Uniforms;
 
-/// Suffix of the `vec4` uniform that receives the UV rectangle of a sampler's texture, e.g.
-/// `texSamplerRect` for the sampler `texSampler`.
-pub const UV_RECT_SUFFIX: &str = "Rect";
-
-/// The values available to one draw. `engine` values (the model, view and projection
-/// matrices under the shader's names) take precedence over the node's dynamic uniforms.
+/// The values available to one draw. `engine` values (the matrices and the texture rectangle
+/// under the shader's names, see `engine_uniforms`) take precedence over the node's dynamic
+/// uniforms.
 pub struct UniformValues<'a> {
     pub engine: &'a [(&'a str, UniformValue)],
     pub node: &'a Uniforms,
@@ -42,10 +40,10 @@ pub enum UniformIssue {
     },
     /// A value is set for a uniform the shader doesn't have.
     Unused(String),
-    /// A sampler's value is not a `UniformValue::Texture`.
-    NotATexture { name: String, found: &'static str },
-    /// A sampler's texture handle doesn't exist in the scene.
-    UnknownTexture { name: String, texture: usize },
+    /// The shader has samplers, but the material has no texture.
+    NoTexture,
+    /// The material's texture belongs to an atlas that isn't in the scene.
+    UnknownAtlas(usize),
 }
 
 impl std::fmt::Display for UniformIssue {
@@ -58,11 +56,11 @@ impl std::fmt::Display for UniformIssue {
                 found,
             } => write!(f, "uniform `{name}` is {expected:?} in the shader, but the value is {found}"),
             UniformIssue::Unused(name) => write!(f, "uniform `{name}` is not used by the shader"),
-            UniformIssue::NotATexture { name, found } => {
-                write!(f, "sampler `{name}` needs a texture, but the value is {found}")
+            UniformIssue::NoTexture => {
+                write!(f, "the shader has samplers, but the material has no texture")
             }
-            UniformIssue::UnknownTexture { name, texture } => {
-                write!(f, "sampler `{name}` uses texture {texture}, which doesn't exist")
+            UniformIssue::UnknownAtlas(atlas) => {
+                write!(f, "the material's texture uses atlas {atlas}, which doesn't exist")
             }
         }
     }
@@ -161,59 +159,63 @@ pub fn pack_draw(
     packed
 }
 
-/// The texture chosen for each sampler of a draw.
-#[derive(Debug, Default, PartialEq)]
-pub struct SamplerTextures {
-    /// For each sampler, in `ShaderLayout::samplers` order, the atlas (handle in
-    /// `Scene::atlases`) of its texture; `None` when the sampler has no valid texture.
-    pub atlases: Vec<Option<usize>>,
-    /// The `<sampler>Rect` value of each sampler with a valid texture.
-    pub uv_rects: Vec<(String, UniformValue)>,
+/// The values the engine provides for a draw, under the names the shader gave them (see
+/// `ShaderUniformNames`): the model, view and projection matrices and, when the material has a
+/// texture, the edges of its rectangle. Names the shader doesn't use are left out.
+pub fn engine_uniforms<'a>(
+    names: &'a ShaderUniformNames,
+    model: Mat4,
+    view: Mat4,
+    projection: Mat4,
+    texture: Option<&Texture>,
+) -> Vec<(&'a str, UniformValue)> {
+    let matrices = [
+        (&names.model, model),
+        (&names.view, view),
+        (&names.projection, projection),
+    ]
+    .into_iter()
+    .map(|(name, m)| (name, UniformValue::Mat4(m)));
+    let rect = texture.into_iter().flat_map(|t| {
+        [
+            (&names.umin, t.get_u_min()),
+            (&names.umax, t.get_u_max()),
+            (&names.vmin, t.get_v_min()),
+            (&names.vmax, t.get_v_max()),
+        ]
+        .into_iter()
+        .map(|(name, v)| (name, UniformValue::Float(v)))
+    });
+    matrices
+        .chain(rect)
+        .filter_map(|(name, value)| Some((name.as_deref()?, value)))
+        .collect()
 }
 
-/// Finds the texture of each sampler: the `UniformValue::Texture` stored under the sampler's
-/// name, looked up in `textures`.
-pub fn resolve_samplers(
+/// The atlas each sampler of the shader samples, in `ShaderLayout::samplers` order: the atlas
+/// of the material's texture, for every sampler. `None` (and an issue) when the material has no
+/// texture or its atlas doesn't exist (`atlas_exists`).
+pub fn sampler_atlases(
     layout: &ShaderLayout,
-    values: &UniformValues,
-    textures: &ObjDB<Texture>,
+    texture: Option<&Texture>,
+    atlas_exists: impl Fn(usize) -> bool,
     issues: &mut Vec<UniformIssue>,
-) -> SamplerTextures {
-    let mut result = SamplerTextures::default();
-    for sampler in &layout.samplers {
-        let name = &sampler.name;
-        let texture = match values.get(name) {
-            None => {
-                issues.push(UniformIssue::Missing(name.clone()));
-                None
-            }
-            Some(UniformValue::Texture(handle)) => {
-                let texture = textures.get(*handle);
-                if texture.is_none() {
-                    issues.push(UniformIssue::UnknownTexture {
-                        name: name.clone(),
-                        texture: *handle,
-                    });
-                }
-                texture
-            }
-            Some(other) => {
-                issues.push(UniformIssue::NotATexture {
-                    name: name.clone(),
-                    found: other.glsl_type(),
-                });
-                None
-            }
-        };
-        result.atlases.push(texture.map(|t| t.get_atlas()));
-        if let Some(texture) = texture {
-            result.uv_rects.push((
-                format!("{name}{UV_RECT_SUFFIX}"),
-                UniformValue::Vec4(texture.get_uv_rect()),
-            ));
-        }
+) -> Vec<Option<usize>> {
+    if layout.samplers.is_empty() {
+        return Vec::new();
     }
-    result
+    let atlas = match texture {
+        None => {
+            issues.push(UniformIssue::NoTexture);
+            None
+        }
+        Some(texture) if !atlas_exists(texture.get_atlas()) => {
+            issues.push(UniformIssue::UnknownAtlas(texture.get_atlas()));
+            None
+        }
+        Some(texture) => Some(texture.get_atlas()),
+    };
+    vec![atlas; layout.samplers.len()]
 }
 
 /// Node uniforms the shader has no place for.
@@ -293,73 +295,86 @@ mod tests {
         assert_eq!(packed.push_constants, mat_bytes(translation(1.0)));
     }
 
-    fn textures() -> (ObjDB<Texture>, usize, usize) {
-        let mut textures = ObjDB::new();
-        let full = textures.add(Texture::full_atlas(None, 7));
-        let part = textures.add(Texture::new(None, 8, 0.5, 0.0, 0.5, 0.25));
-        (textures, full, part)
+    #[test]
+    fn engine_uniforms_use_the_shader_names() {
+        let names = ShaderUniformNames::matrices("model", "view", "proj")
+            .with_texture_rect("umin", "umax", "vmin", "vmax");
+        let texture = Texture::new(3, 0.25, 0.5, 0.125, 1.0);
+        let values = engine_uniforms(
+            &names,
+            translation(1.0),
+            translation(2.0),
+            translation(3.0),
+            Some(&texture),
+        );
+        assert_eq!(
+            values,
+            [
+                ("model", UniformValue::Mat4(translation(1.0))),
+                ("view", UniformValue::Mat4(translation(2.0))),
+                ("proj", UniformValue::Mat4(translation(3.0))),
+                ("umin", UniformValue::Float(0.25)),
+                ("umax", UniformValue::Float(0.5)),
+                ("vmin", UniformValue::Float(0.125)),
+                ("vmax", UniformValue::Float(1.0)),
+            ]
+        );
     }
 
     #[test]
-    fn samplers_get_their_texture_atlas_and_rect() {
-        let layout = ShaderLayout::reflect(VERT, FRAG).unwrap();
-        let (textures, _, part) = textures();
-        let mut node = Uniforms::new();
-        node.set("texSampler", UniformValue::Texture(part));
-        let values = UniformValues {
-            engine: &[],
-            node: &node,
+    fn engine_uniforms_skip_unnamed_values_and_missing_texture() {
+        let names = ShaderUniformNames {
+            view: Some("v".to_string()),
+            umax: Some("right".to_string()),
+            ..ShaderUniformNames::default()
         };
+        let m = Mat4::identity();
+        let texture = Texture::full(0);
+        assert_eq!(
+            engine_uniforms(&names, m, m, m, Some(&texture)),
+            [("v", UniformValue::Mat4(m)), ("right", UniformValue::Float(1.0))]
+        );
+        // Without a texture there is no rectangle; packing reports the uniform as missing.
+        assert_eq!(
+            engine_uniforms(&names, m, m, m, None),
+            [("v", UniformValue::Mat4(m))]
+        );
+    }
+
+    #[test]
+    fn samplers_get_the_material_texture_atlas() {
+        let layout = ShaderLayout::reflect(VERT, FRAG).unwrap();
+        let texture = Texture::new(8, 0.5, 1.0, 0.0, 0.25);
         let mut issues = Vec::new();
 
-        let resolved = resolve_samplers(&layout, &values, &textures, &mut issues);
+        let atlases = sampler_atlases(&layout, Some(&texture), |a| a == 8, &mut issues);
 
         assert_eq!(issues, []);
-        assert_eq!(resolved.atlases, [Some(8)]);
-        assert_eq!(
-            resolved.uv_rects,
-            [(
-                "texSamplerRect".to_string(),
-                UniformValue::Vec4(Vec4::new(0.5, 0.0, 0.5, 0.25))
-            )]
-        );
+        assert_eq!(atlases, [Some(8)]);
     }
 
     #[test]
-    fn bad_sampler_values_are_reported() {
+    fn missing_texture_or_atlas_is_reported() {
         let layout = ShaderLayout::reflect(VERT, FRAG).unwrap();
-        let (textures, _, _) = textures();
-        let resolve = |value: Option<UniformValue>| {
-            let mut node = Uniforms::new();
-            if let Some(value) = value {
-                node.set("texSampler", value);
-            }
-            let values = UniformValues {
-                engine: &[],
-                node: &node,
-            };
-            let mut issues = Vec::new();
-            let resolved = resolve_samplers(&layout, &values, &textures, &mut issues);
-            assert_eq!(resolved.atlases, [None]);
-            assert!(resolved.uv_rects.is_empty());
-            issues
-        };
+        let mut issues = Vec::new();
+        assert_eq!(sampler_atlases(&layout, None, |_| true, &mut issues), [None]);
+        assert_eq!(issues, [UniformIssue::NoTexture]);
 
-        assert_eq!(resolve(None), [UniformIssue::Missing("texSampler".to_string())]);
+        issues.clear();
+        let texture = Texture::full(99);
         assert_eq!(
-            resolve(Some(UniformValue::Float(1.0))),
-            [UniformIssue::NotATexture {
-                name: "texSampler".to_string(),
-                found: "float"
-            }]
+            sampler_atlases(&layout, Some(&texture), |_| false, &mut issues),
+            [None]
         );
-        assert_eq!(
-            resolve(Some(UniformValue::Texture(99))),
-            [UniformIssue::UnknownTexture {
-                name: "texSampler".to_string(),
-                texture: 99
-            }]
-        );
+        assert_eq!(issues, [UniformIssue::UnknownAtlas(99)]);
+    }
+
+    #[test]
+    fn shaders_without_samplers_need_no_texture() {
+        let layout = ShaderLayout::default();
+        let mut issues = Vec::new();
+        assert!(sampler_atlases(&layout, None, |_| true, &mut issues).is_empty());
+        assert_eq!(issues, []);
     }
 
     #[test]
@@ -367,8 +382,7 @@ mod tests {
         let layout = ShaderLayout::reflect(VERT, FRAG).unwrap();
         let mut node = Uniforms::new();
         node.set("view", 1.0f32) // wrong type
-            .set("extra", Vec4::new(0.0, 0.0, 0.0, 0.0)) // not in the shader
-            .set("texSampler", UniformValue::Texture(0)); // sampler: fine
+            .set("extra", Vec4::new(0.0, 0.0, 0.0, 0.0)); // not in the shader
         let values = UniformValues {
             engine: &[],
             node: &node,

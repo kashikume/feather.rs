@@ -15,24 +15,26 @@ What works today:
 - Windowing and event loop via [`winit`](https://github.com/rust-windowing/winit)
 - Scene graph made of nodes with transforms, visibility, meshes and materials; every visible node
   with a mesh and a material is drawn
-- Scene objects (meshes, nodes, atlases, textures, shaders, materials) stored in the scene and
-  referenced by handle
-- Mesh builders: Wavefront `.obj` loading (via `tobj`) and procedural cuboids
-- Atlases loaded from PNG (any color type, converted to 8-bit RGBA), with textures cut from them
-- Shaders (SPIR-V) and materials (a shader plus uniform values, textures included); each
-  shader's uniform blocks, push constants and samplers are read from its SPIR-V, and each shader
-  gets its own pipeline
+- Scene objects (meshes, nodes, atlases, shaders, materials) stored in the scene and referenced
+  by handle
+- Mesh builders: Wavefront `.obj` loading (via `tobj`), procedural cuboids and subdivided planes
+- Atlases loaded from PNG (any color type, converted to 8-bit RGBA) with optional `.atlas`
+  metadata naming their textures; textures are plain values taken from an atlas
+- Shaders (SPIR-V) and materials (a shader, a texture and uniform values); each shader's uniform
+  blocks, push constants and samplers are read from its SPIR-V, and each shader gets its own
+  pipeline
 - Uniforms on materials and nodes, inherited down the scene graph
 - Assets loaded through a platform-specific `AssetsProvider`
 - Scenes described in JSON files, with objects referring to each other by name
 - Perspective camera
-- Textures from atlases, uploaded with mipmaps; textures that are part of an atlas pass their UV
-  rectangle to the shader
+- Atlases uploaded with mipmaps; a material's texture passes its UV rectangle to the shader
+  (`umin`, `umax`, `vmin`, `vmax` uniforms)
+- Atlases built from `.atlist` image lists by the atlas creator during the build
 - MSAA
 - Vulkan validation layers turned on automatically in debug builds
 
 > The renderer draws every visible node that has a mesh and a material, with the material's
-> shader, the node's uniforms and the textures they name. Only the first scene is drawn. See
+> shader and texture, and the node's uniforms. Only the first scene is drawn. See
 > [doc/todo](doc/todo/node-uniforms-rendering.md) for the plan and known limitations.
 
 ## Requirements
@@ -65,6 +67,7 @@ only command line argument is the number of the demo to start with (default 0). 
 | ---- | ----------- | -------------------------------------------------------------------- |
 | 0    | Viking room | A model with a texture, loaded from a [scene file](#scene-files)     |
 | 1    | Cuboid      | A textured cuboid from its scene file: a node spun in code holds a node scaled in the file |
+| 2    | Atlas       | 16 plates in a 4×4 grid waving in the wind, each showing one texture of an atlas built from 16 images |
 
 Each demo is in its own file, `apps/testapp/src/testapp/demo_NNN_<name>.rs`, and its resources
 are named `demo_NNN_<name>_<kind>` (`scene`, `atlas`, `mesh`, `shader`, ...). Demos are listed in
@@ -92,11 +95,23 @@ The engine's own `build.rs` compiles the shaders its unit tests use, from
 which look for `glslc` in this order: the `GLSLC` environment variable, `$VULKAN_SDK/Bin/glslc`,
 then `glslc` on `PATH`.
 
+### Atlases
+
+The test app's `build.rs` also packs the images listed in every `apps/testapp/atlases/<name>.atlist`
+into an atlas, with the atlas creator (`tools/atlas-creator`, used as a library through
+`feather_build::build_atlases`). An `.atlist` file lists PNG files, one per line, relative to the
+list. The result is `<name>.png` (the atlas) and `<name>.atlas` (its metadata: one
+`image-name x y width height` line per image, in pixels), copied to `assets/`. Each atlas gets the
+smallest size from 64×32, 64×64, 128×64, ... that its images fit in, with a 1-pixel frame
+around every image. The generated atlases are not in the repository, only the images and lists:
+demo 2's are `apps/testapp/atlases/demo_002_atlas_atlas.atlist` and
+`apps/testapp/atlases/demo_002_atlas/plate_01.png` ... `plate_16.png`.
+
 ## Assets
 
 The test app's `build.rs` copies everything in `apps/testapp/resources/` to an `assets/`
 directory next to the executable (e.g. `target/debug/assets/`), together with the compiled
-shaders. It copies again whenever anything in `resources/` changes.
+shaders and the generated atlases. It copies again whenever anything in `resources/` changes.
 
 At runtime assets are read through the `AssetsProvider` trait, which has one implementation per
 platform:
@@ -115,7 +130,13 @@ let assets = create_assets_provider("assets")?;
 let bytes = assets.get_asset("demo_000_viking_room_shader.vert.spv")?;
 let mesh = MeshBuilderObjFile::new(&*assets, "demo_000_viking_room_mesh.obj")?
     .build(&mut scene, Some("Room".to_string()))?;
-let atlas = scene.create_atlas_from_png(&*assets, "demo_000_viking_room_atlas.png", None)?;
+let atlas = scene.create_atlas_from_png(&*assets, "demo_000_viking_room_atlas.png", None, None)?;
+let plates = scene.create_atlas_from_png(
+    &*assets,
+    "demo_002_atlas_atlas.png",
+    Some("demo_002_atlas_atlas.atlas"),
+    Some("Plates".to_string()),
+)?;
 ```
 
 Atlases and meshes can also be built from bytes already in memory (`Atlas::new_from_png_bytes`,
@@ -170,9 +191,9 @@ crates/
     scenefile.rs     loading a scene from a JSON file
     objdb.rs         handle-based object storage used by the scene
     node.rs          scene graph node (mesh, material, uniforms)
-    mesh*.rs         meshes and mesh builders (.obj file, cuboid)
+    mesh*.rs         meshes and mesh builders (.obj file, cuboid, plane)
     atlas.rs, texture.rs
-                     images loaded from PNG and textures cut from them
+                     images loaded from PNG with their .atlas metadata, and textures cut from them
     gpuimage.rs      atlases uploaded to the GPU, and the texture sampler
     shader.rs, material.rs
                      SPIR-V shaders and materials
@@ -185,16 +206,18 @@ crates/
     camera.rs, perspectivecamera.rs
     instance.rs, physicaldevice.rs, logicaldevice.rs, swapchain.rs, pipeline.rs, ...
                      Vulkan object wrappers
-  feather-build/     build script helpers: compiling shaders with glslc, copying assets
+  feather-build/     build script helpers: compiling shaders with glslc, creating atlases,
+                     copying assets
 apps/
   testapp/           development application (binary `testapp`)
     src/main.rs      entry point: creates the window and starts the engine with TestApp
     src/testapp/     one file per demo, testapp.rs switches them
     shaders/         GLSL sources, compiled by build.rs
+    atlases/         .atlist image lists and their images, packed into atlases by build.rs
     resources/       scene files, models and textures, copied to assets/ by build.rs
-    build.rs         compiles shaders to SPIR-V and copies assets next to the executable
+    build.rs         compiles shaders, builds atlases and copies assets next to the executable
 tools/
-  atlas-creator/     command line tool packing PNG images into an atlas
+  atlas-creator/     packs PNG images into an atlas: command line tool and library
 doc/                 scene file format and plans
 ```
 
@@ -237,8 +260,10 @@ let room_node = scene.find_node("Room").unwrap();
 ```
 
 Scenes can also be built in code, with `create_root_node`, `create_node`, `MeshBuilderCuboid`,
-`MeshBuilderObjFile`, `create_shader`, `create_atlas_from_png`, `create_material` and the other
-`Scene` methods.
+`MeshBuilderPlane`, `MeshBuilderObjFile`, `create_shader`, `create_atlas_from_png`,
+`create_material`, `material_set_texture` and the other `Scene` methods. Demo 2
+(`demo_002_atlas.rs`) loads its atlas, mesh and shader from a scene file and creates a material and
+a node for every texture of the atlas in code.
 
 `main.rs` passes the app to the engine:
 
@@ -260,23 +285,33 @@ A node's own uniforms are passed down to its children; its material's uniforms a
 
 ### Textures
 
-A `sampler2D` uniform takes a `UniformValue::Texture(handle)`; the sampler is bound to that
-texture's atlas. A texture can cover a rectangle of its atlas (`Texture::new`). Shaders always
-sample the whole atlas, so to use only the texture's part, declare a `vec4` uniform named after
-the sampler plus `Rect` and map the texture coordinates with it:
+An atlas is an image with optional metadata (a `.atlas` file) naming rectangles of it. A
+`Texture` is a plain value, not a scene object: get it from the atlas, by name or for the whole
+atlas, and give it to a material:
 
-```glsl
-layout(binding = 1) uniform sampler2D texSampler;
-layout(binding = 2) uniform Material { vec4 texSamplerRect; } material;
-...
-outColor = texture(texSampler, material.texSamplerRect.xy + uv * material.texSamplerRect.zw);
+```rust
+let atlas = scene.get_atlas(atlas_handle).unwrap();
+let texture = atlas.get_texture("plate_01").unwrap(); // or atlas.get_full_texture()
+scene.material_set_texture(material, Some(texture))?;
 ```
 
-The engine fills `texSamplerRect` with (u_min, v_min, u_range, v_range). A sampler without a
-valid texture shows magenta, and a warning is logged.
+Every sampler of the material's shader samples the texture's atlas. Shaders always sample the
+whole atlas; to use only the texture's rectangle, declare `float` uniforms for its edges, name
+them in the shader's `ShaderUniformNames` (`umin`, `umax`, `vmin`, `vmax`, like the `model`,
+`view` and `projection` matrices) and map the texture coordinates with them:
 
-When drawing, the engine adds the node's global transform and the camera's view and projection
-under the names given to `create_shader`, then writes every value into the shader's uniform
+```glsl
+layout(binding = 1) uniform sampler2D atlas;
+layout(binding = 2) uniform TextureRect { float umin; float umax; float vmin; float vmax; } rect;
+...
+outColor = texture(atlas, mix(vec2(rect.umin, rect.vmin), vec2(rect.umax, rect.vmax), uv));
+```
+
+`v` is 0 at the top row of the atlas image. A shader with samplers whose material has no texture
+shows magenta, and a warning is logged.
+
+When drawing, the engine adds the node's global transform, the camera's view and projection and
+the edges of the material's texture under the names given to `create_shader`, then writes every value into the shader's uniform
 blocks and push constants by name, at the offsets read from the shader's SPIR-V. A uniform with
 no value, a value of the wrong type, or a value the shader doesn't use is logged once as a
 warning.
@@ -285,24 +320,20 @@ warning.
 
 `Scene::load(assets, "name.scene.json")` builds a scene from a JSON file. The full format is
 described in [doc/scene-format.md](doc/scene-format.md). The file lists the
-atlases, textures, meshes, shaders and materials, and describes the node tree from the root.
+atlases, meshes, shaders and materials, and describes the node tree from the root.
 Objects refer to each other by name; files are asset names read through the `AssetsProvider`,
 so the scene file holds no binary data. The viking room:
 
 ```json
 {
-  "atlases":  [{ "name": "Room atlas", "file": "demo_000_viking_room_atlas.png" }],
-  "textures": [{ "name": "Room texture", "atlas": "Room atlas" }],
+  "atlases":  [{ "name": "Room atlas", "bitmap": "demo_000_viking_room_atlas.png" }],
   "meshes":   [{ "name": "Room", "file": "demo_000_viking_room_mesh.obj" }],
   "shaders":  [{
     "name": "Basic",
     "vertex": "demo_000_viking_room_shader.vert.spv", "fragment": "demo_000_viking_room_shader.frag.spv",
     "model_uniform": "model", "view_uniform": "view", "projection_uniform": "proj"
   }],
-  "materials": [{
-    "name": "Room", "shader": "Basic",
-    "uniforms": { "texSampler": { "texture": "Room texture" } }
-  }],
+  "materials": [{ "name": "Room", "shader": "Basic", "texture": { "atlas": "Room atlas" } }],
   "root": {
     "name": "Scene root",
     "children": [{ "name": "Room", "mesh": "Room", "material": "Room" }]
@@ -312,17 +343,15 @@ so the scene file holds no binary data. The viking room:
 
 | Item | Fields |
 | ---- | ------ |
-| atlas | `name`, `file` (PNG) |
-| texture | `name`, `atlas`, optional `rect` `[u_min, v_min, u_range, v_range]`; without `rect` it covers the whole atlas and becomes its full texture |
-| mesh | `name`, and either `file` (OBJ) or `cuboid` (optional `x`, `y`, `z` as `[min, max]`; `{}` is a 1×1×1 cube) |
-| shader | `name`, `vertex`, `fragment` (SPIR-V), optional `model_uniform`, `view_uniform`, `projection_uniform` |
-| material | `name`, `shader`, optional `uniforms` |
+| atlas | `name`, `bitmap` (PNG), optional `metadata` (`.atlas`) |
+| mesh | `name`, and one of `file` (OBJ), `cuboid` (optional `x`, `y`, `z` as `[min, max]`; `{}` is a 1×1×1 cube) or `plane` (optional `x`, `y` as `[min, max]` and `segments` `[columns, rows]`) |
+| shader | `name`, `vertex`, `fragment` (SPIR-V), optional `model_uniform`, `view_uniform`, `projection_uniform`, `umin_uniform`, `umax_uniform`, `vmin_uniform`, `vmax_uniform` |
+| material | `name`, `shader`, optional `texture` (`{ "atlas": ..., "name": ... }`; without `name` the whole atlas), optional `uniforms` |
 | node | all optional: `name`, `mesh`, `material`, `transform`, `visible`, `uniforms`, `children` |
 
 - Names must be unique within each list. Nodes are found with `Scene::find_node(name)`.
 - Uniform values are written as `{ "<glsl type>": value }`: `float`, `int`, `uint`, `bool`,
-  `vec2`–`vec4`, `ivec2`–`ivec4`, `uvec2`–`uvec4` (arrays), `mat2`–`mat4` (column-major arrays),
-  or `texture` with a texture name.
+  `vec2`–`vec4`, `ivec2`–`ivec4`, `uvec2`–`uvec4` (arrays) or `mat2`–`mat4` (column-major arrays).
 - `transform` is either `matrix` (16 numbers, column-major) or any of `translation` `[x, y, z]`,
   `rotation` `[x, y, z]` in degrees (around X, then Y, then Z) and `scale` (a number or
   `[x, y, z]`).

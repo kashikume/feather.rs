@@ -1,72 +1,59 @@
-use super::math::Vec4;
-use super::object::Object;
-
 /// A rectangle of an atlas, used as a texture. Coordinates are in UV space (0..1 across the
-/// atlas).
+/// atlas, `v` = 0 at the top row of the image).
 ///
-/// Shaders sample the whole atlas; to use only the texture's rectangle, a shader declares a
-/// `vec4 <sampler>Rect` uniform next to its sampler (e.g. `texSamplerRect` for `texSampler`),
-/// which the engine fills with `get_uv_rect`, and maps its coordinates with
-/// `rect.xy + uv * rect.zw`.
+/// A texture is a plain value: get one from its atlas (`Atlas::get_texture`,
+/// `Atlas::get_full_texture`) and store it where it is used, e.g. in a `Material`.
+///
+/// Shaders sample the whole atlas. To use only the texture's rectangle, a shader declares
+/// `float` uniforms for its edges and names them in its `ShaderUniformNames` (`umin`, `umax`,
+/// `vmin`, `vmax`); the engine fills them from the material's texture, and the shader maps its
+/// coordinates with `mix(vec2(umin, vmin), vec2(umax, vmax), uv)`.
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Texture {
-    name: Option<String>,
-    handle: usize,
     /// Handle of the atlas in `Scene::atlases`.
     atlas: usize,
     u_min: f32,
+    u_max: f32,
     v_min: f32,
-    u_range: f32,
-    v_range: f32,
-}
-
-impl Object for Texture {
-    fn get_name(&self) -> Option<String> {
-        self.name.clone()
-    }
-
-    fn set_handle(&mut self, handle: usize) {
-        self.handle = handle;
-    }
-
-    fn get_handle(&self) -> usize {
-        self.handle
-    }
+    v_max: f32,
 }
 
 impl Texture {
-    /// A texture covering the rectangle that starts at (`u_min`, `v_min`) and is `u_range`
-    /// wide and `v_range` high, in UV space.
-    pub fn new(
-        name: Option<String>,
-        atlas: usize,
-        u_min: f32,
-        v_min: f32,
-        u_range: f32,
-        v_range: f32,
-    ) -> Self {
+    /// A texture of atlas `atlas` covering `u_min..u_max` and `v_min..v_max` in UV space.
+    pub fn new(atlas: usize, u_min: f32, u_max: f32, v_min: f32, v_max: f32) -> Self {
         Self {
-            name,
-            handle: usize::MAX,
             atlas,
             u_min,
+            u_max,
             v_min,
-            u_range,
-            v_range,
+            v_max,
         }
     }
 
     /// A texture covering the whole atlas.
-    pub fn full_atlas(name: Option<String>, atlas: usize) -> Self {
-        Self::new(name, atlas, 0.0, 0.0, 1.0, 1.0)
+    pub fn full(atlas: usize) -> Self {
+        Self::new(atlas, 0.0, 1.0, 0.0, 1.0)
     }
 
+    /// Handle of the atlas (in `Scene::atlases`).
     pub fn get_atlas(&self) -> usize {
         self.atlas
     }
 
-    /// The texture's rectangle as (u_min, v_min, u_range, v_range).
-    pub fn get_uv_rect(&self) -> Vec4 {
-        Vec4::new(self.u_min, self.v_min, self.u_range, self.v_range)
+    pub fn get_u_min(&self) -> f32 {
+        self.u_min
+    }
+
+    pub fn get_u_max(&self) -> f32 {
+        self.u_max
+    }
+
+    pub fn get_v_min(&self) -> f32 {
+        self.v_min
+    }
+
+    pub fn get_v_max(&self) -> f32 {
+        self.v_max
     }
 }
 
@@ -75,18 +62,32 @@ mod tests {
     use super::*;
 
     #[test]
-    fn full_atlas_covers_everything() {
-        let texture = Texture::full_atlas(Some("all".to_string()), 3);
-        assert_eq!(texture.get_name(), Some("all".to_string()));
+    fn full_covers_everything() {
+        let texture = Texture::full(3);
         assert_eq!(texture.get_atlas(), 3);
-        assert_eq!(texture.get_handle(), usize::MAX);
-        assert_eq!(texture.get_uv_rect(), Vec4::new(0.0, 0.0, 1.0, 1.0));
+        assert_eq!(
+            (
+                texture.get_u_min(),
+                texture.get_u_max(),
+                texture.get_v_min(),
+                texture.get_v_max()
+            ),
+            (0.0, 1.0, 0.0, 1.0)
+        );
     }
 
     #[test]
     fn new_keeps_rectangle() {
-        let texture = Texture::new(None, 1, 0.5, 0.25, 0.5, 0.125);
+        let texture = Texture::new(1, 0.5, 1.0, 0.25, 0.375);
         assert_eq!(texture.get_atlas(), 1);
-        assert_eq!(texture.get_uv_rect(), Vec4::new(0.5, 0.25, 0.5, 0.125));
+        assert_eq!(
+            (
+                texture.get_u_min(),
+                texture.get_u_max(),
+                texture.get_v_min(),
+                texture.get_v_max()
+            ),
+            (0.5, 1.0, 0.25, 0.375)
+        );
     }
 }

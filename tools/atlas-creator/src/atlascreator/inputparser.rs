@@ -1,6 +1,6 @@
 use std::fs;
 use std::io::Read;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug)]
 pub struct InputParser {
@@ -18,6 +18,28 @@ pub struct InputParser {
 pub struct InputParserError;
 
 impl InputParser {
+    /// Options for creating a `width` x `height` atlas from the `.atlist` file `input_list`,
+    /// written to `output_png` and `output_meta`. The input list is not read yet.
+    pub fn new(
+        input_list: &Path,
+        output_png: &Path,
+        output_meta: &Path,
+        width: usize,
+        height: usize,
+    ) -> InputParser {
+        InputParser {
+            width,
+            height,
+            output_file_name: output_png.to_string_lossy().into_owned(),
+            meta_file_name: output_meta.to_string_lossy().into_owned(),
+            input_list_file_name: input_list.to_path_buf(),
+            verbose: false,
+            debug: false,
+            debug_rects: false,
+            input_files: vec![],
+        }
+    }
+
     pub fn from_commandline(args: &Vec<String>) -> Result<InputParser, InputParserError> {
         let mut output = InputParser {
             width: 512,
@@ -117,7 +139,12 @@ impl InputParser {
             Ok(_) => (),
         };
 
-        self.input_files = buf.lines().map(PathBuf::from).collect();
+        self.input_files = buf
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .map(PathBuf::from)
+            .collect();
 
         if self.verbose {
             println!("List of files to include: {:?}", self.input_files);
@@ -130,7 +157,7 @@ impl InputParser {
 #[cfg(test)]
 mod test {
     use std::fs;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
 
     use super::InputParser;
     use crate::atlascreator::testutil::TempDir;
@@ -238,7 +265,7 @@ mod test {
     fn load_input_list_reads_one_file_per_line() {
         let dir = TempDir::new("load_input_list_reads_one_file_per_line");
         let list = dir.join("list.atlist");
-        fs::write(&list, "a.png\r\nsub/b.png\nc.png\n").unwrap();
+        fs::write(&list, "a.png\r\nsub/b.png\n\n  \nc.png\n").unwrap();
 
         let mut input = parse(REQUIRED).unwrap();
         input.input_list_file_name = list;
@@ -249,6 +276,23 @@ mod test {
             .map(PathBuf::from)
             .collect();
         assert_eq!(input.input_files, expected);
+    }
+
+    #[test]
+    fn new_sets_files_and_size() {
+        let input = InputParser::new(
+            Path::new("in/list.atlist"),
+            Path::new("out/a.png"),
+            Path::new("out/a.atlas"),
+            256,
+            128,
+        );
+        assert_eq!(input.input_list_file_name, PathBuf::from("in/list.atlist"));
+        assert_eq!(input.output_file_name, "out/a.png");
+        assert_eq!(input.meta_file_name, "out/a.atlas");
+        assert_eq!((input.width, input.height), (256, 128));
+        assert!(!input.verbose && !input.debug && !input.debug_rects);
+        assert!(input.input_files.is_empty());
     }
 
     #[test]

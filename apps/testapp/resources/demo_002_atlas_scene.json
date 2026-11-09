@@ -1,0 +1,36 @@
+{
+  "atlases": [
+    {
+      "name": "Plates",
+      "bitmap": "demo_002_atlas_atlas.png",
+      "metadata": "demo_002_atlas_atlas.atlas"
+    }
+  ],
+  "meshes": [
+    { "name": "Plate", "plane": { "x": [-0.5, 0.5], "y": [-1, 0], "segments": [12, 12] } }
+  ],
+  "shaders": [
+    {
+      "name": "Waving",
+      "vertex": "demo_002_atlas_shader.vert.spv",
+      "fragment": "demo_002_atlas_shader.frag.spv",
+      "model_uniform": "model",
+      "view_uniform": "view",
+      "projection_uniform": "proj",
+      "umin_uniform": "umin",
+      "umax_uniform": "umax",
+      "vmin_uniform": "vmin",
+      "vmax_uniform": "vmax"
+    }
+  ],
+  "root": {
+    "name": "Scene root",
+    "children": [
+      {
+        "name": "Plates",
+        "transform": { "rotation": [90, 0, 0] },
+        "uniforms": { "time": { "float": 0 } }
+      }
+    ]
+  }
+}

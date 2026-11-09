@@ -532,7 +532,6 @@ mod tests {
         assert!(UniformType::Mat4.accepts(&UniformValue::Mat4(Mat4::identity())));
         assert!(UniformType::UInt.accepts(&UniformValue::Bool(true)));
         assert!(!UniformType::Float.accepts(&UniformValue::Int(1)));
-        assert!(!UniformType::Mat4.accepts(&UniformValue::Texture(0)));
     }
 
     const TYPES_VERT: &[u8] =

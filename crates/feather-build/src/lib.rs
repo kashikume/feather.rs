@@ -1,6 +1,7 @@
 //! Helpers for the build scripts (`build.rs`) of the feather crates and apps.
 //!
 //! - [`compile_shaders`] compiles GLSL shaders to SPIR-V with `glslc`.
+//! - [`build_atlases`] packs the images listed in `.atlist` files into atlases.
 //! - [`copy_dir`], [`copy_file`] and [`assets_dir`] put an app's assets next to its executable.
 //!
 //! `glslc` is looked up in this order (see [`find_glslc`]):
@@ -136,6 +137,72 @@ pub fn copy_file(source: &Path, target: &Path) {
             target.display()
         )
     });
+}
+
+/// An atlas created by [`build_atlases`].
+pub struct BuiltAtlas {
+    /// The input list, e.g. `atlases/sprites.atlist`.
+    pub source: PathBuf,
+    /// The atlas image, e.g. `$OUT_DIR/atlases/sprites.png`.
+    pub png: PathBuf,
+    /// The metadata, e.g. `$OUT_DIR/atlases/sprites.atlas`.
+    pub metadata: PathBuf,
+    pub width: usize,
+    pub height: usize,
+}
+
+/// Atlas sizes [`build_atlases`] tries, smallest first: powers of two from 64 to 8192, each
+/// as a 2:1 rectangle and then as a square.
+fn atlas_sizes() -> impl Iterator<Item = (usize, usize)> {
+    (6..=13).flat_map(|p| [(1 << p, 1 << (p - 1)), (1 << p, 1 << p)])
+}
+
+/// Creates an atlas for every `.atlist` file directly in `atlas_dir` with the atlas creator:
+/// `atlas_dir/<name>.atlist` -> `out_dir/<name>.png` and `out_dir/<name>.atlas`. Each atlas
+/// gets the smallest size from 64x32, 64x64, 128x64, ... 8192x8192 its images fit in.
+///
+/// An `.atlist` file lists PNG images, one per line, relative to the list. Prints
+/// `cargo:rerun-if-changed` for `atlas_dir` (Cargo then watches every file in it). Panics
+/// (failing the build) if an atlas can't be created.
+pub fn build_atlases(atlas_dir: &Path, out_dir: &Path) -> Vec<BuiltAtlas> {
+    println!("cargo:rerun-if-changed={}", atlas_dir.display());
+    fs::create_dir_all(out_dir)
+        .unwrap_or_else(|e| panic!("failed to create {}: {e}", out_dir.display()));
+
+    let mut lists: Vec<PathBuf> = fs::read_dir(atlas_dir)
+        .unwrap_or_else(|e| panic!("failed to read dir {}: {e}", atlas_dir.display()))
+        .map(|entry| entry.expect("failed to read dir entry").path())
+        .filter(|path| path.is_file() && path.extension().is_some_and(|e| e == "atlist"))
+        .collect();
+    lists.sort();
+
+    lists
+        .into_iter()
+        .map(|source| {
+            let stem = source.file_stem().unwrap();
+            let png = out_dir.join(stem).with_extension("png");
+            let metadata = out_dir.join(stem).with_extension("atlas");
+            for (width, height) in atlas_sizes() {
+                match atlas_creator::create_atlas(&source, &png, &metadata, width, height) {
+                    Ok(()) => {
+                        return BuiltAtlas {
+                            source,
+                            png,
+                            metadata,
+                            width,
+                            height,
+                        }
+                    }
+                    Err(atlas_creator::AtlasError::DoesNotFit) => continue,
+                    Err(e) => panic!("failed to create atlas {}: {e}", source.display()),
+                }
+            }
+            panic!(
+                "failed to create atlas {}: the images don't fit in 8192x8192",
+                source.display()
+            )
+        })
+        .collect()
 }
 
 /// Finds `glslc`: `$GLSLC`, then the Vulkan SDK, then `PATH`.

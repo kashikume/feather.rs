@@ -26,10 +26,13 @@ impl Images {
         for file in input.input_files.iter() {
             let png_file_name = path.join(file);
 
-            let decoder = png::Decoder::new(File::open(png_file_name.clone()).unwrap());
-            let mut reader = decoder.read_info().unwrap();
-            let mut buf = vec![0; reader.output_buffer_size()];
-            let info = reader.next_frame(&mut buf).unwrap();
+            let info = match read_png_info(&png_file_name) {
+                Ok(info) => info,
+                Err(why) => {
+                    println!("Unable to read {:?}: {}", png_file_name, why);
+                    return Err(());
+                }
+            };
 
             let img = Image {
                 file_name: png_file_name,
@@ -260,6 +263,14 @@ impl Images {
     }
 }
 
+/// Size of a PNG file.
+fn read_png_info(path: &Path) -> Result<png::OutputInfo, Box<dyn std::error::Error>> {
+    let decoder = png::Decoder::new(File::open(path)?);
+    let mut reader = decoder.read_info()?;
+    let mut buf = vec![0; reader.output_buffer_size()];
+    Ok(reader.next_frame(&mut buf)?)
+}
+
 #[cfg(test)]
 mod test {
     use std::path::PathBuf;
@@ -354,6 +365,16 @@ mod test {
         assert_eq!(found, vec![("big", 4, 4), ("wide", 8, 1), ("small", 2, 3)]);
         // Files are relative to the directory of the input list.
         assert_eq!(image(&images, "big").file_name, dir.join("big.png"));
+    }
+
+    #[test]
+    fn check_images_fails_for_missing_or_invalid_files() {
+        let dir = TempDir::new("check_images_fails_for_missing_or_invalid_files");
+        fs::write(dir.join("not_png.png"), b"text").unwrap();
+        for file in ["missing.png", "not_png.png"] {
+            let input = input(&dir, 16, 16, &[file]);
+            assert!(Images::new(&input).check_images(&input).is_err(), "{file}");
+        }
     }
 
     #[test]

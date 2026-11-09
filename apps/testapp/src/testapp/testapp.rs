@@ -8,6 +8,7 @@ use feather::scene::Scene;
 
 use super::demo_000_viking_room::VikingRoomDemo;
 use super::demo_001_cuboid::CuboidDemo;
+use super::demo_002_atlas::AtlasDemo;
 
 /// One demo of the test app: a scene, the camera looking at it, and its animation.
 pub trait Demo {
@@ -32,6 +33,10 @@ pub const DEMOS: &[DemoInfo] = &[
     DemoInfo {
         name: "Cuboid",
         create: |assets| Ok(Box::new(CuboidDemo::new(assets)?)),
+    },
+    DemoInfo {
+        name: "Atlas",
+        create: |assets| Ok(Box::new(AtlasDemo::new(assets)?)),
     },
 ];
 
@@ -132,17 +137,23 @@ mod tests {
 
     use super::*;
 
-    /// The assets the app gets at runtime: `resources/` plus the shaders compiled by `build.rs`.
+    /// The assets the app gets at runtime: `resources/` plus the shaders and atlases built by
+    /// `build.rs`.
     struct SourceAssets;
 
     impl AssetsProvider for SourceAssets {
         fn get_asset(&self, name: &str) -> Result<Vec<u8>> {
-            let dir = if name.ends_with(".spv") {
-                concat!(env!("OUT_DIR"), "/shaders")
-            } else {
-                concat!(env!("CARGO_MANIFEST_DIR"), "/resources")
-            };
-            std::fs::read(Path::new(dir).join(name)).with_context(|| format!("asset {name}"))
+            let dirs = [
+                concat!(env!("CARGO_MANIFEST_DIR"), "/resources"),
+                concat!(env!("OUT_DIR"), "/shaders"),
+                concat!(env!("OUT_DIR"), "/atlases"),
+            ];
+            let path = dirs
+                .iter()
+                .map(|dir| Path::new(dir).join(name))
+                .find(|path| path.is_file())
+                .with_context(|| format!("asset {name} not found"))?;
+            std::fs::read(&path).with_context(|| format!("asset {name}"))
         }
     }
 
@@ -181,5 +192,56 @@ mod tests {
         assert!(cube.get_mesh().is_some());
         assert!(cube.get_material().is_some());
         assert_ne!(cube.get_transform(), Mat4::identity());
+    }
+
+    #[test]
+    fn atlas_demo_has_a_plate_per_atlas_texture() {
+        let mut demo = demo(2);
+        let scene = demo.scene();
+
+        let atlas_handle = scene.find_atlas("Plates").unwrap();
+        let atlas = scene.get_atlas(atlas_handle).unwrap();
+        let names = atlas.get_texture_names();
+        assert_eq!(names.len(), 16, "{names:?}");
+
+        // Every plate hangs from `Plates`, with its own material showing its own texture.
+        let plates = scene.find_node("Plates").unwrap();
+        assert_eq!(scene.get_node(plates).unwrap().get_children().len(), 16);
+        let mut rects = Vec::new();
+        for name in &names {
+            let node = scene.get_node(scene.find_node(name).unwrap()).unwrap();
+            assert_eq!(node.get_parent(), Some(plates));
+            assert!(node.get_mesh().is_some());
+            for uniform in ["phase", "speed", "strength"] {
+                assert!(node.uniforms().contains(uniform), "{name}: {uniform}");
+            }
+            let material = scene.get_material(node.get_material().unwrap()).unwrap();
+            let texture = *material.get_texture().unwrap();
+            assert_eq!(texture.get_atlas(), atlas_handle);
+            assert_eq!(Some(texture), atlas.get_texture(name));
+            assert!(texture.get_u_min() < texture.get_u_max());
+            assert!(texture.get_v_min() < texture.get_v_max());
+            rects.push(format!("{texture:?}"));
+        }
+        rects.sort();
+        rects.dedup();
+        assert_eq!(rects.len(), 16);
+
+        let shader = scene.get_shader(scene.find_shader("Waving").unwrap()).unwrap();
+        assert_eq!(shader.get_uniform_umin_name(), Some("umin"));
+        assert_eq!(shader.get_uniform_vmax_name(), Some("vmax"));
+    }
+
+    #[test]
+    fn atlas_demo_passes_the_time_to_the_plates() {
+        let mut demo = demo(2);
+        demo.update(2.5).unwrap();
+        let scene = demo.scene();
+        scene.update_nodes();
+        let plate = scene.get_node(scene.find_node("plate_07").unwrap()).unwrap();
+        assert_eq!(
+            plate.dynamic_uniforms().get("time"),
+            Some(&feather::uniform::UniformValue::Float(2.5))
+        );
     }
 }

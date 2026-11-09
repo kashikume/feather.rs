@@ -123,7 +123,7 @@ mod tests {
         uniforms
             .set("roughness", 0.5f32)
             .set("color", Vec4::new(1.0, 0.0, 0.0, 1.0))
-            .set("albedo", UniformValue::Texture(3));
+            .set("albedo", UniformValue::UInt(3));
 
         assert_eq!(uniforms.len(), 3);
         assert!(uniforms.contains("color"));
@@ -132,7 +132,7 @@ mod tests {
             uniforms.get("color"),
             Some(&UniformValue::Vec4(Vec4::new(1.0, 0.0, 0.0, 1.0)))
         );
-        assert_eq!(uniforms.get("albedo"), Some(&UniformValue::Texture(3)));
+        assert_eq!(uniforms.get("albedo"), Some(&UniformValue::UInt(3)));
         assert_eq!(uniforms.get("missing"), None);
         assert_index_consistent(&uniforms);
     }

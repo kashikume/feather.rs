@@ -37,8 +37,7 @@ use super::swapchain::Swapchain;
 use super::syncobjects::create_sync_objects;
 use super::gpuimage::{create_texture_sampler, GpuImage, UploadContext};
 use super::gpumeshbuffer::GpuMeshBuffer;
-use super::uniform::UniformValue;
-use super::uniformdata::{pack_draw, resolve_samplers, UniformArena, UniformValues};
+use super::uniformdata::{engine_uniforms, pack_draw, sampler_atlases, UniformArena, UniformValues};
 
 /// Our Vulkan app.
 pub struct App {
@@ -236,32 +235,20 @@ impl App {
                 continue;
             };
 
-            // Uniforms: the node's dynamic uniforms, plus the matrices the engine provides
-            // under the names the shader gave them.
-            let mut engine: Vec<(&str, UniformValue)> = [
-                (shader.get_uniform_model_name(), item.model),
-                (shader.get_uniform_view_name(), view),
-                (shader.get_uniform_proj_name(), proj),
-            ]
-            .into_iter()
-            .filter_map(|(name, matrix)| Some((name?, UniformValue::Mat4(matrix))))
-            .collect();
+            // The material's texture: every sampler samples its atlas (or the fallback
+            // texture), and its rectangle goes to the shader's umin/umax/vmin/vmax uniforms.
+            let texture = scene
+                .get_material(item.material)
+                .and_then(|m| m.get_texture());
             issues.clear();
-
-            // Textures: the atlas of each sampler's texture, and its UV rectangle under
-            // `<sampler>Rect`. Samplers without a valid texture get the fallback texture.
-            let samplers = resolve_samplers(
+            let atlases = sampler_atlases(
                 shader.get_layout(),
-                &UniformValues {
-                    engine: &engine,
-                    node: node.dynamic_uniforms(),
-                },
-                &scene.textures,
+                texture,
+                |a| scene.get_atlas(a).is_some(),
                 &mut issues,
             );
             let fallback_view = self.data.fallback_texture.as_ref().unwrap().view;
-            let texture_views = samplers
-                .atlases
+            let texture_views = atlases
                 .iter()
                 .map(|atlas| {
                     atlas
@@ -269,8 +256,16 @@ impl App {
                         .map_or(fallback_view, |image| image.view)
                 })
                 .collect();
-            engine.extend(samplers.uv_rects.iter().map(|(name, v)| (name.as_str(), *v)));
 
+            // Uniforms: the node's dynamic uniforms, plus the matrices and the texture
+            // rectangle the engine provides under the names the shader gave them.
+            let engine = engine_uniforms(
+                shader.get_uniform_names(),
+                item.model,
+                view,
+                proj,
+                texture,
+            );
             let values = UniformValues {
                 engine: &engine,
                 node: node.dynamic_uniforms(),
