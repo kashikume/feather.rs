@@ -77,7 +77,7 @@ mod tests {
 
     #[test]
     fn bad_arguments_fail_with_usage() {
-        for args in [&["9"][..], &["x"], &["-1"], &["0", "1"]] {
+        for args in [&["99"][..], &["x"], &["-1"], &["0", "1"]] {
             let err = parse(args).unwrap_err().to_string();
             assert!(err.contains("Usage: testapp [demo]"), "{err}");
             assert!(err.contains("0  Viking room"), "{err}");

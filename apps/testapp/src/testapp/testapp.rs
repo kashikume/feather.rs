@@ -15,6 +15,7 @@ use super::demo_005_globe::GlobeDemo;
 use super::demo_006_bouncing_balls::BouncingBallsDemo;
 use super::demo_007_vases::VasesDemo;
 use super::demo_008_walker::WalkerDemo;
+use super::demo_009_spider::SpiderDemo;
 
 /// One demo of the test app: a scene, the camera looking at it, and its animation.
 pub trait Demo {
@@ -67,6 +68,10 @@ pub const DEMOS: &[DemoInfo] = &[
     DemoInfo {
         name: "Walker",
         create: |assets| Ok(Box::new(WalkerDemo::new(assets)?)),
+    },
+    DemoInfo {
+        name: "Spider",
+        create: |assets| Ok(Box::new(SpiderDemo::new(assets)?)),
     },
 ];
 
@@ -444,6 +449,74 @@ mod tests {
         assert!((next - later).normalize().dot(facing) > 0.99);
     }
 
+    #[test]
+    fn spider_walks_with_alternating_legs() {
+        use cgmath::InnerSpace;
+
+        let mut demo = demo(9);
+        {
+            let scene = demo.scene();
+            for leg in ["L1", "L2", "L3", "L4", "R1", "R2", "R3", "R4"] {
+                for bone in ["Hip", "Femur", "Knee", "Ankle"] {
+                    assert!(scene.find_node(&format!("{leg}{bone}")).is_some(), "{leg}{bone}");
+                }
+            }
+            let atlas = scene.find_atlas("Spider").unwrap();
+            assert!(scene
+                .materials
+                .iter()
+                .all(|m| m.get_texture().map(|t| t.get_atlas()) == Some(atlas)));
+        }
+
+        // The tip of a leg: the end of its tarsus, 0.32 along the ankle bone's +X.
+        let tip_height = |scene: &mut Scene, leg: &str| {
+            scene.update_nodes();
+            let ankle = scene.find_node(&format!("{leg}Ankle")).unwrap();
+            let ankle = scene.get_node(ankle).unwrap();
+            let tip = ankle.get_global_transform().unwrap()
+                * feather::math::Vec4::new(0.32, 0.0, 0.0, 1.0);
+            tip.z
+        };
+        // Through the cycle (1 s), the spider always stands on at least three feet, with
+        // feet down on both sides; every leg lifts at some point, and legs that step in
+        // different groups (like the two front legs) are not up together.
+        let legs = ["L1", "L2", "L3", "L4", "R1", "R2", "R3", "R4"];
+        let mut lifted = [false; 8];
+        for step in 0..40 {
+            demo.update(step as f32 * 0.025).unwrap();
+            let scene = demo.scene();
+            let tips: Vec<f32> = legs.iter().map(|l| tip_height(scene, l)).collect();
+            let down: Vec<&str> = legs
+                .iter()
+                .zip(&tips)
+                .filter(|(_, &z)| z < 0.06)
+                .map(|(l, _)| *l)
+                .collect();
+            assert!(down.len() >= 3, "step {step}: only {down:?} on the floor: {tips:?}");
+            assert!(down.iter().any(|l| l.starts_with('L')), "step {step}: {tips:?}");
+            assert!(down.iter().any(|l| l.starts_with('R')), "step {step}: {tips:?}");
+            assert!(!(tips[0] > 0.08 && tips[4] > 0.08), "step {step}: both front legs up");
+            for (up, &z) in lifted.iter_mut().zip(&tips) {
+                *up |= z > 0.08;
+            }
+            // Feet never go far into the floor.
+            assert!(tips.iter().all(|&z| z > -0.05), "step {step}: {tips:?}");
+        }
+        assert!(lifted.iter().all(|&up| up), "not every leg lifts: {lifted:?}");
+
+        // It moves along the circle.
+        let position = |demo: &mut Box<dyn Demo>| {
+            let scene = demo.scene();
+            let spider = scene.find_node("Spider").unwrap();
+            let m = scene.get_node(spider).unwrap().get_transform();
+            feather::math::Vec3::new(m.w.x, m.w.y, m.w.z)
+        };
+        demo.update(0.0).unwrap();
+        let start = position(&mut demo);
+        demo.update(1.0).unwrap();
+        assert!((position(&mut demo) - start).magnitude() > 0.5);
+    }
+
     /// Checks that `Plates` holds a plate per texture of atlas `Plates`, each with its own
     /// material showing its own texture, drawn with `shader`.
     fn check_plates(scene: &Scene, shader: &str) {
@@ -516,4 +589,5 @@ mod tests {
             Some(&feather::uniform::UniformValue::Float(2.5))
         );
     }
+
 }

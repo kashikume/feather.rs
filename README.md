@@ -79,6 +79,7 @@ only command line argument is the number of the demo to start with (default 0). 
 | 6    | Bouncing balls | Balls dropping onto a floor plate, bouncing off its edge and out of the screen, in a loop, with semi-transparent shadows; no textures, every object has its own `color` uniform |
 | 7    | Vases       | 12 vases of 3 shapes (generated OBJ files with thick walls) in different sizes and colours on a turning floor plate; some opaque, some see-through glass, all from the scene file |
 | 8    | Walker      | A textured person walking in a circle: body parts hang from bones, moved by a walk-cycle animation clip |
+| 9    | Spider      | A textured spider walking in a circle with the same bone system: 8 legs of 4 bones each, in the alternating tetrapod gait |
 
 Each demo is in its own file, `apps/testapp/src/testapp/demo_NNN_<name>.rs`, and its resources
 are named `demo_NNN_<name>_<kind>` (`scene`, `atlas`, `mesh`, `shader`, ...). Demos are listed in
@@ -327,7 +328,7 @@ skeleton.apply(&mut scene, &walk.sample(time))?;
 Each key is `[time, [x, y, z]]`, times in seconds in `0..duration`, in increasing order. The
 animation is rigid: meshes hang from bones as child nodes (unnamed, so they aren't bones) and move
 as a whole; they don't bend at the joints (there is no mesh skinning). Demo 8 builds a person this
-way: see `demo_008_walker_scene.json`.
+way (`demo_008_walker_scene.json`), and demo 9 a spider (`demo_009_spider_scene.json`).
 
 ### Uniforms
 
