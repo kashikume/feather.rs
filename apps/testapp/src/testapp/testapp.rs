@@ -22,6 +22,7 @@ use super::demo_012_overlay::OverlayDemo;
 use super::demo_013_simple_shadow::SimpleShadowDemo;
 use super::demo_014_shadows::ShadowsDemo;
 use super::demo_015_city::CityDemo;
+use super::demo_016_city::CityAssetsDemo;
 
 /// One demo of the test app: a scene, the camera looking at it, and its animation. A demo may
 /// have more scenes, each with its own camera, drawn one over the other (`scene_count`).
@@ -117,6 +118,10 @@ pub const DEMOS: &[DemoInfo] = &[
     DemoInfo {
         name: "City",
         create: |assets| Ok(Box::new(CityDemo::new(assets)?)),
+    },
+    DemoInfo {
+        name: "City (assets)",
+        create: |assets| Ok(Box::new(CityAssetsDemo::new(assets)?)),
     },
 ];
 
@@ -889,5 +894,59 @@ mod tests {
         let texts: Vec<usize> = overlay.get_node(anchor).unwrap().get_children().iter().copied().collect();
         assert_eq!(texts.len(), 2);
         assert!(texts.iter().all(|&t| overlay.get_node(t).unwrap().get_mesh().is_some()));
+    }
+
+    #[test]
+    fn city_assets_demo_loads_objs_and_moves() {
+        let mut demo = demo(16);
+        let scene = demo.scene();
+        scene.build_missing_mesh_buffers().unwrap();
+        scene.update_nodes();
+
+        let sky = scene.find_node("Sky").unwrap();
+        let items = scene.draw_items();
+        assert!(items.len() > 500, "{} draws", items.len());
+        for item in items.iter().filter(|i| i.node != sky) {
+            let node = scene.get_node(item.node).unwrap();
+            assert!(item.casts_shadow, "{:?} casts no shadow", node.get_name());
+            let material = scene.get_material(item.material).unwrap();
+            assert!(
+                material.get_texture().is_some(),
+                "{:?} has no texture",
+                material.get_name()
+            );
+        }
+        assert!(scene.get_shadow_light().is_some());
+        let count = |name: &str| {
+            let group = scene.find_node(name).unwrap();
+            scene.get_node(group).unwrap().get_children().len()
+        };
+        assert!(count("Cars") >= 100, "{} cars", count("Cars"));
+        assert!(count("People") >= 100, "{} people", count("People"));
+
+        let positions = |demo: &mut Box<dyn Demo>, group: &str| -> Vec<Mat4> {
+            let scene = demo.scene();
+            let group = scene.get_node(scene.find_node(group).unwrap()).unwrap();
+            let mut nodes: Vec<usize> = group.get_children().iter().copied().collect();
+            nodes.sort();
+            nodes
+                .iter()
+                .map(|&n| scene.get_node(n).unwrap().get_transform())
+                .collect()
+        };
+        let cars = positions(&mut demo, "Cars");
+        let view = demo.camera().get_view();
+        for step in 1..=60 {
+            demo.update(step as f32 * 0.05).unwrap();
+        }
+        let cars_after = positions(&mut demo, "Cars");
+        let moved = cars
+            .iter()
+            .zip(&cars_after)
+            .filter(|(a, b)| a != b)
+            .count();
+        assert!(moved > cars.len() / 2, "cars don't move");
+        assert_ne!(demo.camera().get_view(), view);
+        assert_eq!(demo.scene_count(), 2);
     }
 }

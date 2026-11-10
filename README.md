@@ -98,6 +98,7 @@ only command line argument is the number of the demo to start with (default 0). 
 | 13   | Simple shadow | A human figure (a generated mesh) standing on a floor, casting its shadow from a fixed light; nothing moves, the shader takes one shadow-map sample |
 | 14   | Shadows     | A sun going round the sky over a ring of stone pillars, a spinning golden cube on a pedestal and bouncing balls; their soft-edged shadows turn and stretch with it |
 | 15   | City        | A busy city the camera glides through: 5 x 5 blocks of buildings in four styles, streets with lanes, crosswalks and traffic lights, trees, lamps and a park; over 100 cars stopping at red lights and keeping their distance, over 100 people walking; everything textured (textures painted in code, no image files) and casting shadows from the afternoon sun, with sky reflections on glass and fog into a sky dome; a 2D overlay shows the frame rate |
+| 16   | City (assets) | The same city as demo 15, but every model is an OBJ and every texture is a PNG packed into an atlas at build time (`tools/generate_demo_016_city_assets.py`); denser geometry (recessed windows, richer cars, people and trees) |
 
 Each demo is in its own file, `apps/testapp/src/testapp/demo_NNN_<name>.rs`, and its resources
 are named `demo_NNN_<name>_<kind>` (`scene`, `atlas`, `mesh`, `shader`, ...). Demos are listed in

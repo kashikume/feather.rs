@@ -1,0 +1,551 @@
+{
+  "atlases": [
+    {
+      "name": "City",
+      "bitmap": "demo_016_city_atlas.png",
+      "metadata": "demo_016_city_atlas.atlas"
+    }
+  ],
+  "meshes": [
+    {
+      "name": "glass_facade_mesh",
+      "file": "demo_016_city_glass_facade_mesh.obj"
+    },
+    {
+      "name": "brick_facade_mesh",
+      "file": "demo_016_city_brick_facade_mesh.obj"
+    },
+    {
+      "name": "concrete_facade_mesh",
+      "file": "demo_016_city_concrete_facade_mesh.obj"
+    },
+    {
+      "name": "stone_facade_mesh",
+      "file": "demo_016_city_stone_facade_mesh.obj"
+    },
+    {
+      "name": "roofs_mesh",
+      "file": "demo_016_city_roofs_mesh.obj"
+    },
+    {
+      "name": "roads_mesh",
+      "file": "demo_016_city_roads_mesh.obj"
+    },
+    {
+      "name": "intersections_mesh",
+      "file": "demo_016_city_intersections_mesh.obj"
+    },
+    {
+      "name": "crosswalks_mesh",
+      "file": "demo_016_city_crosswalks_mesh.obj"
+    },
+    {
+      "name": "sidewalks_mesh",
+      "file": "demo_016_city_sidewalks_mesh.obj"
+    },
+    {
+      "name": "curbs_mesh",
+      "file": "demo_016_city_curbs_mesh.obj"
+    },
+    {
+      "name": "grass_mesh",
+      "file": "demo_016_city_grass_mesh.obj"
+    },
+    {
+      "name": "tree_trunks_mesh",
+      "file": "demo_016_city_tree_trunks_mesh.obj"
+    },
+    {
+      "name": "tree_tops_mesh",
+      "file": "demo_016_city_tree_tops_mesh.obj"
+    },
+    {
+      "name": "poles_mesh",
+      "file": "demo_016_city_poles_mesh.obj"
+    },
+    {
+      "name": "traffic_lights_mesh",
+      "file": "demo_016_city_traffic_lights_mesh.obj"
+    },
+    {
+      "name": "sedan_mesh",
+      "file": "demo_016_city_sedan_mesh.obj"
+    },
+    {
+      "name": "hatchback_mesh",
+      "file": "demo_016_city_hatchback_mesh.obj"
+    },
+    {
+      "name": "suv_mesh",
+      "file": "demo_016_city_suv_mesh.obj"
+    },
+    {
+      "name": "taxi_mesh",
+      "file": "demo_016_city_taxi_mesh.obj"
+    },
+    {
+      "name": "person_mesh",
+      "file": "demo_016_city_person_mesh.obj"
+    },
+    {
+      "name": "leg_mesh",
+      "file": "demo_016_city_leg_mesh.obj"
+    },
+    {
+      "name": "lamp_mesh",
+      "file": "demo_016_city_lamp_mesh.obj"
+    },
+    {
+      "name": "sky_dome_mesh",
+      "file": "demo_016_city_sky_dome_mesh.obj"
+    }
+  ],
+  "shaders": [
+    {
+      "name": "Lit",
+      "vertex": "demo_016_city_shader.vert.spv",
+      "fragment": "demo_016_city_shader.frag.spv",
+      "model_uniform": "model",
+      "view_uniform": "view",
+      "projection_uniform": "proj",
+      "umin_uniform": "umin",
+      "umax_uniform": "umax",
+      "vmin_uniform": "vmin",
+      "vmax_uniform": "vmax",
+      "shadow_matrix_uniform": "lightViewProj",
+      "shadow_map_sampler": "shadowMap"
+    },
+    {
+      "name": "Sky",
+      "vertex": "demo_016_city_sky_shader.vert.spv",
+      "fragment": "demo_016_city_sky_shader.frag.spv",
+      "model_uniform": "model",
+      "view_uniform": "view",
+      "projection_uniform": "proj"
+    }
+  ],
+  "materials": [
+    {
+      "name": "Sky",
+      "shader": "Sky"
+    },
+    {
+      "name": "glass_facade",
+      "shader": "Lit",
+      "texture": {
+        "atlas": "City",
+        "name": "glass_facade"
+      },
+      "uniforms": {
+        "shininess": {
+          "float": 90.0
+        },
+        "specularStrength": {
+          "float": 0.9
+        },
+        "reflectivity": {
+          "float": 0.55
+        }
+      }
+    },
+    {
+      "name": "brick_facade",
+      "shader": "Lit",
+      "texture": {
+        "atlas": "City",
+        "name": "brick_facade"
+      },
+      "uniforms": {
+        "shininess": {
+          "float": 40.0
+        },
+        "specularStrength": {
+          "float": 0.25
+        },
+        "reflectivity": {
+          "float": 0.12
+        }
+      }
+    },
+    {
+      "name": "concrete_facade",
+      "shader": "Lit",
+      "texture": {
+        "atlas": "City",
+        "name": "concrete_facade"
+      },
+      "uniforms": {
+        "shininess": {
+          "float": 40.0
+        },
+        "specularStrength": {
+          "float": 0.25
+        },
+        "reflectivity": {
+          "float": 0.12
+        }
+      }
+    },
+    {
+      "name": "stone_facade",
+      "shader": "Lit",
+      "texture": {
+        "atlas": "City",
+        "name": "stone_facade"
+      },
+      "uniforms": {
+        "shininess": {
+          "float": 40.0
+        },
+        "specularStrength": {
+          "float": 0.25
+        },
+        "reflectivity": {
+          "float": 0.12
+        }
+      }
+    },
+    {
+      "name": "roof",
+      "shader": "Lit",
+      "texture": {
+        "atlas": "City",
+        "name": "roof"
+      },
+      "uniforms": {
+        "shininess": {
+          "float": 12.0
+        },
+        "specularStrength": {
+          "float": 0.1
+        },
+        "reflectivity": {
+          "float": 0.0
+        }
+      }
+    },
+    {
+      "name": "road",
+      "shader": "Lit",
+      "texture": {
+        "atlas": "City",
+        "name": "road"
+      },
+      "uniforms": {
+        "shininess": {
+          "float": 12.0
+        },
+        "specularStrength": {
+          "float": 0.1
+        },
+        "reflectivity": {
+          "float": 0.0
+        }
+      }
+    },
+    {
+      "name": "intersection",
+      "shader": "Lit",
+      "texture": {
+        "atlas": "City",
+        "name": "intersection"
+      },
+      "uniforms": {
+        "shininess": {
+          "float": 12.0
+        },
+        "specularStrength": {
+          "float": 0.1
+        },
+        "reflectivity": {
+          "float": 0.0
+        }
+      }
+    },
+    {
+      "name": "crosswalk",
+      "shader": "Lit",
+      "texture": {
+        "atlas": "City",
+        "name": "crosswalk"
+      },
+      "uniforms": {
+        "shininess": {
+          "float": 12.0
+        },
+        "specularStrength": {
+          "float": 0.1
+        },
+        "reflectivity": {
+          "float": 0.0
+        }
+      }
+    },
+    {
+      "name": "sidewalk",
+      "shader": "Lit",
+      "texture": {
+        "atlas": "City",
+        "name": "sidewalk"
+      },
+      "uniforms": {
+        "shininess": {
+          "float": 12.0
+        },
+        "specularStrength": {
+          "float": 0.1
+        },
+        "reflectivity": {
+          "float": 0.0
+        }
+      }
+    },
+    {
+      "name": "concrete",
+      "shader": "Lit",
+      "texture": {
+        "atlas": "City",
+        "name": "concrete"
+      },
+      "uniforms": {
+        "shininess": {
+          "float": 12.0
+        },
+        "specularStrength": {
+          "float": 0.1
+        },
+        "reflectivity": {
+          "float": 0.0
+        }
+      }
+    },
+    {
+      "name": "grass",
+      "shader": "Lit",
+      "texture": {
+        "atlas": "City",
+        "name": "grass"
+      },
+      "uniforms": {
+        "shininess": {
+          "float": 6.0
+        },
+        "specularStrength": {
+          "float": 0.05
+        },
+        "reflectivity": {
+          "float": 0.0
+        }
+      }
+    },
+    {
+      "name": "bark",
+      "shader": "Lit",
+      "texture": {
+        "atlas": "City",
+        "name": "bark"
+      },
+      "uniforms": {
+        "shininess": {
+          "float": 12.0
+        },
+        "specularStrength": {
+          "float": 0.1
+        },
+        "reflectivity": {
+          "float": 0.0
+        }
+      }
+    },
+    {
+      "name": "leaves",
+      "shader": "Lit",
+      "texture": {
+        "atlas": "City",
+        "name": "leaves"
+      },
+      "uniforms": {
+        "shininess": {
+          "float": 6.0
+        },
+        "specularStrength": {
+          "float": 0.05
+        },
+        "reflectivity": {
+          "float": 0.0
+        }
+      }
+    },
+    {
+      "name": "metal",
+      "shader": "Lit",
+      "texture": {
+        "atlas": "City",
+        "name": "metal"
+      },
+      "uniforms": {
+        "shininess": {
+          "float": 30.0
+        },
+        "specularStrength": {
+          "float": 0.4
+        },
+        "reflectivity": {
+          "float": 0.1
+        }
+      }
+    },
+    {
+      "name": "signal",
+      "shader": "Lit",
+      "texture": {
+        "atlas": "City",
+        "name": "signal"
+      },
+      "uniforms": {
+        "shininess": {
+          "float": 12.0
+        },
+        "specularStrength": {
+          "float": 0.1
+        },
+        "reflectivity": {
+          "float": 0.0
+        }
+      }
+    },
+    {
+      "name": "car",
+      "shader": "Lit",
+      "texture": {
+        "atlas": "City",
+        "name": "car"
+      },
+      "uniforms": {
+        "shininess": {
+          "float": 60.0
+        },
+        "specularStrength": {
+          "float": 0.7
+        },
+        "reflectivity": {
+          "float": 0.25
+        }
+      }
+    },
+    {
+      "name": "person",
+      "shader": "Lit",
+      "texture": {
+        "atlas": "City",
+        "name": "person"
+      },
+      "uniforms": {
+        "shininess": {
+          "float": 12.0
+        },
+        "specularStrength": {
+          "float": 0.1
+        },
+        "reflectivity": {
+          "float": 0.0
+        }
+      }
+    }
+  ],
+  "root": {
+    "name": "Scene root",
+    "children": [
+      {
+        "name": "Sky",
+        "mesh": "sky_dome_mesh",
+        "material": "Sky",
+        "uniforms": {
+          "sunColor": {
+            "vec3": [
+              1.6,
+              1.45,
+              1.2
+            ]
+          },
+          "skyColor": {
+            "vec3": [
+              0.14,
+              0.32,
+              0.72
+            ]
+          },
+          "horizonColor": {
+            "vec3": [
+              0.62,
+              0.7,
+              0.8
+            ]
+          },
+          "groundColor": {
+            "vec3": [
+              0.28,
+              0.27,
+              0.26
+            ]
+          }
+        }
+      },
+      {
+        "name": "City",
+        "uniforms": {
+          "sunColor": {
+            "vec3": [
+              1.6,
+              1.45,
+              1.2
+            ]
+          },
+          "skyColor": {
+            "vec3": [
+              0.14,
+              0.32,
+              0.72
+            ]
+          },
+          "horizonColor": {
+            "vec3": [
+              0.62,
+              0.7,
+              0.8
+            ]
+          },
+          "groundColor": {
+            "vec3": [
+              0.28,
+              0.27,
+              0.26
+            ]
+          },
+          "fogDensity": {
+            "float": 0.0055
+          },
+          "tint": {
+            "vec3": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "emissive": {
+            "vec3": [
+              0.0,
+              0.0,
+              0.0
+            ]
+          }
+        },
+        "children": [
+          {
+            "name": "Static"
+          }
+        ]
+      }
+    ]
+  }
+}
