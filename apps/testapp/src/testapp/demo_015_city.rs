@@ -97,8 +97,9 @@ pub struct CityDemo {
     traffic: Traffic,
     car_nodes: Vec<usize>,
     people: Vec<Person>,
-    /// Traffic lights' lamps, and the streets they are for.
-    lamps: Vec<(usize, Axis)>,
+    /// Traffic lights' glowing lamps, the streets they are for, and their lights' housings
+    /// (where the lamp goes in front of the lens of the colour shown).
+    lamps: Vec<(usize, Axis, Mat4)>,
     last_time: Option<f32>,
     /// Frames counted since `fps_start`, for the frame rate in the log.
     frames: u32,
@@ -241,6 +242,7 @@ impl CityDemo {
             MeshData::default(),
             MeshData::default(),
         );
+        let mut signals = MeshData::default();
 
         // Ground beyond the city.
         grass.top(
@@ -410,57 +412,41 @@ impl CityDemo {
                     false,
                     w,
                 );
-                // Traffic lights on the four corners: two for each street.
-                for (corner, axis) in [
-                    ((1.0, 1.0), Axis::X),
-                    ((-1.0, -1.0), Axis::X),
-                    ((1.0, -1.0), Axis::Y),
-                    ((-1.0, 1.0), Axis::Y),
+                // Traffic lights on the near right corner of every approach (traffic drives on
+                // the right), facing the cars coming: (corner, street, facing).
+                for (corner, axis, facing) in [
+                    ((-1.0, -1.0), Axis::X, PI),
+                    ((1.0, 1.0), Axis::X, 0.0),
+                    ((1.0, -1.0), Axis::Y, -FRAC_PI_2),
+                    ((-1.0, 1.0), Axis::Y, FRAC_PI_2),
                 ] {
-                    let p = Vec3::new(
+                    let base = Vec3::new(
                         s + corner.0 * (ROAD_HALF + 1.0),
                         t + corner.1 * (ROAD_HALF + 1.0),
                         CURB,
                     );
-                    let pole = Mat4::from_translation(p);
-                    metal.cylinder(
-                        pole,
-                        0.09,
-                        3.6,
-                        10,
-                        [0.0, 0.0, 1.0, 1.0],
-                        [0.0, 0.0, 1.0, 1.0],
-                    );
-                    metal.box_in(
-                        pole,
-                        Vec3::new(-0.18, -0.18, 3.0),
-                        Vec3::new(0.18, 0.18, 3.9),
-                        [0.0, 0.0, 1.0, 1.0],
-                    );
+                    let head = traffic_light(&mut signals, &mut metal, base, facing);
                     let lamp = self.scene.create_node(None, city)?;
-                    self.lamps.push((lamp, axis));
-                    let node = self.scene.get_node_mut(lamp).unwrap();
-                    node.set_transform(
-                        Mat4::from_translation(p + Vec3::new(0.0, 0.0, 4.02))
-                            * Mat4::from_scale(0.16),
-                    );
+                    self.lamps.push((lamp, axis, head));
                 }
             }
         }
 
-        // The traffic lights' lamps: small glowing balls.
+        // The traffic lights' lamps: a glowing disc each, in front of the lens shown.
         let lamp_mesh = {
             let mut m = MeshData::default();
-            m.ellipsoid(
-                Mat4::from_scale(1.0),
-                Vec3::new(1.0, 1.0, 1.0),
-                12,
-                8,
+            let along_x = Mat4::from_angle_y(Deg(90.0));
+            m.cylinder(
+                along_x,
+                LENS_RADIUS,
+                0.025,
+                16,
+                [0.0, 0.0, 1.0, 1.0],
                 [0.0, 0.0, 1.0, 1.0],
             );
             self.scene.add_mesh(m.into_mesh("Lamp"))
         };
-        for &(lamp, _) in &self.lamps {
+        for &(lamp, _, _) in &self.lamps {
             self.scene.node_set_mesh(lamp, lamp_mesh)?;
             self.scene.node_set_material(lamp, materials["Metal"])?;
             self.scene
@@ -498,6 +484,7 @@ impl CityDemo {
             ("Tree trunks", bark, "Bark"),
             ("Tree tops", leaves, "Leaves"),
             ("Poles", metal, "Metal"),
+            ("Traffic lights", signals, "Signal"),
         ] {
             self.add_static(statics, name, mesh, materials[material])?;
         }
@@ -690,17 +677,17 @@ impl CityDemo {
             }
         }
 
-        for &(lamp, axis) in &self.lamps {
-            let colour = match signal(axis, time) {
-                Signal::Green => Vec3::new(0.1, 3.0, 0.4),
-                Signal::Yellow => Vec3::new(3.0, 2.0, 0.1),
-                Signal::Red => Vec3::new(3.0, 0.15, 0.1),
+        for &(lamp, axis, head) in &self.lamps {
+            let (lens, colour) = match signal(axis, time) {
+                Signal::Red => (0, Vec3::new(4.0, 0.2, 0.12)),
+                Signal::Yellow => (1, Vec3::new(4.0, 2.6, 0.15)),
+                Signal::Green => (2, Vec3::new(0.15, 3.6, 0.8)),
             };
-            self.scene
-                .get_node_mut(lamp)
-                .unwrap()
-                .uniforms_mut()
-                .set("emissive", colour);
+            let node = self.scene.get_node_mut(lamp).unwrap();
+            node.set_transform(
+                head * Mat4::from_translation(Vec3::new(LENS_FRONT, 0.0, LENS_HEIGHTS[lens])),
+            );
+            node.uniforms_mut().set("emissive", colour);
         }
 
         // The camera follows the route, looking a little way ahead along it.
@@ -805,25 +792,67 @@ fn tree(bark: &mut MeshData, leaves: &mut MeshData, base: Vec3, size: f32, rando
     }
 }
 
-/// A street lamp at `base` on the curb of side `side` (0: -Y, 1: +X, 2: +Y, 3: -X), its arm
-/// over the road.
+/// A street lamp at `base` near the curb of a block's side `side` (0: -Y, 1: +X, 2: +Y,
+/// 3: -X), its arm reaching out over the road.
 fn lamp_post(metal: &mut MeshData, base: Vec3, side: usize) {
     let full = [0.0, 0.0, 1.0, 1.0];
     let pole = Mat4::from_translation(base);
     metal.cylinder(pole, 0.08, 6.5, 8, full, full);
-    let turn = Mat4::from_angle_z(Deg(-90.0 + 90.0 * side as f32));
+    // The arm is built along +Y; turn it towards the road: -Y, +X, +Y, -X.
+    let turn = Mat4::from_angle_z(Deg(180.0 + 90.0 * side as f32));
     metal.box_in(
         pole * turn,
         Vec3::new(-0.06, -0.06, 6.3),
-        Vec3::new(0.06, 1.6, 6.42),
+        Vec3::new(0.06, 2.6, 6.42),
         full,
     );
     metal.box_in(
         pole * turn,
-        Vec3::new(-0.16, 1.3, 6.15),
-        Vec3::new(0.16, 1.9, 6.32),
+        Vec3::new(-0.17, 2.0, 6.14),
+        Vec3::new(0.17, 2.75, 6.32),
         full,
     );
+}
+
+/// The heights of a traffic light's red, yellow and green lenses above its base, how far in
+/// front of the housing's centre they are, and their radius.
+const LENS_HEIGHTS: [f32; 3] = [3.44, 3.1, 2.76];
+const LENS_FRONT: f32 = 0.175;
+const LENS_RADIUS: f32 = 0.11;
+
+/// A traffic light standing at `base`, its lenses facing `facing` (radians from +X): a pole, a
+/// back plate, a housing with red, yellow and green lenses under visors. Returns the housing's
+/// transform: in it, the lenses face +X at `LENS_FRONT`, at `LENS_HEIGHTS`.
+fn traffic_light(signals: &mut MeshData, metal: &mut MeshData, base: Vec3, facing: f32) -> Mat4 {
+    use textures::signal_regions::*;
+    let full = [0.0, 0.0, 1.0, 1.0];
+    let head = Mat4::from_translation(base) * Mat4::from_angle_z(Rad(facing));
+    metal.cylinder(Mat4::from_translation(base), 0.08, 2.6, 10, full, full);
+    signals.box_in(
+        head,
+        Vec3::new(-0.2, -0.24, 2.5),
+        Vec3::new(-0.17, 0.24, 3.7),
+        HOUSING,
+    );
+    signals.box_in(
+        head,
+        Vec3::new(-0.17, -0.16, 2.58),
+        Vec3::new(0.15, 0.16, 3.62),
+        HOUSING,
+    );
+    let along_x = Mat4::from_angle_y(Deg(90.0));
+    for (&z, region) in LENS_HEIGHTS.iter().zip([RED, YELLOW, GREEN]) {
+        let lens = head * Mat4::from_translation(Vec3::new(0.15, 0.0, z)) * along_x;
+        signals.cylinder(lens, LENS_RADIUS, 0.02, 16, region, region);
+        // A visor shading the lens from above.
+        signals.box_in(
+            head,
+            Vec3::new(0.15, -0.13, z + LENS_RADIUS),
+            Vec3::new(0.34, 0.13, z + LENS_RADIUS + 0.02),
+            HOUSING,
+        );
+    }
+    head
 }
 
 /// A point at `distance` along a square loop of half side `half` around the origin (rounded

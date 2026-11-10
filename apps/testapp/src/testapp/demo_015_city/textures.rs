@@ -510,6 +510,52 @@ fn person() -> Texture {
     finish("Person", c)
 }
 
+/// Where each part of a traffic light is in the signal texture, as (u0, v0, u1, v1).
+pub mod signal_regions {
+    pub const HOUSING: [f32; 4] = [0.02, 0.02, 0.48, 0.48];
+    pub const RED: [f32; 4] = [0.52, 0.02, 0.98, 0.48];
+    pub const YELLOW: [f32; 4] = [0.02, 0.52, 0.48, 0.98];
+    pub const GREEN: [f32; 4] = [0.52, 0.52, 0.98, 0.98];
+}
+
+/// A traffic light's dark housing and its three lenses, unlit.
+fn signal() -> Texture {
+    use signal_regions::*;
+    let noise = Noise::new(26);
+    let mut c = Canvas::new(128, 128, [0.08, 0.08, 0.08]);
+    let regions: [([f32; 4], [f32; 3]); 4] = [
+        (HOUSING, [0.1, 0.1, 0.1]),
+        (RED, [0.3, 0.04, 0.03]),
+        (YELLOW, [0.32, 0.24, 0.03]),
+        (GREEN, [0.03, 0.22, 0.1]),
+    ];
+    for (r, color) in regions {
+        c.rect(
+            r[0] - 0.02,
+            r[1] - 0.02,
+            r[2] + 0.02,
+            r[3] + 0.02,
+            color,
+            0.0,
+        );
+    }
+    // Lenses: darker rims, a glassy highlight.
+    c.paint(|_, _, u, v, old| {
+        let (x, y) = ((u * 2.0).fract() - 0.5, (v * 2.0).fract() - 0.5);
+        let r = (x * x + y * y).sqrt();
+        let lens = u >= 0.5 || v >= 0.5;
+        if lens && r > 0.42 {
+            [old[0] * 0.5, old[1] * 0.5, old[2] * 0.5, 0.0]
+        } else if lens && ((x + 0.15).powi(2) + (y + 0.15).powi(2)).sqrt() < 0.08 {
+            [old[0] + 0.25, old[1] + 0.25, old[2] + 0.25, 0.0]
+        } else {
+            old
+        }
+    });
+    c.grain(&noise, 8, 0.1);
+    finish("Signal", c)
+}
+
 /// Every texture of the city.
 pub fn all() -> Vec<Texture> {
     vec![
@@ -527,6 +573,7 @@ pub fn all() -> Vec<Texture> {
         bark(),
         leaves(),
         metal(),
+        signal(),
         car(),
         person(),
     ]
