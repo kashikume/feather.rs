@@ -10,7 +10,7 @@ use feather::math::{Mat4, Point3, Vec2, Vec3};
 use feather::mesh::Mesh;
 use feather::vertex::Vertex;
 
-use super::textures::{car_regions, person_regions};
+use super::textures::person_regions;
 
 /// Vertices and indices being gathered into a mesh.
 #[derive(Default)]
@@ -40,6 +40,35 @@ impl MeshData {
         }
         self.indices
             .extend([first, first + 1, first + 2, first, first + 2, first + 3]);
+    }
+
+    /// A flat polygon (convex, or star-shaped around its centre) facing `outward`: fanned
+    /// from its centre, whatever the order of its points.
+    pub fn polygon(&mut self, points: &[Vec3], uvs: &[Vec2], outward: Vec3) {
+        let count = points.len() as f32;
+        let centre = points.iter().fold(Vec3::new(0.0, 0.0, 0.0), |a, &p| a + p) / count;
+        let centre_uv = uvs.iter().fold(Vec2::new(0.0, 0.0), |a, &t| a + t) / count;
+        // Newell's normal, turned to face `outward`.
+        let mut normal = Vec3::new(0.0, 0.0, 0.0);
+        for i in 0..points.len() {
+            normal += points[i].cross(points[(i + 1) % points.len()]);
+        }
+        let flip = normal.dot(outward) < 0.0;
+        let normal = if flip { -normal } else { normal }.normalize();
+        let first = self.vertices.len() as u32;
+        self.vertices.push(Vertex::new(centre, normal, centre_uv));
+        for (&p, &uv) in points.iter().zip(uvs) {
+            self.vertices.push(Vertex::new(p, normal, uv));
+        }
+        let n = points.len() as u32;
+        for i in 0..n {
+            let (a, b) = (first + 1 + i, first + 1 + (i + 1) % n);
+            if flip {
+                self.indices.extend([first, b, a]);
+            } else {
+                self.indices.extend([first, a, b]);
+            }
+        }
     }
 
     /// The four walls of a box from `min` to `max`, with texture coordinates in tiles: `u`
@@ -311,53 +340,6 @@ fn normal_matrix(m: Mat4) -> Mat4 {
     m.invert().unwrap_or(Mat4::identity()).transpose()
 }
 
-/// A car facing +X, 4.4 m long, wheels on z = 0, its paint tinted per car (`car_regions`).
-pub fn car() -> MeshData {
-    use car_regions::*;
-    let mut m = MeshData::default();
-    // Lower body: sides painted, front and back with lights.
-    let (x0, x1, y, z0, z1) = (-2.2, 2.2, 0.88, 0.3, 0.95);
-    let faces = box_faces(Vec3::new(x0, -y, z0), Vec3::new(x1, y, z1));
-    let region_uv = |r: [f32; 4]| {
-        [
-            Vec2::new(r[0], r[3]),
-            Vec2::new(r[2], r[3]),
-            Vec2::new(r[2], r[1]),
-            Vec2::new(r[0], r[1]),
-        ]
-    };
-    for (i, face) in faces.into_iter().enumerate() {
-        let region = match i {
-            1 => FRONT,
-            3 => REAR,
-            _ => PAINT,
-        };
-        m.quad(face, region_uv(region));
-    }
-    // Cabin: a trapezoid, glass all around, painted roof.
-    let (bx0, bx1, tx0, tx1) = (-1.35, 0.95, -1.0, 0.45);
-    let (by, ty, zb, zt) = (0.82, 0.7, 0.95, 1.45);
-    let b = |x: f32, y: f32| Vec3::new(x, y, zb);
-    let t = |x: f32, y: f32| Vec3::new(x, y, zt);
-    let glass = region_uv(GLASS);
-    m.quad([b(bx0, -by), b(bx1, -by), t(tx1, -ty), t(tx0, -ty)], glass); // right side
-    m.quad([b(bx1, by), b(bx0, by), t(tx0, ty), t(tx1, ty)], glass); // left side
-    m.quad([b(bx1, -by), b(bx1, by), t(tx1, ty), t(tx1, -ty)], glass); // windshield
-    m.quad([b(bx0, by), b(bx0, -by), t(tx0, -ty), t(tx0, ty)], glass); // rear window
-    m.quad(
-        [t(tx0, -ty), t(tx1, -ty), t(tx1, ty), t(tx0, ty)],
-        region_uv(PAINT),
-    ); // roof
-       // Wheels: cylinders along Y.
-    for (wx, wy) in [(1.4, 0.8), (1.4, -0.8), (-1.45, 0.8), (-1.45, -0.8)] {
-        let side: f32 = if wy > 0.0 { 1.0 } else { -1.0 };
-        let transform = Mat4::from_translation(Vec3::new(wx, wy - side * 0.12, 0.34))
-            * Mat4::from_angle_x(cgmath::Deg(-90.0 * side));
-        m.cylinder(transform, 0.34, 0.24, 16, TIRE, HUB);
-    }
-    m
-}
-
 /// A person's body without legs, facing +X, about 1.75 m tall standing on z = 0 (the legs,
 /// `leg`, hang from the hips at z = 0.9 and y = +-0.09).
 pub fn person_body() -> MeshData {
@@ -514,6 +496,5 @@ mod tests {
         let leg = leg();
         let bottom = leg.vertices.iter().map(|v| v.pos.z).fold(0.0, f32::min);
         assert!((bottom + 0.9).abs() < 0.01, "{bottom}");
-        assert!(!car().is_empty());
     }
 }

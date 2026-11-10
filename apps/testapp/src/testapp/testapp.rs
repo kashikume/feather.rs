@@ -880,5 +880,14 @@ mod tests {
         assert!(moved(&cars, &cars_after) > cars.len() / 2, "cars don't move");
         assert_eq!(moved(&people, &positions(&mut demo, "People")), people.len());
         assert_ne!(demo.camera().get_view(), view);
+
+        // The overlay shows the frame rate once half a second has passed.
+        assert_eq!(demo.scene_count(), 2);
+        let overlay = demo.scene_at(1);
+        overlay.update_nodes();
+        let anchor = overlay.find_node("Frame rate").unwrap();
+        let texts: Vec<usize> = overlay.get_node(anchor).unwrap().get_children().iter().copied().collect();
+        assert_eq!(texts.len(), 2);
+        assert!(texts.iter().all(|&t| overlay.get_node(t).unwrap().get_mesh().is_some()));
     }
 }

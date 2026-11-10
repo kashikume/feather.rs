@@ -1,0 +1,25 @@
+{
+  "atlases": [
+    {
+      "name": "Font",
+      "bitmap": "demo_015_city_atlas.png",
+      "metadata": "demo_015_city_atlas.atlas"
+    }
+  ],
+  "shaders": [
+    {
+      "name": "Text",
+      "vertex": "demo_015_city_text_shader.vert.spv",
+      "fragment": "demo_015_city_text_shader.frag.spv",
+      "model_uniform": "model",
+      "view_uniform": "view",
+      "projection_uniform": "proj"
+    }
+  ],
+  "root": {
+    "name": "Overlay root",
+    "children": [
+      { "name": "Frame rate", "transform": { "translation": [18, -14, 0] } }
+    ]
+  }
+}

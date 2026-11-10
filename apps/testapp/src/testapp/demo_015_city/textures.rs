@@ -391,87 +391,176 @@ fn metal() -> Texture {
     finish("Metal", c)
 }
 
-/// Where each part of a car is in the car texture, as (u0, v0, u1, v1).
+/// Where each part of a car is in the car texture, as (u0, v0, u1, v1). Body sides and side
+/// windows run the car's length (`u` from front to rear, `v` from top to bottom); the front and
+/// rear are seen from in front of them (`u` across, `v` down).
 pub mod car_regions {
-    pub const PAINT: [f32; 4] = [0.01, 0.01, 0.49, 0.49];
-    pub const GLASS: [f32; 4] = [0.51, 0.01, 0.99, 0.49];
-    pub const FRONT: [f32; 4] = [0.01, 0.51, 0.49, 0.74];
-    pub const REAR: [f32; 4] = [0.01, 0.76, 0.49, 0.99];
-    pub const TIRE: [f32; 4] = [0.51, 0.51, 0.74, 0.99];
-    pub const HUB: [f32; 4] = [0.76, 0.51, 0.99, 0.99];
+    pub const SIDE: [f32; 4] = [0.0, 0.0, 1.0, 0.25];
+    pub const SIDE_WINDOWS: [f32; 4] = [0.0, 0.25, 1.0, 0.5];
+    pub const PAINT: [f32; 4] = [0.0, 0.5, 0.25, 0.75];
+    pub const WINDSHIELD: [f32; 4] = [0.25, 0.5, 0.5, 0.75];
+    pub const FRONT: [f32; 4] = [0.5, 0.5, 0.75, 0.75];
+    pub const REAR: [f32; 4] = [0.75, 0.5, 1.0, 0.75];
+    pub const TIRE: [f32; 4] = [0.0, 0.75, 0.25, 1.0];
+    pub const RIM: [f32; 4] = [0.25, 0.75, 0.5, 1.0];
+    pub const PLASTIC: [f32; 4] = [0.5, 0.75, 0.75, 1.0];
+    pub const TAXI_SIGN: [f32; 4] = [0.75, 0.75, 1.0, 1.0];
+    /// Where the wheels are along a car, from the front, as fractions of its length.
+    pub const WHEELS: [f32; 2] = [0.19, 0.8];
 }
 
-/// Everything a car is painted with, in regions (`car_regions`). Paint is tinted per car.
+/// Everything a car is painted with, in regions (`car_regions`). Paint (alpha 1) is tinted per
+/// car; glass, lights, rubber and plastic (alpha 0) aren't.
 fn car() -> Texture {
     use car_regions::*;
     let noise = Noise::new(24);
-    let mut c = Canvas::new(512, 512, [0.0, 0.0, 0.0]);
-    let inside = |r: [f32; 4], u: f32, v: f32| -> Option<(f32, f32)> {
-        (u >= r[0] - 0.01 && u < r[2] + 0.01 && v >= r[1] - 0.01 && v < r[3] + 0.01)
-            .then(|| ((u - r[0]) / (r[2] - r[0]), (v - r[1]) / (r[3] - r[1])))
+    let mut c = Canvas::new(1024, 1024, [0.1, 0.1, 0.1]);
+    let paint = |shade: f32| [shade, shade, shade, 1.0];
+    let dark = |k: f32| [k, k, k, 0.0];
+    // `f(x, y)` for the pixels of region `r`, with x and y in 0..1 inside it.
+    let mut region = |c: &mut Canvas, r: [f32; 4], f: &dyn Fn(f32, f32) -> [f32; 4]| {
+        c.paint(|_, _, u, v, old| {
+            let pad = 0.004;
+            if u >= r[0] - pad && u < r[2] + pad && v >= r[1] - pad && v < r[3] + pad {
+                f(
+                    ((u - r[0]) / (r[2] - r[0])).clamp(0.0, 1.0),
+                    ((v - r[1]) / (r[3] - r[1])).clamp(0.0, 1.0),
+                )
+            } else {
+                old
+            }
+        });
     };
-    c.paint(|_, _, u, v, _| {
-        if let Some((_, y)) = inside(PAINT, u, v) {
-            // Paint, a bit lighter at the top, a dark trim strip at the bottom.
-            if y > 0.86 {
-                [0.12, 0.12, 0.13, 0.0]
-            } else {
-                let k = 0.95 - 0.15 * y;
-                [k, k, k, 1.0]
+    // Body sides: paint, a crease, door seams and handles, wheel wells, a dark sill.
+    region(&mut c, SIDE, &|x, y| {
+        for &w in &WHEELS {
+            let (dx, dy) = ((x - w) / 0.1, (y - 1.05) / 0.72);
+            if dx * dx + dy * dy < 1.0 {
+                return dark(0.03);
             }
-        } else if let Some((x, y)) = inside(GLASS, u, v) {
-            let g = glass(x, y, &noise);
-            [g[0] * 0.7, g[1] * 0.7, g[2] * 0.75, 0.0]
-        } else if let Some((x, y)) = inside(FRONT, u, v) {
-            let lamp = (x < 0.22 || x > 0.78) && y < 0.42;
-            let grille = (0.3..0.7).contains(&x) && (0.3..0.62).contains(&y);
-            if lamp {
-                [0.95, 0.95, 0.9, 0.0]
-            } else if grille {
-                let slat = ((y * 20.0).fract() < 0.5) as i32 as f32;
-                [
-                    0.08 + 0.06 * slat,
-                    0.08 + 0.06 * slat,
-                    0.09 + 0.06 * slat,
-                    0.0,
-                ]
-            } else if y > 0.75 {
-                [0.12, 0.12, 0.13, 0.0]
-            } else {
-                [0.9, 0.9, 0.9, 1.0]
+            if dx * dx + dy * dy < 1.12 {
+                return dark(0.08);
             }
-        } else if let Some((x, y)) = inside(REAR, u, v) {
-            let lamp = (x < 0.24 || x > 0.76) && y < 0.4;
-            let plate = (0.38..0.62).contains(&x) && (0.45..0.65).contains(&y);
-            if lamp {
-                [0.75, 0.05, 0.04, 0.0]
-            } else if plate {
-                [0.92, 0.9, 0.8, 0.0]
-            } else if y > 0.75 {
-                [0.12, 0.12, 0.13, 0.0]
+        }
+        if y > 0.88 {
+            return dark(0.07);
+        }
+        let seam = [0.3, 0.52, 0.72].iter().any(|&s| (x - s).abs() < 0.0018) && y < 0.86;
+        if seam {
+            return paint(0.45);
+        }
+        let handle =
+            [0.36, 0.58].iter().any(|&h| (x - h).abs() < 0.018) && (0.16..0.24).contains(&y);
+        if handle {
+            return [0.75, 0.76, 0.78, 0.0];
+        }
+        let crease = (y - 0.3).abs() < 0.012;
+        paint(if crease { 1.0 } else { 0.93 - 0.18 * y })
+    });
+    // Side windows: tinted glass, black seals and B-pillar.
+    region(&mut c, SIDE_WINDOWS, &|x, y| {
+        if y < 0.06 || y > 0.94 || x < 0.012 || x > 0.988 || (x - 0.49).abs() < 0.02 {
+            return dark(0.04);
+        }
+        let g = glass(x * 3.0, y, &noise);
+        [g[0] * 0.55, g[1] * 0.6, g[2] * 0.68, 0.0]
+    });
+    region(&mut c, PAINT, &|_, _| paint(0.92));
+    region(&mut c, WINDSHIELD, &|x, y| {
+        if x < 0.06 || x > 0.94 || y < 0.07 || y > 0.93 {
+            return dark(0.04);
+        }
+        let g = glass(x, y, &noise);
+        [g[0] * 0.6, g[1] * 0.65, g[2] * 0.72, 0.0]
+    });
+    // Front: headlights in chrome rims, a grille, a lower intake, a number plate.
+    region(&mut c, FRONT, &|x, y| {
+        let lamp = |cx: f32| {
+            let (dx, dy) = ((x - cx) / 0.15, (y - 0.3) / 0.16);
+            dx * dx + dy * dy
+        };
+        let l = lamp(0.15).min(lamp(0.85));
+        if l < 0.55 {
+            return [0.95, 0.96, 1.0, 0.0];
+        }
+        if l < 1.0 {
+            return [0.7, 0.72, 0.75, 0.0];
+        }
+        if (0.3..0.7).contains(&x) && (0.18..0.5).contains(&y) {
+            let slat = ((y * 30.0).fract() < 0.45) as i32 as f32;
+            return dark(0.05 + 0.08 * slat);
+        }
+        if (0.4..0.6).contains(&x) && (0.58..0.72).contains(&y) {
+            return [0.92, 0.92, 0.88, 0.0];
+        }
+        if y > 0.78 && (0.15..0.85).contains(&x) {
+            return dark(0.05);
+        }
+        paint(0.88)
+    });
+    // Rear: wide red tail lights with amber, a number plate, the bumper.
+    region(&mut c, REAR, &|x, y| {
+        let side = x < 0.3 || x > 0.7;
+        if side && (0.12..0.42).contains(&y) {
+            let inner = x > 0.2 && x < 0.8;
+            return if inner {
+                [0.95, 0.5, 0.08, 0.0]
             } else {
-                [0.9, 0.9, 0.9, 1.0]
+                [0.75, 0.04, 0.04, 0.0]
+            };
+        }
+        if (0.37..0.63).contains(&x) && (0.45..0.66).contains(&y) {
+            if (0.38..0.62).contains(&x) && (0.47..0.64).contains(&y) {
+                return [0.93, 0.92, 0.85, 0.0];
             }
-        } else if let Some((_, y)) = inside(TIRE, u, v) {
-            let tread = ((y * 24.0).fract() < 0.5) as i32 as f32;
-            [
-                0.06 + 0.03 * tread,
-                0.06 + 0.03 * tread,
-                0.06 + 0.03 * tread,
-                0.0,
-            ]
-        } else if let Some((x, y)) = inside(HUB, u, v) {
-            let r = ((x - 0.5).powi(2) + (y - 0.5).powi(2)).sqrt();
-            if r < 0.3 {
-                [0.7, 0.71, 0.73, 0.0]
-            } else {
-                [0.07, 0.07, 0.07, 0.0]
-            }
+            return dark(0.1);
+        }
+        if y > 0.78 {
+            return dark(0.06);
+        }
+        paint(0.86)
+    });
+    region(&mut c, TIRE, &|_, y| {
+        let tread = ((y * 40.0).fract() < 0.5) as i32 as f32;
+        dark(0.05 + 0.025 * tread)
+    });
+    // Rims: five spokes, seen as a disc.
+    region(&mut c, RIM, &|x, y| {
+        let (dx, dy) = (x - 0.5, y - 0.5);
+        let r = (dx * dx + dy * dy).sqrt() * 2.0;
+        let angle = dy.atan2(dx);
+        if r > 0.92 {
+            return dark(0.06);
+        }
+        if r > 0.8 || r < 0.22 {
+            return [0.72, 0.73, 0.76, 0.0];
+        }
+        let spoke = ((angle / std::f32::consts::TAU * 5.0).rem_euclid(1.0) - 0.5).abs() < 0.13;
+        if spoke {
+            [0.78, 0.79, 0.82, 0.0]
         } else {
-            [0.1, 0.1, 0.1, 0.0]
+            dark(0.1)
         }
     });
-    c.grain(&noise, 16, 0.05);
+    region(&mut c, PLASTIC, &|_, _| dark(0.07));
+    // A taxi sign: black letters on yellow.
+    region(&mut c, TAXI_SIGN, &|x, y| {
+        const LETTERS: [[u8; 5]; 4] = [
+            [0b111, 0b010, 0b010, 0b010, 0b010],
+            [0b010, 0b101, 0b111, 0b101, 0b101],
+            [0b101, 0b101, 0b010, 0b101, 0b101],
+            [0b111, 0b010, 0b010, 0b010, 0b111],
+        ];
+        let (gx, gy) = ((x - 0.08) / 0.84 * 16.0, (y - 0.25) / 0.5 * 5.0);
+        if (0.0..16.0).contains(&gx) && (0.0..5.0).contains(&gy) {
+            let (letter, column) = ((gx / 4.0) as usize, (gx as usize) % 4);
+            if column < 3 && LETTERS[letter][gy as usize] & (0b100 >> column) != 0 {
+                return dark(0.05);
+            }
+        }
+        [0.98, 0.8, 0.1, 0.0]
+    });
+    c.grain(&noise, 32, 0.04);
     finish("Car", c)
 }
 
@@ -610,7 +699,9 @@ mod tests {
             );
             car.pixels[(y * car.width as usize + x) * 4 + 3]
         };
-        assert_eq!(alpha(0.2, 0.2), 255);
-        assert_eq!(alpha(0.7, 0.2), 0);
+        // Body side paint, side window glass, roof paint.
+        assert_eq!(alpha(0.45, 0.05), 255);
+        assert_eq!(alpha(0.3, 0.37), 0);
+        assert_eq!(alpha(0.12, 0.62), 255);
     }
 }
