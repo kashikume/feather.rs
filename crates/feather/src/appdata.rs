@@ -7,6 +7,7 @@ use super::featherapp::FeatherApp;
 use super::gpuimage::GpuImage;
 use super::gpumeshbuffer::GpuMeshBuffer;
 use super::pipeline::{PipelineKey, ShaderPipeline};
+use super::shadowpass::{ShadowMap, ShadowRenderer};
 use super::uniformdata::UniformIssue;
 use super::swapchain::Swapchain;
 
@@ -50,6 +51,11 @@ pub struct AppData {
     pub texture_sampler: vk::Sampler,
     /// 1x1 magenta image bound to samplers without a valid texture.
     pub fallback_texture: Option<GpuImage>,
+    /// The shadow pass's render pass, pipeline and sampler.
+    pub shadow_renderer: Option<ShadowRenderer>,
+    /// 1x1 white image bound to shadow map samplers of scenes without a shadow light: lit
+    /// everywhere.
+    pub fallback_shadow_map: Option<GpuImage>,
     // Buffers
     /// Uniform data of each swapchain image's frame; created and grown when needed.
     pub frame_uniforms: Vec<Option<FrameUniformBuffer>>,
@@ -78,6 +84,8 @@ pub struct SceneGpuState {
     pub gpu_atlases: HashMap<usize, GpuImage>,
     /// Atlases that could not be uploaded; their textures show the fallback texture.
     pub failed_atlases: HashSet<usize>,
+    /// The shadow map, while the scene has a shadow light.
+    pub shadow_map: Option<ShadowMap>,
 }
 
 impl SceneGpuState {
@@ -93,5 +101,8 @@ impl SceneGpuState {
         self.destroy_pipelines(device);
         self.gpu_atlases.drain().for_each(|(_, a)| a.destroy(device));
         self.gpu_mesh_buffers.drain().for_each(|(_, b)| b.destroy(device));
+        if let Some(map) = self.shadow_map.take() {
+            map.destroy(device);
+        }
     }
 }

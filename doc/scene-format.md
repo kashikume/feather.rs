@@ -73,6 +73,7 @@ The viking room used by the test app ([`apps/testapp/resources/demo_000_viking_r
 | `meshes`    | array of meshes   | no       | Geometry                                   |
 | `shaders`   | array of shaders  | no       | Vertex + fragment programs                 |
 | `materials` | array of materials| no       | A shader with uniform values               |
+| `shadow_light` | object         | no       | The light casting the scene's shadows, see [Shadows](#shadows) |
 | `root`      | node              | **yes**  | The root of the node tree                  |
 
 The lists are loaded in this order:
@@ -228,6 +229,8 @@ The texture wraps around the ball like a world map in equirectangular projection
 | `umax_uniform`       | string | no       | Uniform that receives the right edge of the material's texture |
 | `vmin_uniform`       | string | no       | Uniform that receives the top edge of the material's texture |
 | `vmax_uniform`       | string | no       | Uniform that receives the bottom edge of the material's texture |
+| `shadow_matrix_uniform` | string | no    | Uniform that receives the shadow light's view-projection matrix (`mat4`), see [Shadows](#shadows) |
+| `shadow_map_sampler` | string | no       | Sampler that samples the shadow map instead of the material's texture |
 
 The test app's build compiles GLSL files from `apps/testapp/shaders/` into `assets/` as `<file>.spv`, so
 `shaders/demo_000_viking_room_shader.vert` is referenced as
@@ -239,7 +242,8 @@ the matrices as `mat4`, the edges as `float`. Leave a field out if the shader do
 value. The edges come from the node's material's texture (see [Textures](#textures)).
 
 Other uniforms (in blocks and push constants) take their values from materials and nodes, matched
-by the GLSL member name. Samplers sample the atlas of the material's texture.
+by the GLSL member name. Samplers sample the atlas of the material's texture, except the
+`shadow_map_sampler`, which samples the scene's shadow map.
 
 ## Materials
 
@@ -277,6 +281,7 @@ material without a texture draws magenta, and a warning is logged.
 | `transform` | object           | no       | Position relative to the parent, see [Transforms](#transforms) |
 | `visible`   | boolean          | no       | `false` hides the node and its descendants (default `true`) |
 | `transparent` | boolean        | no       | `true` blends the node over what is behind it, using its shader's output alpha; drawn after opaque nodes, back to front (default `false`, not inherited) |
+| `casts_shadow` | boolean       | no       | `true` makes the node's mesh cast a shadow when the scene has a `shadow_light` (default `false`, not inherited) |
 | `uniforms`  | object           | no       | Uniform values, see [Uniforms](#uniforms)      |
 | `children`  | array of nodes   | no       | Child nodes                                    |
 
@@ -386,9 +391,30 @@ The message lists where the problem is, from the outside in:
 Cannot load scene demo_000_viking_room_scene.json: node `Scene root`: node `Room`: unknown mesh `Rom`
 ```
 
+## Shadows
+
+`shadow_light` is a directional light, like the sun, casting the scene's shadows:
+
+```json
+"shadow_light": { "direction": [-1, 0.6, -1.2], "center": [0, 0, 1], "radius": 10.5, "map_size": 2048 }
+```
+
+| Field       | Type      | Required | Description                                          |
+| ----------- | --------- | -------- | ---------------------------------------------------- |
+| `direction` | [x, y, z] | yes      | The direction the light's rays go (need not be normalized) |
+| `center`    | [x, y, z] | no       | The middle of the area that gets shadows (default `[0, 0, 0]`) |
+| `radius`    | number    | yes      | The area's radius: shadows are cast within it (above 0) |
+| `map_size`  | integer   | no       | Width and height of the shadow map in pixels (default 2048) |
+
+Before each frame, the engine draws the nodes with `"casts_shadow": true` from the light into a
+shadow map. Shaders receive shadows by naming a `shadow_matrix_uniform` (a `mat4`, the light's
+view-projection matrix) and a `shadow_map_sampler`, and comparing depths (see the README's
+[Shadows](../README.md#shadows)). A smaller radius gives sharper shadows in a smaller area.
+
 ## Not in the format yet
 
 - **Cameras:** the application creates its own (`FeatherApp::get_camera_to_render_scene`).
+- **Moving lights:** `shadow_light` is fixed; applications move it with `Scene::set_shadow_light`.
 - **Other mesh sources:** only OBJ files, cuboids, planes and spheres; other generated meshes
   must be created in code.
 - **More than one texture per material.**

@@ -43,6 +43,8 @@ What works today:
   `Scene::remove_mesh`); mesh GPU buffers are released with their last mesh
 - Skeletal animation (rigid): bones are scene nodes (`Skeleton`), moved by looping keyframe
   clips loaded from JSON (`AnimationClip`)
+- Shadows: a directional light per scene draws the shadow casters into a shadow map before each
+  frame, and shaders sample it (`ShadowLight`, `Node::set_casts_shadow`)
 - MSAA
 - Vulkan validation layers turned on automatically in debug builds
 
@@ -92,6 +94,8 @@ only command line argument is the number of the demo to start with (default 0). 
 | 10   | Text        | Text in two fonts (Segoe UI and Segoe UI Bold, made with the font creator): a title changing colour, lines aligned left, centred and right, Polish, German and Spanish letters, a clock updated ten times a second, a line whose letters (a node each) bob in a wave in their own colours, and text lying on a turning floor |
 | 11   | Crawl       | An endless crawl: made-up episodes (number, title, justified paragraphs) sliding away over a twinkling star field and fading out towards the horizon; each episode is added when there is room and removed once it is gone |
 | 12   | Overlay     | Two scenes together: demo 0's spinning room behind, and in front a 2D overlay seen by an orthographic camera, with see-through panels, text, the room's texture as an image and the frame rate |
+| 13   | Simple shadow | A human figure (a generated mesh) standing on a floor, casting its shadow from a fixed light; nothing moves, the shader takes one shadow-map sample |
+| 14   | Shadows     | A sun going round the sky over a ring of stone pillars, a spinning golden cube on a pedestal and bouncing balls; their soft-edged shadows turn and stretch with it |
 
 Each demo is in its own file, `apps/testapp/src/testapp/demo_NNN_<name>.rs`, and its resources
 are named `demo_NNN_<name>_<kind>` (`scene`, `atlas`, `mesh`, `shader`, ...). Demos are listed in
@@ -114,8 +118,8 @@ becomes `demo_000_viking_room_shader.vert.spv`. It is written to:
 - `$OUT_DIR/shaders/`, for embedding with
   `include_bytes!(concat!(env!("OUT_DIR"), "/shaders/demo_000_viking_room_shader.vert.spv"))`.
 
-The engine's own `build.rs` compiles the shaders its unit tests use, from
-`crates/feather/testdata/shaders/`. Both build scripts use the helpers in `crates/feather-build`,
+The engine's own `build.rs` compiles its built-in shaders, from `crates/feather/shaders/` (the
+shadow pass's), and the shaders its unit tests use, from `crates/feather/testdata/shaders/`. Both build scripts use the helpers in `crates/feather-build`,
 which look for `glslc` in this order: the `GLSLC` environment variable, `$VULKAN_SDK/Bin/glslc`,
 then `glslc` on `PATH`.
 
@@ -238,7 +242,9 @@ Tasks: `cargo build`, `cargo build --release`, `cargo run`, `cargo run --release
 Cargo.toml           workspace: members and shared dependency versions
 crates/
   feather/           the engine (library crate `feather`)
-    build.rs         compiles the shaders in testdata/shaders/ for the unit tests
+    build.rs         compiles the engine's shaders in shaders/ and, for the unit tests, those in
+                     testdata/shaders/
+    shaders/         the engine's built-in shaders (the shadow pass)
     testdata/        small files used only by the unit tests
     src/             engine sources (lib.rs lists the modules):
     app.rs           Vulkan setup, main loop, frame rendering
@@ -261,6 +267,8 @@ crates/
     assetsprovider.rs, windowsassetsprovider.rs
                      platform-independent asset access and its Windows implementation
     camera.rs, perspectivecamera.rs, orthographiccamera.rs
+    shadow.rs, shadowpass.rs
+                     shadow lights, and the shadow pass drawing casters into shadow maps
     instance.rs, physicaldevice.rs, logicaldevice.rs, swapchain.rs, pipeline.rs, ...
                      Vulkan object wrappers
   feather-build/     build script helpers: compiling shaders with glslc, creating atlases,
@@ -345,6 +353,37 @@ engine sorts the draws (`scene::sort_for_rendering`):
 Transparent nodes are drawn with a second pipeline of their shader: blending on, and the depth
 test on but depth writes off, so they are hidden by opaque objects in front of them but don't hide
 each other. The bouncing balls demo uses this for its shadows.
+
+### Shadows
+
+A scene casts shadows when it has a `ShadowLight` (`Scene::set_shadow_light`, or `shadow_light`
+in a scene file): a light's view-projection matrix, for a directional light like the sun made by
+`ShadowLight::directional(direction, center, radius)`, and the size of its shadow map. Before
+each frame, the engine draws every node that casts a shadow (`Node::set_casts_shadow`, or
+`"casts_shadow": true`) from the light into the scene's shadow map, a depth image, with a
+built-in depth-only shader and a depth bias. This is the shadow mapping of the C++ feather
+(`CastShadow` nodes, `shadowPV`, `ShadowGenerateShaderProgram`), with a real depth image instead
+of depth packed into RGBA.
+
+Shaders receive shadows by naming two values the engine fills, like the matrices:
+
+```rust
+let names = ShaderUniformNames::matrices("model", "view", "proj")
+    .with_shadow("lightViewProj", "shadowMap"); // a mat4 uniform, a sampler
+```
+
+```glsl
+fragLightSpace = camera.lightViewProj * world;   // vertex shader
+...
+vec3 p = fragLightSpace.xyz / fragLightSpace.w;  // fragment shader
+float lit = p.z - bias <= texture(shadowMap, p.xy * 0.5 + 0.5).r ? 1.0 : 0.0;
+```
+
+The map is cleared to depth 1 and sampled with nearest filtering and a white border, so places
+outside it are lit; in a scene without a light, the sampler gets a map that is lit everywhere.
+Demo 13 is the simplest use: one caster, one fixed light, one shadow-map sample per fragment
+(`demo_013_simple_shadow_shader.frag`). Demo 14's shader averages 3x3 samples for soft edges
+(`demo_014_shadows_shader.frag`).
 
 ### Several scenes
 

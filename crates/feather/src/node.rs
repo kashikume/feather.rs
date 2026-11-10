@@ -17,6 +17,7 @@ pub struct Node {
     /// Computed by `Scene::update_nodes`.
     global_transform: Option<Mat4>,
     transparent: bool,
+    casts_shadow: bool,
     visible: bool,
     mesh: Option<usize>,
     material: Option<usize>,
@@ -54,6 +55,7 @@ impl Node {
             transform: Mat4::identity(),
             global_transform: None,
             transparent,
+            casts_shadow: false,
             visible: true,
             mesh: None,
             material: None,
@@ -132,6 +134,16 @@ impl Node {
 
     pub fn is_transparent(&self) -> bool {
         self.transparent
+    }
+
+    /// Sets whether the node's mesh casts a shadow when its scene has a shadow light (see
+    /// `shadow`). Applies to this node only, not to its children.
+    pub fn set_casts_shadow(&mut self, casts_shadow: bool) {
+        self.casts_shadow = casts_shadow;
+    }
+
+    pub fn casts_shadow(&self) -> bool {
+        self.casts_shadow
     }
 
     pub fn set_mesh(&mut self, mesh: usize) {

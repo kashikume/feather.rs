@@ -19,6 +19,8 @@ use super::demo_009_spider::SpiderDemo;
 use super::demo_010_text::TextDemo;
 use super::demo_011_crawl::CrawlDemo;
 use super::demo_012_overlay::OverlayDemo;
+use super::demo_013_simple_shadow::SimpleShadowDemo;
+use super::demo_014_shadows::ShadowsDemo;
 
 /// One demo of the test app: a scene, the camera looking at it, and its animation. A demo may
 /// have more scenes, each with its own camera, drawn one over the other (`scene_count`).
@@ -102,6 +104,14 @@ pub const DEMOS: &[DemoInfo] = &[
     DemoInfo {
         name: "Overlay",
         create: |assets| Ok(Box::new(OverlayDemo::new(assets)?)),
+    },
+    DemoInfo {
+        name: "Simple shadow",
+        create: |assets| Ok(Box::new(SimpleShadowDemo::new(assets)?)),
+    },
+    DemoInfo {
+        name: "Shadows",
+        create: |assets| Ok(Box::new(ShadowsDemo::new(assets)?)),
     },
 ];
 
@@ -756,5 +766,69 @@ mod tests {
         let before = demo.scene_at(0).get_node(room_node).unwrap().get_transform();
         demo.update(5.0).unwrap();
         assert_ne!(demo.scene_at(0).get_node(room_node).unwrap().get_transform(), before);
+    }
+
+    #[test]
+    fn shadows_demo_has_casters_and_a_moving_sun() {
+        let mut demo = demo(14);
+        let scene = demo.scene();
+        scene.build_missing_mesh_buffers().unwrap();
+        scene.update_nodes();
+
+        // Everything but the floor casts a shadow; the floor receives them.
+        let casters: Vec<String> = scene
+            .draw_items()
+            .iter()
+            .filter(|item| item.casts_shadow)
+            .map(|item| scene.get_node(item.node).unwrap().get_name().unwrap())
+            .collect();
+        assert_eq!(casters.len(), 8 + 3 + 2, "{casters:?}");
+        assert!(!casters.contains(&"Floor".to_string()));
+
+        // The shader takes the light's matrix and the shadow map from the engine.
+        let shader = scene.get_shader(scene.find_shader("Lit").unwrap()).unwrap();
+        assert_eq!(shader.get_uniform_shadow_matrix_name(), Some("lightViewProj"));
+        assert_eq!(shader.get_shadow_map_sampler_name(), Some("shadowMap"));
+
+        // The sun moves, with the lighting's direction towards it.
+        let sun = |demo: &mut Box<dyn Demo>| {
+            let scene = demo.scene();
+            let light = *scene.get_shadow_light().unwrap();
+            let root = scene.get_node(scene.find_node("Scene root").unwrap()).unwrap();
+            (light, root.uniforms().get("light").cloned())
+        };
+        let (before, toward_before) = sun(&mut demo);
+        demo.update(3.0).unwrap();
+        let (after, toward_after) = sun(&mut demo);
+        assert_ne!(before.view_projection, after.view_projection);
+        assert_ne!(toward_before, toward_after);
+        assert_eq!(after.map_size, before.map_size);
+    }
+
+    #[test]
+    fn simple_shadow_demo_has_a_figure_casting_on_a_floor() {
+        let mut demo = demo(13);
+        let scene = demo.scene();
+        scene.build_missing_mesh_buffers().unwrap();
+        scene.update_nodes();
+
+        assert!(scene.get_shadow_light().is_some());
+        let items = scene.draw_items();
+        assert_eq!(items.len(), 2);
+        let node = |name| scene.get_node(scene.find_node(name).unwrap()).unwrap();
+        assert!(node("Human").casts_shadow());
+        assert!(!node("Floor").casts_shadow());
+
+        // The figure stands on the floor, about as tall as a person.
+        let human = scene.get_mesh(node("Human").get_mesh().unwrap()).unwrap();
+        let heights = human.get_vertices().iter().map(|v| v.pos.z);
+        let (low, high) = heights.fold((f32::MAX, f32::MIN), |(l, h), z| (l.min(z), h.max(z)));
+        assert!(low.abs() < 1e-3 && (1.6..1.9).contains(&high), "{low}..{high}");
+
+        // Nothing moves.
+        let before = node("Human").get_transform();
+        demo.update(5.0).unwrap();
+        let scene = demo.scene();
+        assert_eq!(scene.get_node(scene.find_node("Human").unwrap()).unwrap().get_transform(), before);
     }
 }

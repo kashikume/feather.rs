@@ -39,6 +39,8 @@ pub mod scene;
 pub mod scenefile;
 pub mod shader;
 pub mod shaderlayout;
+pub mod shadow;
+pub mod shadowpass;
 pub mod skeleton;
 pub mod swapchain;
 pub mod swapchainsupport;

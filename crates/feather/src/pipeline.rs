@@ -155,7 +155,7 @@ pub struct ShaderPipeline {
     /// Pools the descriptor sets come from; a new one is added when the last is full.
     descriptor_pools: Vec<vk::DescriptorPool>,
     /// Descriptor sets (set 0, 1, ...) by (swapchain image, image view of each sampler).
-    descriptor_sets: HashMap<(usize, Vec<vk::ImageView>), CachedSets>,
+    descriptor_sets: HashMap<(usize, Vec<(vk::ImageView, vk::Sampler)>), CachedSets>,
 }
 
 impl ShaderPipeline {
@@ -253,20 +253,20 @@ impl ShaderPipeline {
 
     /// The descriptor sets (set 0, 1, ...) for a draw on swapchain image `image`: uniform
     /// blocks point at `uniform_buffer` (draws add their dynamic offsets), sampler `i` at
-    /// `views[i]`. Sets are created on first use and reused afterwards. The image's previous
-    /// frame must be finished, and the sets must be fetched before recording the frame.
+    /// image view and sampler `textures[i]`. Sets are created on first use and reused
+    /// afterwards. The image's previous frame must be finished, and the sets must be fetched
+    /// before recording the frame.
     pub unsafe fn descriptor_sets(
         &mut self,
         device: &Device,
         image: usize,
-        views: &[vk::ImageView],
+        textures: &[(vk::ImageView, vk::Sampler)],
         uniform_buffer: vk::Buffer,
-        sampler: vk::Sampler,
     ) -> Result<Vec<vk::DescriptorSet>> {
         if self.set_layouts.is_empty() {
             return Ok(Vec::new());
         }
-        let key = (image, views.to_vec());
+        let key = (image, textures.to_vec());
         if let Some(cached) = self.descriptor_sets.get_mut(&key) {
             if cached.uniform_buffer != uniform_buffer {
                 // The frame's uniform buffer was replaced (it grew).
@@ -282,7 +282,7 @@ impl ShaderPipeline {
             &self.layout_info,
             &sets,
             uniform_buffer,
-            Some((views, sampler)),
+            Some(textures),
         );
         self.descriptor_sets.insert(
             key,
@@ -355,13 +355,13 @@ impl ShaderPipeline {
 }
 
 /// Points the uniform blocks of `sets` at `uniform_buffer` and, when `textures` is given,
-/// sampler `i` at `textures.0[i]` with sampler `textures.1`.
+/// sampler `i` at image view and sampler `textures[i]`.
 unsafe fn write_descriptor_sets(
     device: &Device,
     layout: &ShaderLayout,
     sets: &[vk::DescriptorSet],
     uniform_buffer: vk::Buffer,
-    textures: Option<(&[vk::ImageView], vk::Sampler)>,
+    textures: Option<&[(vk::ImageView, vk::Sampler)]>,
 ) {
     let buffer_infos: Vec<_> = layout
         .uniform_blocks
@@ -389,13 +389,13 @@ unsafe fn write_descriptor_sets(
         .collect();
 
     let image_infos: Vec<_> = textures
-        .map(|(views, sampler)| {
-            views
+        .map(|textures| {
+            textures
                 .iter()
-                .map(|view| {
+                .map(|&(view, sampler)| {
                     [vk::DescriptorImageInfo::builder()
                         .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-                        .image_view(*view)
+                        .image_view(view)
                         .sampler(sampler)
                         .build()]
                 })

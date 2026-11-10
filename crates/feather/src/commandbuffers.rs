@@ -3,6 +3,7 @@ use vulkanalia::prelude::v1_0::*;
 
 use super::appdata::AppData;
 use super::pipeline::PipelineKey;
+use super::shadowpass::{record_shadow_pass, ShadowPass};
 
 //================================================
 // Command Buffers
@@ -17,8 +18,8 @@ pub struct GpuDraw {
     /// Whether to clear the depth buffer before this draw, so it and the draws after it are
     /// drawn over everything before (the first draw of every scene but the first).
     pub clear_depth: bool,
-    /// Image view bound to each sampler of the shader.
-    pub texture_views: Vec<vk::ImageView>,
+    /// Image view and sampler bound to each sampler of the shader.
+    pub textures: Vec<(vk::ImageView, vk::Sampler)>,
     pub pipeline: vk::Pipeline,
     pub pipeline_layout: vk::PipelineLayout,
     /// The pipeline's descriptor sets for this draw (set 0, 1, ...); filled in once the
@@ -53,12 +54,14 @@ pub unsafe fn create_command_buffers(device: &Device, data: &mut AppData) -> Res
     Ok(())
 }
 
-/// Records the command buffer of swapchain image `image_index`: clears the image and issues
-/// `draws` (best sorted by pipeline). The command buffer must not be in use by the GPU.
+/// Records the command buffer of swapchain image `image_index`: the scenes' shadow passes,
+/// then the main pass, which clears the image and issues `draws` (best sorted by pipeline).
+/// The command buffer must not be in use by the GPU.
 pub unsafe fn record_command_buffer(
     device: &Device,
     data: &AppData,
     image_index: usize,
+    shadow_passes: &[ShadowPass],
     draws: &[GpuDraw],
 ) -> Result<()> {
     let command_buffer = data.command_buffers[image_index];
@@ -69,6 +72,12 @@ pub unsafe fn record_command_buffer(
         .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
 
     device.begin_command_buffer(command_buffer, &info)?;
+
+    if let Some(renderer) = &data.shadow_renderer {
+        for pass in shadow_passes {
+            record_shadow_pass(device, command_buffer, renderer, pass);
+        }
+    }
 
     let render_area = vk::Rect2D::builder()
         .offset(vk::Offset2D::default())

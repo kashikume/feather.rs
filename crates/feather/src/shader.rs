@@ -13,6 +13,9 @@ const SPIRV_MAGIC: u32 = 0x0723_0203;
 ///   projection matrices; each must be a `mat4` in the shader.
 /// - `umin`, `umax`, `vmin`, `vmax`: the edges of the rectangle of the material's texture in
 ///   its atlas, in UV space; each must be a `float` in the shader.
+/// - `shadow_matrix`: the view-projection matrix of the scene's shadow light (identity without
+///   one), a `mat4`; `shadow_map`: the sampler that samples the scene's shadow map instead of
+///   the material's texture. See `shadow`.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ShaderUniformNames {
     pub model: Option<String>,
@@ -22,6 +25,8 @@ pub struct ShaderUniformNames {
     pub umax: Option<String>,
     pub vmin: Option<String>,
     pub vmax: Option<String>,
+    pub shadow_matrix: Option<String>,
+    pub shadow_map: Option<String>,
 }
 
 impl ShaderUniformNames {
@@ -44,8 +49,15 @@ impl ShaderUniformNames {
         self
     }
 
+    /// Adds the shadow light's matrix uniform and the shadow map's sampler (see `shadow`).
+    pub fn with_shadow(mut self, matrix: &str, map: &str) -> Self {
+        self.shadow_matrix = Some(matrix.to_string());
+        self.shadow_map = Some(map.to_string());
+        self
+    }
+
     /// Each name with the type it must have in the shader.
-    fn typed(&self) -> [(&Option<String>, UniformType); 7] {
+    fn typed(&self) -> [(&Option<String>, UniformType); 8] {
         [
             (&self.model, UniformType::Mat4),
             (&self.view, UniformType::Mat4),
@@ -54,6 +66,7 @@ impl ShaderUniformNames {
             (&self.umax, UniformType::Float),
             (&self.vmin, UniformType::Float),
             (&self.vmax, UniformType::Float),
+            (&self.shadow_matrix, UniformType::Mat4),
         ]
     }
 
@@ -62,6 +75,11 @@ impl ShaderUniformNames {
         for (uniform, ty) in self.typed() {
             if let Some(uniform) = uniform {
                 check_uniform_type(layout, uniform, ty)?;
+            }
+        }
+        if let Some(map) = &self.shadow_map {
+            if !layout.samplers.iter().any(|s| &s.name == map) {
+                bail!("the shader has no sampler `{map}` for the shadow map");
             }
         }
         Ok(())
@@ -185,6 +203,16 @@ impl Shader {
     /// Name of the uniform that receives the bottom edge (`v` max) of the texture's rectangle.
     pub fn get_uniform_vmax_name(&self) -> Option<&str> {
         self.uniform_names.vmax.as_deref()
+    }
+
+    /// Name of the uniform that receives the shadow light's view-projection matrix.
+    pub fn get_uniform_shadow_matrix_name(&self) -> Option<&str> {
+        self.uniform_names.shadow_matrix.as_deref()
+    }
+
+    /// Name of the sampler that samples the shadow map.
+    pub fn get_shadow_map_sampler_name(&self) -> Option<&str> {
+        self.uniform_names.shadow_map.as_deref()
     }
 }
 

@@ -18,10 +18,13 @@
 //!                  "model_uniform": "model", "view_uniform": "view",
 //!                  "projection_uniform": "proj",
 //!                  "umin_uniform": "umin", "umax_uniform": "umax",
-//!                  "vmin_uniform": "vmin", "vmax_uniform": "vmax" }],
+//!                  "vmin_uniform": "vmin", "vmax_uniform": "vmax",
+//!                  "shadow_matrix_uniform": "lightViewProj",
+//!                  "shadow_map_sampler": "shadowMap" }],
 //!   "materials": [{ "name": "Room", "shader": "Basic", "texture": { "atlas": "Room" } },
 //!                 { "name": "Star", "shader": "Basic",
 //!                   "texture": { "atlas": "Icons", "name": "star" } }],
+//!   "shadow_light": { "direction": [1, 0.5, -2], "center": [0, 0, 0], "radius": 6 },
 //!   "root": {
 //!     "name": "Scene root",
 //!     "children": [{
@@ -49,8 +52,11 @@
 //!   arrays of 4, 9 or 16 numbers).
 //! - A node transform is either `matrix` (16 numbers, column-major) or any of `translation`
 //!   `[x, y, z]`, `rotation` `[x, y, z]` in degrees (applied around X, then Y, then Z) and
-//!   `scale` (a number or `[x, y, z]`). Nodes may also set `"visible": false` and
-//!   `"transparent": true` (see `Node::set_transparent`).
+//!   `scale` (a number or `[x, y, z]`). Nodes may also set `"visible": false`,
+//!   `"transparent": true` (see `Node::set_transparent`) and `"casts_shadow": true`.
+//! - `shadow_light` (optional) is a directional light casting the scene's shadows
+//!   (`ShadowLight::directional`): its `direction`, the `center` (default the origin) and
+//!   `radius` of the area it covers, and an optional `map_size` in pixels (default 2048).
 //! - Unknown fields are errors, so typos don't go unnoticed.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -60,13 +66,14 @@ use cgmath::{Deg, Matrix2, Matrix3, Matrix4};
 use serde::Deserialize;
 
 use super::assetsprovider::AssetsProvider;
-use super::math::{IVec2, IVec3, IVec4, Mat4, UVec2, UVec3, UVec4, Vec2, Vec3, Vec4};
+use super::math::{IVec2, IVec3, IVec4, Mat4, Point3, UVec2, UVec3, UVec4, Vec2, Vec3, Vec4};
 use super::meshbuildercuboid::MeshBuilderCuboid;
 use super::meshbuilderobjfile::MeshBuilderObjFile;
 use super::meshbuilderplane::MeshBuilderPlane;
 use super::meshbuildersphere::{self, MeshBuilderSphere};
 use super::scene::Scene;
 use super::shader::ShaderUniformNames;
+use super::shadow::ShadowLight;
 use super::uniform::UniformValue;
 use super::uniforms::Uniforms;
 
@@ -81,7 +88,19 @@ struct SceneFile {
     shaders: Vec<ShaderEntry>,
     #[serde(default)]
     materials: Vec<MaterialEntry>,
+    shadow_light: Option<ShadowLightEntry>,
     root: NodeEntry,
+}
+
+/// A directional light casting the scene's shadows (`ShadowLight::directional`).
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ShadowLightEntry {
+    direction: [f32; 3],
+    #[serde(default)]
+    center: [f32; 3],
+    radius: f32,
+    map_size: Option<u32>,
 }
 
 #[derive(Deserialize)]
@@ -160,6 +179,8 @@ struct ShaderEntry {
     umax_uniform: Option<String>,
     vmin_uniform: Option<String>,
     vmax_uniform: Option<String>,
+    shadow_matrix_uniform: Option<String>,
+    shadow_map_sampler: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -191,6 +212,8 @@ struct NodeEntry {
     visible: bool,
     #[serde(default)]
     transparent: bool,
+    #[serde(default)]
+    casts_shadow: bool,
     #[serde(default)]
     uniforms: BTreeMap<String, UniformEntry>,
     #[serde(default)]
@@ -292,6 +315,8 @@ impl Scene {
                     umax: entry.umax_uniform.clone(),
                     vmin: entry.vmin_uniform.clone(),
                     vmax: entry.vmax_uniform.clone(),
+                    shadow_matrix: entry.shadow_matrix_uniform.clone(),
+                    shadow_map: entry.shadow_map_sampler.clone(),
                 };
                 scene.create_shader(
                     Some(entry.name.clone()),
@@ -324,6 +349,21 @@ impl Scene {
         }
 
         let names = Names { meshes, materials };
+        if let Some(light) = &file.shadow_light {
+            if !(light.radius > 0.0) {
+                bail!("shadow_light: radius must be above 0, got {}", light.radius);
+            }
+            let mut shadow = ShadowLight::directional(
+                Vec3::from(light.direction),
+                Point3::from(light.center),
+                light.radius,
+            );
+            if let Some(size) = light.map_size {
+                shadow = shadow.with_map_size(size);
+            }
+            scene.set_shadow_light(Some(shadow));
+        }
+
         let root = scene.create_root_node(file.root.name.clone());
         setup_node(&mut scene, root, &file.root, &names)?;
         Ok(scene)
@@ -426,6 +466,7 @@ fn setup_node(scene: &mut Scene, handle: usize, entry: &NodeEntry, names: &Names
         }
         node.set_visible(entry.visible);
         node.set_transparent(entry.transparent);
+        node.set_casts_shadow(entry.casts_shadow);
         set_uniforms(node.uniforms_mut(), &entry.uniforms)
     })()
     .with_context(what)?;
@@ -712,6 +753,65 @@ mod tests {
 
     fn load_error(json: &str) -> String {
         format!("{:#}", Scene::from_json(&assets(), json).err().unwrap())
+    }
+
+    #[test]
+    fn loads_shadows() {
+        let json = r#"{
+            "meshes": [{ "name": "Triangle", "file": "triangle.obj" }],
+            "shaders": [{
+                "name": "Shadowed", "vertex": "basic.vert.spv", "fragment": "basic.frag.spv",
+                "model_uniform": "model", "shadow_matrix_uniform": "view",
+                "shadow_map_sampler": "texSampler"
+            }],
+            "shadow_light": { "direction": [0, 0, -1], "radius": 4, "map_size": 512 },
+            "root": {
+                "name": "Root",
+                "children": [
+                    { "name": "Caster", "mesh": "Triangle", "casts_shadow": true },
+                    { "name": "Receiver", "mesh": "Triangle" }
+                ]
+            }
+        }"#;
+        let scene = Scene::from_json(&assets(), json).unwrap();
+        let light = scene.get_shadow_light().unwrap();
+        assert_eq!(light.map_size, 512);
+        let expected = ShadowLight::directional(Vec3::new(0.0, 0.0, -1.0), Point3::new(0.0, 0.0, 0.0), 4.0);
+        assert_eq!(light.view_projection, expected.view_projection);
+
+        let node = |name| scene.get_node(scene.find_node(name).unwrap()).unwrap();
+        assert!(node("Caster").casts_shadow());
+        assert!(!node("Receiver").casts_shadow());
+
+        let shader = scene.shaders.get_by_name("Shadowed").unwrap();
+        assert_eq!(shader.get_uniform_shadow_matrix_name(), Some("view"));
+        assert_eq!(shader.get_shadow_map_sampler_name(), Some("texSampler"));
+
+        // Without `shadow_light`, no shadows.
+        assert!(Scene::from_json(&assets(), SCENE).unwrap().get_shadow_light().is_none());
+    }
+
+    #[test]
+    fn shadow_errors_name_the_problem() {
+        let shader = |names: &str| {
+            format!(
+                r#"{{ "shaders": [{{ "name": "S", "vertex": "basic.vert.spv",
+                    "fragment": "basic.frag.spv", {names} }}], "root": {{ "name": "R" }} }}"#
+            )
+        };
+        for (json, expected) in [
+            (shader(r#""shadow_map_sampler": "nope""#), "no sampler `nope`"),
+            (shader(r#""shadow_map_sampler": "view""#), "no sampler `view`"),
+            (shader(r#""shadow_matrix_uniform": "texSampler""#), "is a sampler"),
+            (
+                r#"{ "shadow_light": { "direction": [0, 0, -1], "radius": 0 }, "root": { "name": "R" } }"#
+                    .to_string(),
+                "radius must be above 0",
+            ),
+        ] {
+            let error = format!("{:#}", Scene::from_json(&assets(), &json).err().unwrap());
+            assert!(error.contains(expected), "{error}");
+        }
     }
 
     #[test]

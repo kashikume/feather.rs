@@ -38,7 +38,12 @@ use super::swapchain::Swapchain;
 use super::syncobjects::create_sync_objects;
 use super::gpuimage::{create_texture_sampler, GpuImage, UploadContext};
 use super::gpumeshbuffer::GpuMeshBuffer;
-use super::uniformdata::{engine_uniforms, pack_draw, sampler_atlases, UniformArena, UniformValues};
+use super::shadowpass::{ShadowDraw, ShadowMap, ShadowPass, ShadowRenderer};
+use super::uniformdata::{
+    engine_uniforms, pack_draw, sampler_sources, SamplerSource, UniformArena, UniformValues,
+};
+use super::math::Mat4;
+use cgmath::SquareMatrix;
 
 /// Our Vulkan app.
 pub struct App {
@@ -78,6 +83,8 @@ impl App {
             scenes: HashMap::new(),
             texture_sampler: vk::Sampler::default(),
             fallback_texture: None,
+            shadow_renderer: None,
+            fallback_shadow_map: None,
             frame_uniforms: Vec::new(),
             command_buffers: Vec::new(),
             image_available_semaphores: Vec::new(),
@@ -109,6 +116,8 @@ impl App {
             queue: data.graphics_queue,
         };
         data.fallback_texture = Some(GpuImage::upload_rgba(&upload, 1, 1, &[255, 0, 255, 255])?);
+        data.fallback_shadow_map = Some(GpuImage::upload_rgba(&upload, 1, 1, &[255, 255, 255, 255])?);
+        data.shadow_renderer = Some(ShadowRenderer::create(&instance, &device, data.physical_device)?);
         data.app.on_create()?;
         create_command_buffers(&device, &mut data)?;
         data.frame_uniforms.resize_with(data.swapchain.swapchain_images.len(), || None);
@@ -157,29 +166,33 @@ impl App {
 
     /// Collects the draw calls of every rendered scene, scene after scene, each in drawing
     /// order (`sort_for_rendering`: opaque by shader, then transparent back to front) and seen
-    /// through its own camera, and packs their uniforms into the returned arena. The first
-    /// draw of every scene but the first clears the depth buffer, so later scenes are drawn
-    /// over earlier ones. Creates the pipelines of shaders drawn for the first time.
-    unsafe fn collect_draws(&mut self) -> Result<(Vec<GpuDraw>, UniformArena)> {
+    /// through its own camera, and packs their uniforms into the returned arena; and the shadow
+    /// passes of the scenes with a shadow light. The first draw of every scene but the first
+    /// clears the depth buffer, so later scenes are drawn over earlier ones. Creates the
+    /// pipelines of shaders drawn for the first time.
+    unsafe fn collect_draws(&mut self) -> Result<(Vec<GpuDraw>, Vec<ShadowPass>, UniformArena)> {
         let mut arena = UniformArena::new(self.data.min_uniform_alignment as usize);
         let mut draws = Vec::new();
+        let mut shadow_passes = Vec::new();
         for index in 0..self.data.app.get_num_scenes_to_render() {
             let first_draw = draws.len();
-            self.collect_scene_draws(index, &mut draws, &mut arena)?;
+            self.collect_scene_draws(index, &mut draws, &mut shadow_passes, &mut arena)?;
             if index > 0 {
                 if let Some(draw) = draws.get_mut(first_draw) {
                     draw.clear_depth = true;
                 }
             }
         }
-        Ok((draws, arena))
+        Ok((draws, shadow_passes, arena))
     }
 
-    /// Adds the draws of scene `index` to `draws` (see `collect_draws`).
+    /// Adds the draws of scene `index` to `draws`, and its shadow pass to `shadow_passes` (see
+    /// `collect_draws`).
     unsafe fn collect_scene_draws(
         &mut self,
         index: usize,
         draws: &mut Vec<GpuDraw>,
+        shadow_passes: &mut Vec<ShadowPass>,
         arena: &mut UniformArena,
     ) -> Result<()> {
         let extent = self.data.swapchain.swapchain_extent;
@@ -219,6 +232,40 @@ impl App {
             extent,
         };
         let fallback_view = data.fallback_texture.as_ref().unwrap().view;
+
+        // Shadows: the casters, drawn from the light into the scene's shadow map. Shaders
+        // sample the map (or a map lit everywhere) with the shadow sampler.
+        let light = scene.get_shadow_light().map(|l| l.view_projection);
+        let shadow_matrix = light.unwrap_or_else(Mat4::identity);
+        if let (Some(light), Some(map)) = (light, &gpu.shadow_map) {
+            let casters = items
+                .iter()
+                .filter(|item| item.casts_shadow)
+                .filter_map(|item| {
+                    let buffer = gpu.gpu_mesh_buffers.get(&item.mesh_buffer)?;
+                    Some(ShadowDraw {
+                        model: item.model,
+                        vertex_buffer: buffer.vertex_buffer,
+                        index_buffer: buffer.index_buffer,
+                        first_index: item.first_index,
+                        index_count: item.index_count,
+                        vertex_offset: item.vertex_offset,
+                    })
+                })
+                .collect();
+            shadow_passes.push(ShadowPass {
+                framebuffer: map.framebuffer,
+                size: map.size,
+                light,
+                draws: casters,
+            });
+        }
+        let shadow_view = gpu
+            .shadow_map
+            .as_ref()
+            .map_or(data.fallback_shadow_map.as_ref().unwrap().view, |m| m.view);
+        let shadow_sampler = data.shadow_renderer.as_ref().unwrap().sampler;
+
         draws.reserve(items.len());
         let mut issues = Vec::new();
         for item in items {
@@ -261,18 +308,23 @@ impl App {
                 .get_material(item.material)
                 .and_then(|m| m.get_texture());
             issues.clear();
-            let atlases = sampler_atlases(
+            let sources = sampler_sources(
                 shader.get_layout(),
+                shader.get_shadow_map_sampler_name(),
                 texture,
                 |a| scene.get_atlas(a).is_some(),
                 &mut issues,
             );
-            let texture_views = atlases
+            let textures = sources
                 .iter()
-                .map(|atlas| {
-                    atlas
-                        .and_then(|a| gpu.gpu_atlases.get(&a))
-                        .map_or(fallback_view, |image| image.view)
+                .map(|source| match source {
+                    SamplerSource::ShadowMap => (shadow_view, shadow_sampler),
+                    SamplerSource::Atlas(atlas) => (
+                        atlas
+                            .and_then(|a| gpu.gpu_atlases.get(&a))
+                            .map_or(fallback_view, |image| image.view),
+                        data.texture_sampler,
+                    ),
                 })
                 .collect();
 
@@ -283,6 +335,7 @@ impl App {
                 item.model,
                 view,
                 proj,
+                shadow_matrix,
                 texture,
             );
             let values = UniformValues {
@@ -303,7 +356,7 @@ impl App {
                 scene: scene_id,
                 pipeline_key: key,
                 clear_depth: false,
-                texture_views,
+                textures,
                 pipeline: pipeline.pipeline,
                 pipeline_layout: pipeline.layout,
                 descriptor_sets: Vec::new(),
@@ -355,9 +408,8 @@ impl App {
             draw.descriptor_sets = pipeline.descriptor_sets(
                 &self.device,
                 image_index,
-                &draw.texture_views,
+                &draw.textures,
                 buffer.buffer,
-                self.data.texture_sampler,
             )?;
         }
         Ok(())
@@ -434,6 +486,28 @@ impl App {
         }
         gpu.failed_atlases.retain(|&h| scene.get_atlas(h).is_some());
 
+        // The shadow map, as big as the scene's shadow light wants it.
+        let wanted = scene.get_shadow_light().map(|l| l.map_size);
+        if gpu.shadow_map.as_ref().map(|m| m.size) != wanted {
+            if let Some(old) = gpu.shadow_map.take() {
+                // Frames in flight and cached descriptor sets may use it.
+                self.device.device_wait_idle()?;
+                gpu.shader_pipelines
+                    .drain()
+                    .for_each(|(_, p)| p.destroy(&self.device));
+                old.destroy(&self.device);
+            }
+            if let Some(size) = wanted {
+                gpu.shadow_map = Some(ShadowMap::create(
+                    &self.instance,
+                    &self.device,
+                    data.physical_device,
+                    data.shadow_renderer.as_ref().unwrap(),
+                    size,
+                )?);
+            }
+        }
+
         for atlas in scene.atlases.iter() {
             let handle = atlas.get_handle();
             if gpu.gpu_atlases.contains_key(&handle) || gpu.failed_atlases.contains(&handle) {
@@ -493,9 +567,9 @@ impl App {
 
         self.data.images_in_flight[image_index] = in_flight_fence;
 
-        let (mut draws, arena) = self.collect_draws()?;
+        let (mut draws, shadow_passes, arena) = self.collect_draws()?;
         self.upload_uniforms(image_index, &arena, &mut draws)?;
-        record_command_buffer(&self.device, &self.data, image_index, &draws)?;
+        record_command_buffer(&self.device, &self.data, image_index, &shadow_passes, &draws)?;
 
         let wait_semaphores = &[self.data.image_available_semaphores[self.frame]];
         let wait_stages = &[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
@@ -569,6 +643,12 @@ impl App {
         self.data.scenes.drain().for_each(|(_, mut s)| s.destroy(&self.device));
         if let Some(fallback) = self.data.fallback_texture.take() {
             fallback.destroy(&self.device);
+        }
+        if let Some(fallback) = self.data.fallback_shadow_map.take() {
+            fallback.destroy(&self.device);
+        }
+        if let Some(renderer) = self.data.shadow_renderer.take() {
+            renderer.destroy(&self.device);
         }
         self.device.destroy_sampler(self.data.texture_sampler, None);
         self.device.destroy_command_pool(self.data.command_pool, None);

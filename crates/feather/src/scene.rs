@@ -8,6 +8,7 @@ use crate::{
     material::Material,
     object::Object,
     shader::{Shader, ShaderUniformNames},
+    shadow::ShadowLight,
     texture::Texture,
 };
 
@@ -23,6 +24,8 @@ pub struct DrawItem {
     /// Whether the node is transparent (`Node::is_transparent`): blended, and drawn after the
     /// opaque nodes, back to front.
     pub transparent: bool,
+    /// Whether the node casts a shadow (`Node::casts_shadow`).
+    pub casts_shadow: bool,
     /// Handle of the node's material (in `Scene::materials`).
     pub material: usize,
     /// Handle of the shader (in `Scene::shaders`) of the node's material.
@@ -67,6 +70,7 @@ pub struct Scene {
     pub atlases: ObjDB<Atlas>,
     pub shaders: ObjDB<Shader>,
     pub materials: ObjDB<Material>,
+    shadow_light: Option<ShadowLight>,
     needs_create_mesh_buffer: bool,
 }
 
@@ -80,6 +84,7 @@ impl Scene {
             atlases: ObjDB::new(),
             shaders: ObjDB::new(),
             materials: ObjDB::new(),
+            shadow_light: None,
             needs_create_mesh_buffer: false,
         }
     }
@@ -89,6 +94,15 @@ impl Scene {
     /// different objects.
     pub fn get_id(&self) -> u64 {
         self.id
+    }
+
+    /// Sets the light casting the scene's shadows (`None`: no shadows). See `shadow`.
+    pub fn set_shadow_light(&mut self, light: Option<ShadowLight>) {
+        self.shadow_light = light;
+    }
+
+    pub fn get_shadow_light(&self) -> Option<&ShadowLight> {
+        self.shadow_light.as_ref()
     }
 
     pub fn add_mesh(&mut self, mesh: Mesh) -> usize {
@@ -369,6 +383,7 @@ impl Scene {
             items.push(DrawItem {
                 node: handle,
                 transparent: node.is_transparent(),
+                casts_shadow: node.casts_shadow(),
                 material: material.get_handle(),
                 shader,
                 mesh_buffer: data.buffer_handle,
@@ -1515,6 +1530,7 @@ mod tests {
             DrawItem {
                 node: a,
                 transparent: false,
+                casts_shadow: false,
                 material,
                 shader,
                 mesh_buffer: buffer,
@@ -1529,6 +1545,7 @@ mod tests {
             DrawItem {
                 node: b,
                 transparent: false,
+                casts_shadow: false,
                 material,
                 shader,
                 mesh_buffer: buffer,
@@ -1626,10 +1643,38 @@ mod tests {
         assert!(item(glass).transparent);
     }
 
+    #[test]
+    fn draw_items_say_which_nodes_cast_shadows() {
+        let mut scene = Scene::new();
+        let root = scene.create_root_node(None);
+        let mesh = scene.add_mesh(test_mesh(3, 3));
+        let (_, material) = test_material(&mut scene);
+        let caster = scene.create_node(None, root).unwrap();
+        let other = scene.create_node(None, root).unwrap();
+        for node in [caster, other] {
+            scene.node_set_mesh(node, mesh).unwrap();
+            scene.node_set_material(node, material).unwrap();
+        }
+        scene.get_node_mut(caster).unwrap().set_casts_shadow(true);
+        scene.build_missing_mesh_buffers().unwrap();
+        scene.update_nodes();
+
+        let items = scene.draw_items();
+        let item = |node| items.iter().find(|i| i.node == node).unwrap();
+        assert!(item(caster).casts_shadow);
+        assert!(!item(other).casts_shadow);
+
+        assert!(scene.get_shadow_light().is_none());
+        let light = crate::shadow::ShadowLight::from_matrix(translation(1.0, 0.0, 0.0));
+        scene.set_shadow_light(Some(light));
+        assert_eq!(scene.get_shadow_light(), Some(&light));
+    }
+
     fn item_at(node: usize, shader: usize, transparent: bool, y: f32) -> DrawItem {
         DrawItem {
             node,
             transparent,
+            casts_shadow: false,
             material: 0,
             shader,
             mesh_buffer: 0,

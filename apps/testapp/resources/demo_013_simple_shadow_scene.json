@@ -1,0 +1,41 @@
+{
+  "meshes": [
+    { "name": "Floor", "cuboid": { "x": [-3, 3], "y": [-3, 3], "z": [-0.1, 0] } },
+    { "name": "Human", "file": "demo_013_simple_shadow_human_mesh.obj" }
+  ],
+  "shaders": [
+    {
+      "name": "Shadowed",
+      "vertex": "demo_013_simple_shadow_shader.vert.spv",
+      "fragment": "demo_013_simple_shadow_shader.frag.spv",
+      "model_uniform": "model",
+      "view_uniform": "view",
+      "projection_uniform": "proj",
+      "shadow_matrix_uniform": "lightViewProj",
+      "shadow_map_sampler": "shadowMap"
+    }
+  ],
+  "materials": [
+    { "name": "Plain", "shader": "Shadowed" }
+  ],
+  "shadow_light": { "direction": [0.55, 1.0, -0.9], "center": [0, 0, 0.8], "radius": 4.6 },
+  "root": {
+    "name": "Scene root",
+    "uniforms": { "light": { "vec3": [-0.55, -1.0, 0.9] } },
+    "children": [
+      {
+        "name": "Floor",
+        "mesh": "Floor",
+        "material": "Plain",
+        "uniforms": { "color": { "vec3": [0.8, 0.78, 0.72] } }
+      },
+      {
+        "name": "Human",
+        "mesh": "Human",
+        "material": "Plain",
+        "casts_shadow": true,
+        "uniforms": { "color": { "vec3": [0.35, 0.55, 0.85] } }
+      }
+    ]
+  }
+}
