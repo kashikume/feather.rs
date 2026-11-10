@@ -80,14 +80,16 @@ impl Atlas {
         Ok(Self::from_rgba(name, width, height, pixels))
     }
 
-    /// Creates an atlas from 8-bit RGBA pixels (`width * height * 4` bytes).
-    pub(crate) fn from_rgba(
+    /// Creates an atlas from 8-bit RGBA pixels (`width * height * 4` bytes, row by row from
+    /// the top), e.g. a texture generated in code. The atlas has no metadata; see
+    /// `set_metadata`. Panics if `pixels` has the wrong length.
+    pub fn from_rgba(
         name: Option<String>,
         width: u32,
         height: u32,
         pixels: Vec<u8>,
     ) -> Self {
-        debug_assert_eq!(pixels.len(), width as usize * height as usize * 4);
+        assert_eq!(pixels.len(), width as usize * height as usize * 4);
         Self {
             name,
             handle: usize::MAX,

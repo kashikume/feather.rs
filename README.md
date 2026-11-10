@@ -20,7 +20,8 @@ What works today:
 - Mesh builders: Wavefront `.obj` loading (via `tobj`), procedural cuboids, subdivided planes and
   balls (UV spheres)
 - Atlases loaded from PNG (any color type, converted to 8-bit RGBA) with optional `.atlas`
-  metadata naming their textures; textures are plain values taken from an atlas
+  metadata naming their textures, or made from pixels generated in code (`Atlas::from_rgba`);
+  textures are plain values taken from an atlas
 - Shaders (SPIR-V) and materials (a shader, a texture and uniform values); each shader's uniform
   blocks, push constants and samplers are read from its SPIR-V, and each shader gets its own
   pipeline
@@ -96,6 +97,7 @@ only command line argument is the number of the demo to start with (default 0). 
 | 12   | Overlay     | Two scenes together: demo 0's spinning room behind, and in front a 2D overlay seen by an orthographic camera, with see-through panels, text, the room's texture as an image and the frame rate |
 | 13   | Simple shadow | A human figure (a generated mesh) standing on a floor, casting its shadow from a fixed light; nothing moves, the shader takes one shadow-map sample |
 | 14   | Shadows     | A sun going round the sky over a ring of stone pillars, a spinning golden cube on a pedestal and bouncing balls; their soft-edged shadows turn and stretch with it |
+| 15   | City        | A busy city the camera glides through: 5 x 5 blocks of buildings in four styles, streets with lanes, crosswalks and traffic lights, trees, lamps and a park; over 100 cars stopping at red lights and keeping their distance, over 100 people walking; everything textured (textures painted in code, no image files) and casting shadows from the afternoon sun, with sky reflections on glass and fog into a sky dome |
 
 Each demo is in its own file, `apps/testapp/src/testapp/demo_NNN_<name>.rs`, and its resources
 are named `demo_NNN_<name>_<kind>` (`scene`, `atlas`, `mesh`, `shader`, ...). Demos are listed in
@@ -381,6 +383,8 @@ float lit = p.z - bias <= texture(shadowMap, p.xy * 0.5 + 0.5).r ? 1.0 : 0.0;
 
 The map is cleared to depth 1 and sampled with nearest filtering and a white border, so places
 outside it are lit; in a scene without a light, the sampler gets a map that is lit everywhere.
+For a large scene, the light can follow the camera: `ShadowLight::directional_snapped` moves
+the shadow map's area by whole texels only, so shadows don't shimmer as it moves (demo 15).
 Demo 13 is the simplest use: one caster, one fixed light, one shadow-map sample per fragment
 (`demo_013_simple_shadow_shader.frag`). Demo 14's shader averages 3x3 samples for soft edges
 (`demo_014_shadows_shader.frag`).

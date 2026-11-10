@@ -1,0 +1,52 @@
+{
+  "shaders": [
+    {
+      "name": "Lit",
+      "vertex": "demo_015_city_shader.vert.spv",
+      "fragment": "demo_015_city_shader.frag.spv",
+      "model_uniform": "model",
+      "view_uniform": "view",
+      "projection_uniform": "proj",
+      "shadow_matrix_uniform": "lightViewProj",
+      "shadow_map_sampler": "shadowMap"
+    },
+    {
+      "name": "Sky",
+      "vertex": "demo_015_city_sky_shader.vert.spv",
+      "fragment": "demo_015_city_sky_shader.frag.spv",
+      "model_uniform": "model",
+      "view_uniform": "view",
+      "projection_uniform": "proj"
+    }
+  ],
+  "materials": [
+    { "name": "Sky", "shader": "Sky" }
+  ],
+  "root": {
+    "name": "Scene root",
+    "children": [
+      {
+        "name": "Sky",
+        "material": "Sky",
+        "uniforms": {
+          "sunColor": { "vec3": [1.6, 1.45, 1.2] },
+          "skyColor": { "vec3": [0.14, 0.32, 0.72] },
+          "horizonColor": { "vec3": [0.62, 0.7, 0.8] },
+          "groundColor": { "vec3": [0.28, 0.27, 0.26] }
+        }
+      },
+      {
+        "name": "City",
+        "uniforms": {
+          "sunColor": { "vec3": [1.6, 1.45, 1.2] },
+          "skyColor": { "vec3": [0.14, 0.32, 0.72] },
+          "horizonColor": { "vec3": [0.62, 0.7, 0.8] },
+          "groundColor": { "vec3": [0.28, 0.27, 0.26] },
+          "fogDensity": { "float": 0.0055 },
+          "tint": { "vec3": [1.0, 1.0, 1.0] },
+          "emissive": { "vec3": [0.0, 0.0, 0.0] }
+        }
+      }
+    ]
+  }
+}

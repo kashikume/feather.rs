@@ -154,6 +154,9 @@ pub struct ShaderPipeline {
     pub push_constant_stages: vk::ShaderStageFlags,
     /// Pools the descriptor sets come from; a new one is added when the last is full.
     descriptor_pools: Vec<vk::DescriptorPool>,
+    /// How many groups of sets (one set per layout) the last pool has given out; it holds
+    /// `SET_GROUPS_PER_POOL`.
+    groups_in_last_pool: u32,
     /// Descriptor sets (set 0, 1, ...) by (swapchain image, image view of each sampler).
     descriptor_sets: HashMap<(usize, Vec<(vk::ImageView, vk::Sampler)>), CachedSets>,
 }
@@ -179,6 +182,7 @@ impl ShaderPipeline {
                 .as_ref()
                 .map_or(vk::ShaderStageFlags::empty(), |p| stage_flags(p.stages)),
             descriptor_pools: Vec::new(),
+            groups_in_last_pool: 0,
             descriptor_sets: HashMap::new(),
         };
         // On error, destroy whatever was created so far.
@@ -295,15 +299,19 @@ impl ShaderPipeline {
     }
 
     /// Allocates one descriptor set per set layout, adding a pool when the last one is full.
+    ///
+    /// Pools are never asked for more than they hold: without `VK_KHR_maintenance1` (Vulkan
+    /// 1.0), allocating from a full pool is invalid rather than an error. Sets are never freed
+    /// one by one, so counting what the last pool gave out is enough.
     unsafe fn allocate_sets(&mut self, device: &Device) -> Result<Vec<vk::DescriptorSet>> {
         if let Some(&pool) = self.descriptor_pools.last() {
-            let info = vk::DescriptorSetAllocateInfo::builder()
-                .descriptor_pool(pool)
-                .set_layouts(&self.set_layouts);
-            match device.allocate_descriptor_sets(&info) {
-                Ok(sets) => return Ok(sets),
-                Err(vk::ErrorCode::OUT_OF_POOL_MEMORY) | Err(vk::ErrorCode::FRAGMENTED_POOL) => {}
-                Err(e) => return Err(e.into()),
+            if self.groups_in_last_pool < SET_GROUPS_PER_POOL {
+                let info = vk::DescriptorSetAllocateInfo::builder()
+                    .descriptor_pool(pool)
+                    .set_layouts(&self.set_layouts);
+                let sets = device.allocate_descriptor_sets(&info)?;
+                self.groups_in_last_pool += 1;
+                return Ok(sets);
             }
         }
 
@@ -331,11 +339,14 @@ impl ShaderPipeline {
             .max_sets(self.set_layouts.len() as u32 * SET_GROUPS_PER_POOL);
         let pool = device.create_descriptor_pool(&info, None)?;
         self.descriptor_pools.push(pool);
+        self.groups_in_last_pool = 0;
 
         let info = vk::DescriptorSetAllocateInfo::builder()
             .descriptor_pool(pool)
             .set_layouts(&self.set_layouts);
-        Ok(device.allocate_descriptor_sets(&info)?)
+        let sets = device.allocate_descriptor_sets(&info)?;
+        self.groups_in_last_pool = 1;
+        Ok(sets)
     }
 
     pub unsafe fn destroy(&self, device: &Device) {

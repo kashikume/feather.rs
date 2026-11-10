@@ -17,7 +17,7 @@
 //! border, so places outside it are lit too. Scenes without a light give such shaders a 1x1
 //! map that is lit everywhere.
 
-use cgmath::InnerSpace;
+use cgmath::{EuclideanSpace, InnerSpace};
 
 use super::math::{Mat4, Point3, Vec3};
 
@@ -61,6 +61,33 @@ impl ShadowLight {
         Self::from_matrix(projection * view)
     }
 
+    /// Like `directional`, with a `map_size` shadow map, and with `center` moved to the nearest
+    /// point that is a whole number of shadow map texels from the origin, across the light.
+    /// When the centre follows something moving (e.g. the camera), shadows then don't shimmer:
+    /// the map moves by whole texels, so every caster keeps covering the same texels.
+    pub fn directional_snapped(
+        direction: Vec3,
+        center: Point3,
+        radius: f32,
+        map_size: u32,
+    ) -> Self {
+        let map_size = map_size.max(1);
+        let forward = direction.normalize();
+        let up = if forward.z.abs() < 0.9 {
+            Vec3::new(0.0, 0.0, 1.0)
+        } else {
+            Vec3::new(0.0, 1.0, 0.0)
+        };
+        // The light's view axes, as `Mat4::look_at_rh` makes them.
+        let side = forward.cross(up).normalize();
+        let up = side.cross(forward);
+        let texel = 2.0 * radius / map_size as f32;
+        let c = center.to_vec();
+        let snap = |v: f32| (v / texel).round() * texel;
+        let snapped = side * snap(c.dot(side)) + up * snap(c.dot(up)) + forward * c.dot(forward);
+        Self::directional(direction, Point3::from_vec(snapped), radius).with_map_size(map_size)
+    }
+
     /// The same light with a `size` x `size` shadow map.
     pub fn with_map_size(mut self, size: u32) -> Self {
         self.map_size = size.max(1);
@@ -90,7 +117,6 @@ fn vulkan_correction() -> Mat4 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cgmath::EuclideanSpace;
 
     fn close(a: f32, b: f32) -> bool {
         (a - b).abs() < 1e-4
@@ -115,6 +141,31 @@ mod tests {
         assert!(nearer.z < centre.z && centre.z < farther.z);
         assert!(close(nearer.x, 0.0) && close(nearer.y, 0.0));
         assert!(nearer.z >= 0.0 && farther.z <= 1.0);
+    }
+
+    #[test]
+    fn snapped_lights_move_by_whole_texels() {
+        let direction = Vec3::new(-1.0, 0.7, -1.2);
+        let light = |x: f32| {
+            ShadowLight::directional_snapped(direction, Point3::new(x, 3.0, 0.0), 8.0, 256)
+        };
+        let a = light(0.0);
+        assert_eq!(a.map_size, 256);
+        // Wherever the centre is, a fixed point lands on the same place within a texel.
+        let texel_in_ndc = 2.0 / 256.0;
+        let fraction = |l: &ShadowLight| {
+            let p = l.project(Point3::new(1.0, 2.0, 0.5));
+            (
+                (p.x / texel_in_ndc).rem_euclid(1.0),
+                (p.y / texel_in_ndc).rem_euclid(1.0),
+            )
+        };
+        let (fx, fy) = fraction(&a);
+        for x in [0.013, 0.31, 1.77, -4.2] {
+            let (gx, gy) = fraction(&light(x));
+            let same = |f: f32, g: f32| (f - g).abs() < 1e-2 || (1.0 - (f - g).abs()) < 1e-2;
+            assert!(same(fx, gx) && same(fy, gy), "{x}: {fx},{fy} vs {gx},{gy}");
+        }
     }
 
     #[test]

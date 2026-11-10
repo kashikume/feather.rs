@@ -13,5 +13,6 @@ pub mod demo_011_crawl;
 pub mod demo_012_overlay;
 pub mod demo_013_simple_shadow;
 pub mod demo_014_shadows;
+pub mod demo_015_city;
 pub mod random;
 pub mod testapp;
