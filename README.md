@@ -27,7 +27,9 @@ What works today:
 - Uniforms on materials and nodes, inherited down the scene graph
 - Assets loaded through a platform-specific `AssetsProvider`
 - Scenes described in JSON files, with objects referring to each other by name
-- Perspective camera
+- Perspective camera, and an orthographic (flat) camera for 2D scenes
+- Several scenes drawn together, one over the other, each through its own camera (e.g. a 2D
+  overlay over a 3D scene)
 - Atlases uploaded with mipmaps; a material's texture passes its UV rectangle to the shader
   (`umin`, `umax`, `vmin`, `vmax` uniforms)
 - Atlases built from `.atlist` image lists by the atlas creator during the build, and font
@@ -45,7 +47,8 @@ What works today:
 - Vulkan validation layers turned on automatically in debug builds
 
 > The renderer draws every visible node that has a mesh and a material, with the material's
-> shader and texture, and the node's uniforms. Only the first scene is drawn. See
+> shader and texture, and the node's uniforms. An app can draw several scenes, one over the
+> other, each through its own camera. See
 > [doc/todo](doc/todo/node-uniforms-rendering.md) for the plan and known limitations.
 
 ## Requirements
@@ -88,6 +91,7 @@ only command line argument is the number of the demo to start with (default 0). 
 | 9    | Spider      | A textured spider walking in a circle with the same bone system: 8 legs of 4 bones each, in the alternating tetrapod gait |
 | 10   | Text        | Text in two fonts (Segoe UI and Segoe UI Bold, made with the font creator): a title changing colour, lines aligned left, centred and right, Polish, German and Spanish letters, a clock updated ten times a second, a line whose letters (a node each) bob in a wave in their own colours, and text lying on a turning floor |
 | 11   | Crawl       | An endless crawl: made-up episodes (number, title, justified paragraphs) sliding away over a twinkling star field and fading out towards the horizon; each episode is added when there is room and removed once it is gone |
+| 12   | Overlay     | Two scenes together: demo 0's spinning room behind, and in front a 2D overlay seen by an orthographic camera, with see-through panels, text, the room's texture as an image and the frame rate |
 
 Each demo is in its own file, `apps/testapp/src/testapp/demo_NNN_<name>.rs`, and its resources
 are named `demo_NNN_<name>_<kind>` (`scene`, `atlas`, `mesh`, `shader`, ...). Demos are listed in
@@ -256,7 +260,7 @@ crates/
     uniformdata.rs   packing uniform values into the bytes a shader reads
     assetsprovider.rs, windowsassetsprovider.rs
                      platform-independent asset access and its Windows implementation
-    camera.rs, perspectivecamera.rs
+    camera.rs, perspectivecamera.rs, orthographiccamera.rs
     instance.rs, physicaldevice.rs, logicaldevice.rs, swapchain.rs, pipeline.rs, ...
                      Vulkan object wrappers
   feather-build/     build script helpers: compiling shaders with glslc, creating atlases,
@@ -341,6 +345,28 @@ engine sorts the draws (`scene::sort_for_rendering`):
 Transparent nodes are drawn with a second pipeline of their shader: blending on, and the depth
 test on but depth writes off, so they are hidden by opaque objects in front of them but don't hide
 each other. The bouncing balls demo uses this for its shadows.
+
+### Several scenes
+
+A `FeatherApp` says how many scenes to draw (`get_num_scenes_to_render`), and gives each with its
+own camera (`get_scene_to_render(i)`, `get_camera_to_render_scene(i)`). Scenes are drawn in
+order, each sorted as above and through its own camera; the depth buffer is cleared before each
+scene after the first, so a later scene is drawn over the earlier ones, whatever their depths.
+Each scene keeps its own GPU state (mesh buffers, atlases, pipelines), released when the app
+stops drawing it.
+
+For 2D scenes, `OrthographicCamera` shows the XY plane without perspective, looking down -Z
+with Y up. Its `ScreenOrigin` puts the origin at the top left, the centre or the bottom left of
+the screen; its `ScreenUnits` are pixels, or a fixed screen height in units (the width follows
+the window's aspect ratio). Nearer objects (greater z) are drawn over farther ones.
+
+```rust
+let camera = OrthographicCamera::new(ScreenOrigin::TopLeft, ScreenUnits::Height(768.0));
+// The screen spans x 0..width and y -768..0; get_visible_size() gives the width.
+```
+
+The test app's demos draw one scene, unless they override `Demo::scene_count`, `scene_at` and
+`camera_at`. Demo 12 draws demo 0's room with a 2D overlay over it.
 
 ### Bones and animation
 

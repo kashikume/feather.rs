@@ -10,5 +10,6 @@ pub mod demo_008_walker;
 pub mod demo_009_spider;
 pub mod demo_010_text;
 pub mod demo_011_crawl;
+pub mod demo_012_overlay;
 pub mod random;
 pub mod testapp;

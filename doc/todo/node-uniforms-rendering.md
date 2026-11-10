@@ -22,8 +22,9 @@ names.
   is bound to the atlas of the material's `Texture`, and the texture's UV rectangle goes to the
   shader's `umin`/`umax`/`vmin`/`vmax` uniforms. Descriptor sets are cached per (swapchain image,
   textures). The app runs from any directory.
-- Still limited:
-  - only the first scene is drawn, with the first scene's camera.
+- Several scenes are drawn, one over the other, each with its own camera and its own GPU state
+  (`SceneGpuState` in `appdata.rs`, by `Scene::get_id`); the depth buffer is cleared between
+  scenes.
 
 ## Design
 

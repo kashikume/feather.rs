@@ -18,11 +18,27 @@ use super::demo_008_walker::WalkerDemo;
 use super::demo_009_spider::SpiderDemo;
 use super::demo_010_text::TextDemo;
 use super::demo_011_crawl::CrawlDemo;
+use super::demo_012_overlay::OverlayDemo;
 
-/// One demo of the test app: a scene, the camera looking at it, and its animation.
+/// One demo of the test app: a scene, the camera looking at it, and its animation. A demo may
+/// have more scenes, each with its own camera, drawn one over the other (`scene_count`).
 pub trait Demo {
+    /// The (first) scene.
     fn scene(&mut self) -> &mut Scene;
+    /// The camera of the (first) scene.
     fn camera(&mut self) -> &mut dyn Camera;
+    /// How many scenes the demo draws: scene 0 first, every next one over the previous ones.
+    fn scene_count(&self) -> usize {
+        1
+    }
+    /// Scene `index` (`0..scene_count()`).
+    fn scene_at(&mut self, _index: usize) -> &mut Scene {
+        self.scene()
+    }
+    /// The camera of scene `index`.
+    fn camera_at(&mut self, _index: usize) -> &mut dyn Camera {
+        self.camera()
+    }
     /// Called every frame; `time` is in seconds since the demo started.
     fn update(&mut self, time: f32) -> Result<()>;
 }
@@ -83,6 +99,10 @@ pub const DEMOS: &[DemoInfo] = &[
         name: "Crawl",
         create: |assets| Ok(Box::new(CrawlDemo::new(assets)?)),
     },
+    DemoInfo {
+        name: "Overlay",
+        create: |assets| Ok(Box::new(OverlayDemo::new(assets)?)),
+    },
 ];
 
 /// The development app: shows one demo at a time. Left and right arrows switch to the
@@ -118,15 +138,15 @@ impl FeatherApp for TestApp {
     }
 
     fn get_num_scenes_to_render(&self) -> usize {
-        1
+        self.demo.scene_count()
     }
 
-    fn get_scene_to_render(&mut self, _scene_index: usize) -> &mut Scene {
-        self.demo.scene()
+    fn get_scene_to_render(&mut self, scene_index: usize) -> &mut Scene {
+        self.demo.scene_at(scene_index)
     }
 
-    fn get_camera_to_render_scene(&mut self, _scene_index: usize) -> &mut dyn Camera {
-        self.demo.camera()
+    fn get_camera_to_render_scene(&mut self, scene_index: usize) -> &mut dyn Camera {
+        self.demo.camera_at(scene_index)
     }
 
     fn on_key_pressed(&mut self, key: KeyCode) -> Result<()> {
@@ -698,5 +718,43 @@ mod tests {
         assert!(newest > 10, "only {newest} episodes in ten minutes");
         // Old episodes are removed: a few episodes' worth of objects at most.
         assert!(most.0 < 40 && most.1 < 20 && most.2 < 20, "{most:?}");
+    }
+
+    #[test]
+    fn overlay_demo_draws_two_scenes_with_their_own_cameras() {
+        let mut demo = demo(12);
+        assert_eq!(demo.scene_count(), 2);
+        let (room, overlay) = (demo.scene_at(0).get_id(), demo.scene_at(1).get_id());
+        assert_ne!(room, overlay);
+        assert!(demo.scene_at(0).find_node("Room").is_some());
+
+        // The overlay's flat camera: no perspective, the view is the identity.
+        let camera = demo.camera_at(1);
+        camera.set_screen_dimention(1024, 768);
+        assert_eq!(camera.get_view(), <Mat4 as SquareMatrix>::identity());
+
+        // The right-hand group follows the window's width.
+        demo.update(0.0).unwrap();
+        let right = demo.scene_at(1).find_node("Right").unwrap();
+        let x = |demo: &mut Box<dyn Demo>| demo.scene_at(1).get_node(right).unwrap().get_transform().w.x;
+        assert_eq!(x(&mut demo), 1024.0 - 20.0);
+        demo.camera_at(1).set_screen_dimention(1536, 768);
+        demo.update(0.1).unwrap();
+        assert_eq!(x(&mut demo), 1536.0 - 20.0);
+
+        // The frame rate is shown once half a second has passed.
+        for step in 2..=10 {
+            demo.update(step as f32 * 0.1).unwrap();
+        }
+        let scene = demo.scene_at(1);
+        let bottom = scene.get_node(scene.find_node("Bottom").unwrap()).unwrap();
+        let fps = scene.get_node(*bottom.get_children().iter().next().unwrap()).unwrap();
+        assert!(fps.get_mesh().is_some(), "no frame rate shown");
+
+        // Scene 0 is demo 0's room, spinning.
+        let room_node = demo.scene_at(0).find_node("Room").unwrap();
+        let before = demo.scene_at(0).get_node(room_node).unwrap().get_transform();
+        demo.update(5.0).unwrap();
+        assert_ne!(demo.scene_at(0).get_node(room_node).unwrap().get_transform(), before);
     }
 }

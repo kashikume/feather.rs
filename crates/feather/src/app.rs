@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::time::Instant;
 
 use anyhow::{anyhow, Result};
@@ -66,9 +66,6 @@ impl App {
             present_queue: vk::Queue::default(),
             swapchain: Swapchain::default(),
             render_pass: vk::RenderPass::default(),
-            shader_pipelines: HashMap::new(),
-            failed_pipelines: HashSet::new(),
-            reported_uniform_issues: HashSet::new(),
             min_uniform_alignment: 1,
             framebuffers: Vec::new(),
             command_pool: vk::CommandPool::default(),
@@ -78,11 +75,8 @@ impl App {
             depth_image: vk::Image::default(),
             depth_image_memory: vk::DeviceMemory::default(),
             depth_image_view: vk::ImageView::default(),
-            rendered_scene: None,
-            gpu_mesh_buffers: HashMap::new(),
+            scenes: HashMap::new(),
             texture_sampler: vk::Sampler::default(),
-            gpu_atlases: HashMap::new(),
-            failed_atlases: HashSet::new(),
             fallback_texture: None,
             frame_uniforms: Vec::new(),
             command_buffers: Vec::new(),
@@ -141,48 +135,66 @@ impl App {
         Ok(())
     }
 
-    /// Releases all GPU state of the rendered scene: mesh buffers, atlases and pipelines (with
-    /// their descriptor sets). Waits for the GPU first.
-    unsafe fn release_scene_gpu_state(&mut self) -> Result<()> {
+    /// Releases the GPU state of scenes that are no longer rendered: mesh buffers, atlases and
+    /// pipelines (with their descriptor sets). Waits for the GPU first if there are any.
+    unsafe fn release_unrendered_scenes(&mut self, rendered: &[u64]) -> Result<()> {
+        let gone: Vec<u64> = self
+            .data
+            .scenes
+            .keys()
+            .copied()
+            .filter(|id| !rendered.contains(id))
+            .collect();
+        if gone.is_empty() {
+            return Ok(());
+        }
         self.device.device_wait_idle()?;
-        let device = &self.device;
-        self.data.shader_pipelines.drain().for_each(|(_, p)| p.destroy(device));
-        self.data.gpu_atlases.drain().for_each(|(_, a)| a.destroy(device));
-        self.data.gpu_mesh_buffers.drain().for_each(|(_, b)| b.destroy(device));
-        self.data.failed_pipelines.clear();
-        self.data.failed_atlases.clear();
-        self.data.reported_uniform_issues.clear();
+        for id in gone {
+            self.data.scenes.remove(&id).unwrap().destroy(&self.device);
+        }
         Ok(())
     }
 
-    /// Collects the draw calls of the rendered scene in drawing order (`sort_for_rendering`:
-    /// opaque by shader, then transparent back to front), and packs their
-    /// uniforms into the returned arena. Creates the pipelines of
-    /// shaders drawn for the first time.
-    ///
-    /// Only the first scene is drawn for now.
+    /// Collects the draw calls of every rendered scene, scene after scene, each in drawing
+    /// order (`sort_for_rendering`: opaque by shader, then transparent back to front) and seen
+    /// through its own camera, and packs their uniforms into the returned arena. The first
+    /// draw of every scene but the first clears the depth buffer, so later scenes are drawn
+    /// over earlier ones. Creates the pipelines of shaders drawn for the first time.
     unsafe fn collect_draws(&mut self) -> Result<(Vec<GpuDraw>, UniformArena)> {
         let mut arena = UniformArena::new(self.data.min_uniform_alignment as usize);
-        let num_scenes = self.data.app.get_num_scenes_to_render();
-        if num_scenes == 0 {
-            return Ok((Vec::new(), arena));
+        let mut draws = Vec::new();
+        for index in 0..self.data.app.get_num_scenes_to_render() {
+            let first_draw = draws.len();
+            self.collect_scene_draws(index, &mut draws, &mut arena)?;
+            if index > 0 {
+                if let Some(draw) = draws.get_mut(first_draw) {
+                    draw.clear_depth = true;
+                }
+            }
         }
-        if num_scenes > 1 {
-            static WARN: std::sync::Once = std::sync::Once::new();
-            WARN.call_once(|| log::warn!("Only the first of {num_scenes} scenes is rendered"));
-        }
+        Ok((draws, arena))
+    }
 
+    /// Adds the draws of scene `index` to `draws` (see `collect_draws`).
+    unsafe fn collect_scene_draws(
+        &mut self,
+        index: usize,
+        draws: &mut Vec<GpuDraw>,
+        arena: &mut UniformArena,
+    ) -> Result<()> {
         let extent = self.data.swapchain.swapchain_extent;
-        let camera = self.data.app.get_camera_to_render_scene(0);
+        let camera = self.data.app.get_camera_to_render_scene(index);
         camera.set_screen_dimention(extent.width, extent.height);
         let (view, proj) = (camera.get_view(), camera.get_projection());
 
-        let scene = self.data.app.get_scene_to_render(0);
+        let data = &mut self.data;
+        let scene = data.app.get_scene_to_render(index);
+        let scene_id = scene.get_id();
+        let gpu = data.scenes.entry(scene_id).or_default();
 
         // Pipelines of shaders that no longer exist. They may still be used by frames in
         // flight, so wait for the GPU before destroying them.
-        let removed: Vec<PipelineKey> = self
-            .data
+        let removed: Vec<PipelineKey> = gpu
             .shader_pipelines
             .keys()
             .copied()
@@ -191,11 +203,10 @@ impl App {
         if !removed.is_empty() {
             self.device.device_wait_idle()?;
             for key in removed {
-                self.data.shader_pipelines.remove(&key).unwrap().destroy(&self.device);
+                gpu.shader_pipelines.remove(&key).unwrap().destroy(&self.device);
             }
         }
-        self.data
-            .failed_pipelines
+        gpu.failed_pipelines
             .retain(|key| scene.get_shader(key.shader).is_some());
 
         // Opaque nodes first, by shader; then transparent ones, back to front.
@@ -203,25 +214,26 @@ impl App {
         sort_for_rendering(&mut items, &view);
 
         let target = PipelineTarget {
-            render_pass: self.data.render_pass,
-            msaa_samples: self.data.msaa_samples,
+            render_pass: data.render_pass,
+            msaa_samples: data.msaa_samples,
             extent,
         };
-        let mut draws = Vec::with_capacity(items.len());
+        let fallback_view = data.fallback_texture.as_ref().unwrap().view;
+        draws.reserve(items.len());
         let mut issues = Vec::new();
         for item in items {
             let key = PipelineKey {
                 shader: item.shader,
                 transparent: item.transparent,
             };
-            if self.data.failed_pipelines.contains(&key) {
+            if gpu.failed_pipelines.contains(&key) {
                 continue;
             }
             let shader = scene.get_shader(item.shader).unwrap();
-            if !self.data.shader_pipelines.contains_key(&key) {
+            if !gpu.shader_pipelines.contains_key(&key) {
                 match ShaderPipeline::create(&self.device, &target, shader, key.transparent) {
                     Ok(pipeline) => {
-                        self.data.shader_pipelines.insert(key, pipeline);
+                        gpu.shader_pipelines.insert(key, pipeline);
                     }
                     Err(e) => {
                         log::error!(
@@ -229,13 +241,13 @@ impl App {
                             shader.get_name().unwrap_or_else(|| item.shader.to_string()),
                             if key.transparent { " (transparent)" } else { "" }
                         );
-                        self.data.failed_pipelines.insert(key);
+                        gpu.failed_pipelines.insert(key);
                         continue;
                     }
                 }
             }
-            let pipeline = &self.data.shader_pipelines[&key];
-            let Some(buffer) = self.data.gpu_mesh_buffers.get(&item.mesh_buffer) else {
+            let pipeline = &gpu.shader_pipelines[&key];
+            let Some(buffer) = gpu.gpu_mesh_buffers.get(&item.mesh_buffer) else {
                 continue;
             };
             let (vertex_buffer, index_buffer) = (buffer.vertex_buffer, buffer.index_buffer);
@@ -255,12 +267,11 @@ impl App {
                 |a| scene.get_atlas(a).is_some(),
                 &mut issues,
             );
-            let fallback_view = self.data.fallback_texture.as_ref().unwrap().view;
             let texture_views = atlases
                 .iter()
                 .map(|atlas| {
                     atlas
-                        .and_then(|a| self.data.gpu_atlases.get(&a))
+                        .and_then(|a| gpu.gpu_atlases.get(&a))
                         .map_or(fallback_view, |image| image.view)
                 })
                 .collect();
@@ -278,13 +289,9 @@ impl App {
                 engine: &engine,
                 node: node.dynamic_uniforms(),
             };
-            let packed = pack_draw(shader.get_layout(), &values, &mut arena, &mut issues);
+            let packed = pack_draw(shader.get_layout(), &values, arena, &mut issues);
             for issue in issues.drain(..) {
-                if self
-                    .data
-                    .reported_uniform_issues
-                    .insert((item.shader, issue.clone()))
-                {
+                if gpu.reported_uniform_issues.insert((item.shader, issue.clone())) {
                     log::warn!(
                         "Shader {}: {issue}",
                         shader.get_name().unwrap_or_else(|| item.shader.to_string())
@@ -293,7 +300,9 @@ impl App {
             }
 
             draws.push(GpuDraw {
+                scene: scene_id,
                 pipeline_key: key,
+                clear_depth: false,
                 texture_views,
                 pipeline: pipeline.pipeline,
                 pipeline_layout: pipeline.layout,
@@ -308,7 +317,7 @@ impl App {
                 vertex_offset: item.vertex_offset,
             });
         }
-        Ok((draws, arena))
+        Ok(())
     }
 
     /// Copies the frame's uniform data to the uniform buffer of swapchain image `image_index`
@@ -337,7 +346,12 @@ impl App {
         buffer.write(arena.bytes());
 
         for draw in draws {
-            let pipeline = self.data.shader_pipelines.get_mut(&draw.pipeline_key).unwrap();
+            let pipeline = self
+                .data
+                .scenes
+                .get_mut(&draw.scene)
+                .and_then(|s| s.shader_pipelines.get_mut(&draw.pipeline_key))
+                .unwrap();
             draw.descriptor_sets = pipeline.descriptor_sets(
                 &self.device,
                 image_index,
@@ -349,57 +363,59 @@ impl App {
         Ok(())
     }
 
-    /// Brings the GPU state in line with the rendered scene: when the app renders a different
-    /// scene, releases everything of the previous one; uploads new mesh buffers and atlases,
-    /// and releases removed ones.
+    /// Brings the GPU state in line with the rendered scenes: releases everything of scenes no
+    /// longer rendered; uploads new mesh buffers and atlases of each rendered scene, and
+    /// releases removed ones.
     unsafe fn sync_gpu_state(&mut self) -> Result<()> {
-        if self.data.app.get_num_scenes_to_render() == 0 {
-            return Ok(());
+        let count = self.data.app.get_num_scenes_to_render();
+        let rendered: Vec<u64> = (0..count)
+            .map(|i| self.data.app.get_scene_to_render(i).get_id())
+            .collect();
+        self.release_unrendered_scenes(&rendered)?;
+        for index in 0..count {
+            self.sync_scene(index)?;
         }
-        let scene_id = self.data.app.get_scene_to_render(0).get_id();
-        if self.data.rendered_scene != Some(scene_id) {
-            if self.data.rendered_scene.is_some() {
-                self.release_scene_gpu_state()?;
-            }
-            self.data.rendered_scene = Some(scene_id);
-        }
-        let scene = self.data.app.get_scene_to_render(0);
+        Ok(())
+    }
+
+    /// Uploads new mesh buffers and atlases of scene `index` and releases removed ones.
+    unsafe fn sync_scene(&mut self, index: usize) -> Result<()> {
+        let data = &mut self.data;
+        let scene = data.app.get_scene_to_render(index);
+        let gpu = data.scenes.entry(scene.get_id()).or_default();
 
         let upload = UploadContext {
             instance: &self.instance,
             device: &self.device,
-            physical_device: self.data.physical_device,
-            command_pool: self.data.command_pool,
-            queue: self.data.graphics_queue,
+            physical_device: data.physical_device,
+            command_pool: data.command_pool,
+            queue: data.graphics_queue,
         };
 
         // Mesh buffers. Their contents never change once created. A removed buffer's handle
         // may already belong to a new buffer: compare ids.
-        let removed: Vec<usize> = self
-            .data
+        let removed: Vec<usize> = gpu
             .gpu_mesh_buffers
             .iter()
-            .filter(|(&h, gpu)| scene.buffers.get(h).map(|b| b.get_id()) != Some(gpu.id))
+            .filter(|(&h, b)| scene.buffers.get(h).map(|b| b.get_id()) != Some(b.id))
             .map(|(&h, _)| h)
             .collect();
         if !removed.is_empty() {
             self.device.device_wait_idle()?;
             for handle in removed {
-                self.data.gpu_mesh_buffers.remove(&handle).unwrap().destroy(&self.device);
+                gpu.gpu_mesh_buffers.remove(&handle).unwrap().destroy(&self.device);
             }
         }
         for buffer in scene.buffers.iter() {
             let handle = buffer.get_handle();
-            if !self.data.gpu_mesh_buffers.contains_key(&handle) {
+            if !gpu.gpu_mesh_buffers.contains_key(&handle) {
                 let gpu_buffer = GpuMeshBuffer::upload(&upload, buffer, &scene.meshes)?;
-                self.data.gpu_mesh_buffers.insert(handle, gpu_buffer);
+                gpu.gpu_mesh_buffers.insert(handle, gpu_buffer);
             }
         }
 
         // Atlases.
-
-        let removed: Vec<usize> = self
-            .data
+        let removed: Vec<usize> = gpu
             .gpu_atlases
             .keys()
             .copied()
@@ -409,23 +425,18 @@ impl App {
             // Frames in flight and cached descriptor sets may use the images. Pipelines,
             // with their descriptor sets, are recreated when next needed.
             self.device.device_wait_idle()?;
-            self.data
-                .shader_pipelines
+            gpu.shader_pipelines
                 .drain()
                 .for_each(|(_, p)| p.destroy(&self.device));
             for handle in removed {
-                self.data.gpu_atlases.remove(&handle).unwrap().destroy(&self.device);
+                gpu.gpu_atlases.remove(&handle).unwrap().destroy(&self.device);
             }
         }
-        self.data
-            .failed_atlases
-            .retain(|&h| scene.get_atlas(h).is_some());
+        gpu.failed_atlases.retain(|&h| scene.get_atlas(h).is_some());
 
         for atlas in scene.atlases.iter() {
             let handle = atlas.get_handle();
-            if self.data.gpu_atlases.contains_key(&handle)
-                || self.data.failed_atlases.contains(&handle)
-            {
+            if gpu.gpu_atlases.contains_key(&handle) || gpu.failed_atlases.contains(&handle) {
                 continue;
             }
             match GpuImage::upload_rgba(
@@ -435,14 +446,14 @@ impl App {
                 atlas.get_pixels(),
             ) {
                 Ok(image) => {
-                    self.data.gpu_atlases.insert(handle, image);
+                    gpu.gpu_atlases.insert(handle, image);
                 }
                 Err(e) => {
                     log::error!(
                         "Cannot upload atlas {}: {e:#}",
                         atlas.get_name().unwrap_or_else(|| handle.to_string())
                     );
-                    self.data.failed_atlases.insert(handle);
+                    gpu.failed_atlases.insert(handle);
                 }
             }
         }
@@ -555,8 +566,7 @@ impl App {
         self.data.in_flight_fences.iter().for_each(|f| self.device.destroy_fence(*f, None));
         self.data.render_finished_semaphores.iter().for_each(|s| self.device.destroy_semaphore(*s, None));
         self.data.image_available_semaphores.iter().for_each(|s| self.device.destroy_semaphore(*s, None));
-        self.data.gpu_mesh_buffers.drain().for_each(|(_, b)| b.destroy(&self.device));
-        self.data.gpu_atlases.drain().for_each(|(_, a)| a.destroy(&self.device));
+        self.data.scenes.drain().for_each(|(_, mut s)| s.destroy(&self.device));
         if let Some(fallback) = self.data.fallback_texture.take() {
             fallback.destroy(&self.device);
         }
@@ -586,8 +596,9 @@ impl App {
         self.device.destroy_image(self.data.color_image, None);
         self.data.framebuffers.iter().for_each(|f| self.device.destroy_framebuffer(*f, None));
         // Pipelines depend on the render pass and the extent; they are recreated when needed.
-        self.data.shader_pipelines.drain().for_each(|(_, p)| p.destroy(&self.device));
-        self.data.failed_pipelines.clear();
+        for scene in self.data.scenes.values_mut() {
+            scene.destroy_pipelines(&self.device);
+        }
         self.device.destroy_render_pass(self.data.render_pass, None);
         self.data.swapchain.destroy(&self.device);
     }

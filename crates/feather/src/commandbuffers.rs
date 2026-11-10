@@ -10,8 +10,13 @@ use super::pipeline::PipelineKey;
 
 /// One draw call with the Vulkan objects it uses.
 pub struct GpuDraw {
+    /// `Scene::get_id` of the draw's scene, whose GPU state has the pipeline.
+    pub scene: u64,
     /// The pipeline (shader and transparency); it provides the descriptor sets.
     pub pipeline_key: PipelineKey,
+    /// Whether to clear the depth buffer before this draw, so it and the draws after it are
+    /// drawn over everything before (the first draw of every scene but the first).
+    pub clear_depth: bool,
     /// Image view bound to each sampler of the shader.
     pub texture_views: Vec<vk::ImageView>,
     pub pipeline: vk::Pipeline,
@@ -94,6 +99,19 @@ pub unsafe fn record_command_buffer(
     let mut bound_pipeline = None;
     let mut bound_buffers = None;
     for draw in draws {
+        if draw.clear_depth {
+            let attachment = vk::ClearAttachment::builder()
+                .aspect_mask(vk::ImageAspectFlags::DEPTH)
+                .clear_value(depth_clear_value)
+                .build();
+            let rect = vk::ClearRect::builder()
+                .rect(*render_area)
+                .base_array_layer(0)
+                .layer_count(1)
+                .build();
+            device.cmd_clear_attachments(command_buffer, &[attachment], &[rect]);
+        }
+
         if bound_pipeline != Some(draw.pipeline) {
             device.cmd_bind_pipeline(
                 command_buffer,

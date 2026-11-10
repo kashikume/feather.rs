@@ -26,13 +26,6 @@ pub struct AppData {
     pub swapchain: Swapchain,
     // Pipeline
     pub render_pass: vk::RenderPass,
-    /// Pipelines of the rendered scene's shaders, by shader handle and transparency. Created
-    /// when first needed; destroyed with the swapchain.
-    pub shader_pipelines: HashMap<PipelineKey, ShaderPipeline>,
-    /// Pipelines that could not be created; their nodes are not drawn.
-    pub failed_pipelines: HashSet<PipelineKey>,
-    /// Uniform problems already logged, per shader handle, so each is logged once.
-    pub reported_uniform_issues: HashSet<(usize, UniformIssue)>,
     /// `minUniformBufferOffsetAlignment` of the device: uniform blocks of a frame start at
     /// multiples of it.
     pub min_uniform_alignment: u64,
@@ -48,18 +41,13 @@ pub struct AppData {
     pub depth_image: vk::Image,
     pub depth_image_memory: vk::DeviceMemory,
     pub depth_image_view: vk::ImageView,
-    /// `Scene::get_id` of the scene the GPU state below belongs to. GPU state is keyed by the
-    /// scene's handles, so it is dropped when the app renders a different scene.
-    pub rendered_scene: Option<u64>,
-    /// Mesh buffers of the rendered scene on the GPU, by mesh buffer handle.
-    pub gpu_mesh_buffers: HashMap<usize, GpuMeshBuffer>,
+    /// GPU state of each rendered scene, by `Scene::get_id`. It is keyed by the scene's
+    /// handles, so each scene has its own; it is released when the scene is no longer
+    /// rendered.
+    pub scenes: HashMap<u64, SceneGpuState>,
     // Textures
     /// Sampler used for every texture.
     pub texture_sampler: vk::Sampler,
-    /// Atlases of the rendered scene on the GPU, by atlas handle.
-    pub gpu_atlases: HashMap<usize, GpuImage>,
-    /// Atlases that could not be uploaded; their textures show the fallback texture.
-    pub failed_atlases: HashSet<usize>,
     /// 1x1 magenta image bound to samplers without a valid texture.
     pub fallback_texture: Option<GpuImage>,
     // Buffers
@@ -72,4 +60,38 @@ pub struct AppData {
     pub render_finished_semaphores: Vec<vk::Semaphore>,
     pub in_flight_fences: Vec<vk::Fence>,
     pub images_in_flight: Vec<vk::Fence>,
+}
+
+/// The GPU state of one rendered scene.
+#[derive(Default)]
+pub struct SceneGpuState {
+    /// Pipelines of the scene's shaders, by shader handle and transparency. Created when first
+    /// needed; destroyed with the swapchain.
+    pub shader_pipelines: HashMap<PipelineKey, ShaderPipeline>,
+    /// Pipelines that could not be created; their nodes are not drawn.
+    pub failed_pipelines: HashSet<PipelineKey>,
+    /// Uniform problems already logged, per shader handle, so each is logged once.
+    pub reported_uniform_issues: HashSet<(usize, UniformIssue)>,
+    /// Mesh buffers on the GPU, by mesh buffer handle.
+    pub gpu_mesh_buffers: HashMap<usize, GpuMeshBuffer>,
+    /// Atlases on the GPU, by atlas handle.
+    pub gpu_atlases: HashMap<usize, GpuImage>,
+    /// Atlases that could not be uploaded; their textures show the fallback texture.
+    pub failed_atlases: HashSet<usize>,
+}
+
+impl SceneGpuState {
+    /// Destroys the pipelines (they depend on the swapchain); they are recreated when needed.
+    /// The GPU must not be using them.
+    pub unsafe fn destroy_pipelines(&mut self, device: &Device) {
+        self.shader_pipelines.drain().for_each(|(_, p)| p.destroy(device));
+        self.failed_pipelines.clear();
+    }
+
+    /// Destroys everything. The GPU must not be using any of it.
+    pub unsafe fn destroy(&mut self, device: &Device) {
+        self.destroy_pipelines(device);
+        self.gpu_atlases.drain().for_each(|(_, a)| a.destroy(device));
+        self.gpu_mesh_buffers.drain().for_each(|(_, b)| b.destroy(device));
+    }
 }

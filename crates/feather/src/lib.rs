@@ -29,6 +29,7 @@ pub mod meshbuilderobjfile;
 pub mod node;
 pub mod objdb;
 pub mod object;
+pub mod orthographiccamera;
 pub mod other;
 pub mod perspectivecamera;
 pub mod physicaldevice;
