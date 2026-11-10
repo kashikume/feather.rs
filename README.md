@@ -34,8 +34,8 @@ What works today:
   atlases rendered from Windows fonts described in `.font` files
 - Transparent nodes, alpha-blended; draws sorted: opaque nodes by shader, then transparent nodes
   back to front
-- Text from font atlases made by the font creator: laid out (alignment, several lines, in the XY
-  or XZ plane) into one mesh per text or a node per character, updated when the text changes
+- Text from font atlases made by the font creator: laid out (alignment including justified,
+  several lines, word wrapping, in the XY or XZ plane) into one mesh per text or a node per character, updated when the text changes
   (`TextBuilder`, `Text`)
 - Nodes and meshes removable while the scene is shown (`Scene::remove_node`,
   `Scene::remove_mesh`); mesh GPU buffers are released with their last mesh
@@ -87,6 +87,7 @@ only command line argument is the number of the demo to start with (default 0). 
 | 8    | Walker      | A textured person walking in a circle: body parts hang from bones, moved by a walk-cycle animation clip |
 | 9    | Spider      | A textured spider walking in a circle with the same bone system: 8 legs of 4 bones each, in the alternating tetrapod gait |
 | 10   | Text        | Text in two fonts (Segoe UI and Segoe UI Bold, made with the font creator): a title changing colour, lines aligned left, centred and right, Polish, German and Spanish letters, a clock updated ten times a second, a line whose letters (a node each) bob in a wave in their own colours, and text lying on a turning floor |
+| 11   | Crawl       | An endless crawl: made-up episodes (number, title, justified paragraphs) sliding away over a twinkling star field and fading out towards the horizon; each episode is added when there is room and removed once it is gone |
 
 Each demo is in its own file, `apps/testapp/src/testapp/demo_NNN_<name>.rs`, and its resources
 are named `demo_NNN_<name>_<kind>` (`scene`, `atlas`, `mesh`, `shader`, ...). Demos are listed in
@@ -385,6 +386,7 @@ let builder = TextBuilder::new(font_atlas)
     .height(0.5) // line height in scene units
     .align(HorizontalAlign::Center, VerticalAlign::Center)
     .plane(TextPlane::XY) // or XZ, lying on a floor
+    .wrap(None) // or Some(width): break lines between words
     .method(TextMethod::OneMesh); // or NodePerGlyph
 let mut clock = Text::create(&mut scene, parent, Some("Clock".into()), material, builder, "")?;
 // every frame; updated only when the text changes:
@@ -410,8 +412,10 @@ shader must not name them for the engine (`umin_uniform` ... in the scene file),
 would fill them from the material's texture over the nodes' values; `Text::create` checks this.
 Uniforms set on a text's node, like a colour, reach its glyph nodes too.
 
-A `\n` starts a new line; characters missing from the font take a quarter of the line height and
-aren't drawn. Demo 10 shows both methods with one shader (`demo_010_text_shader.frag`, coloured
+A `\n` starts a new line (a new paragraph, with wrapping); characters missing from the font take
+a quarter of the line height and aren't drawn. `HorizontalAlign::Justify` stretches the lines
+broken by wrapping to the wrap width, widening their spaces. `Text::remove` removes a text with
+its node and mesh. Demo 11's crawl uses wrapped, justified text. Demo 10 shows both methods with one shader (`demo_010_text_shader.frag`, coloured
 with a `color` uniform): the wave is a node per glyph, everything else one mesh per text.
 [doc/text-performance.md](doc/text-performance.md) compares the two methods' performance.
 

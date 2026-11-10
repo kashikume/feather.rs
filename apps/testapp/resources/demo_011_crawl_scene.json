@@ -1,0 +1,44 @@
+{
+  "atlases": [
+    {
+      "name": "Font",
+      "bitmap": "demo_011_crawl_atlas.png",
+      "metadata": "demo_011_crawl_atlas.atlas"
+    }
+  ],
+  "shaders": [
+    {
+      "name": "Text",
+      "vertex": "demo_011_crawl_text_shader.vert.spv",
+      "fragment": "demo_011_crawl_text_shader.frag.spv",
+      "model_uniform": "model",
+      "view_uniform": "view",
+      "projection_uniform": "proj"
+    },
+    {
+      "name": "Stars",
+      "vertex": "demo_011_crawl_stars_shader.vert.spv",
+      "fragment": "demo_011_crawl_stars_shader.frag.spv",
+      "model_uniform": "model",
+      "view_uniform": "view",
+      "projection_uniform": "proj"
+    }
+  ],
+  "materials": [
+    { "name": "Stars", "shader": "Stars" }
+  ],
+  "root": {
+    "name": "Scene root",
+    "children": [
+      { "name": "Stars", "material": "Stars", "uniforms": { "time": { "float": 0.0 } } },
+      {
+        "name": "Crawl",
+        "uniforms": {
+          "color": { "vec4": [1.0, 0.86, 0.3, 1.0] },
+          "fadeStart": { "float": -9.0 },
+          "fadeEnd": { "float": -24.0 }
+        }
+      }
+    ]
+  }
+}

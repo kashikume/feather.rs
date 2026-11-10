@@ -38,6 +38,10 @@ pub enum HorizontalAlign {
     Center,
     /// Lines end at the origin.
     Right,
+    /// Lines start at the origin and, when wrapped (`TextBuilder::wrap`), lines broken by the
+    /// wrapping are stretched to the wrap width by widening their spaces. Without wrapping it
+    /// is the same as `Left`.
+    Justify,
 }
 
 /// Where text is put vertically relative to its origin.
@@ -79,6 +83,15 @@ pub struct TextSize {
     pub height: f32,
 }
 
+/// One line of laid-out text.
+struct Line {
+    chars: Vec<char>,
+    /// The natural width, in scene units.
+    width: f32,
+    /// Whether the line was broken by wrapping, so it is stretched when justified.
+    stretch: bool,
+}
+
 /// One character's quad, in the XY layout: `x` left to right, `y` bottom to top, and its
 /// rectangle in the atlas (`v.0` is the top row).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -92,7 +105,7 @@ struct Quad {
 /// Lays out text with a font atlas and builds meshes for it.
 ///
 /// Characters the atlas has no image for take a quarter of the line height and are not drawn.
-/// `\n` starts a new line; `\r` is ignored.
+/// `\n` starts a new line (a new paragraph, when wrapping); `\r` is ignored.
 #[derive(Clone, Debug)]
 pub struct TextBuilder {
     /// Handle of the font atlas in `Scene::atlases`.
@@ -103,6 +116,7 @@ pub struct TextBuilder {
     vertical: VerticalAlign,
     plane: TextPlane,
     method: TextMethod,
+    wrap: Option<f32>,
 }
 
 impl TextBuilder {
@@ -117,6 +131,7 @@ impl TextBuilder {
             vertical: VerticalAlign::Top,
             plane: TextPlane::XY,
             method: TextMethod::OneMesh,
+            wrap: None,
         }
     }
 
@@ -140,6 +155,13 @@ impl TextBuilder {
 
     pub fn plane(mut self, plane: TextPlane) -> Self {
         self.plane = plane;
+        self
+    }
+
+    /// Breaks lines between words so they fit in `width` scene units (`None`: lines break only
+    /// at `\n`). A word wider than `width` gets a line of its own.
+    pub fn wrap(mut self, width: Option<f32>) -> Self {
+        self.wrap = width;
         self
     }
 
@@ -213,16 +235,17 @@ impl TextBuilder {
             }
         };
 
-        let lines: Vec<&str> = text.split('\n').collect();
-        let line_width = |line: &str, glyph: &mut dyn FnMut(char) -> (f32, _)| -> f32 {
-            line.chars()
-                .filter(|&c| c != '\r')
-                .map(|c| glyph(c).0)
-                .sum()
+        let lines = self.lines(text, &mut |c| glyph(c).0);
+        let justify_width = match (self.horizontal, self.wrap) {
+            (HorizontalAlign::Justify, Some(width)) => Some(width),
+            _ => None,
         };
-        let widths: Vec<f32> = lines.iter().map(|l| line_width(l, &mut glyph)).collect();
+        let longest = lines.iter().map(|l| l.width).fold(0.0, f32::max);
         let size = TextSize {
-            width: widths.iter().copied().fold(0.0, f32::max),
+            width: match justify_width {
+                Some(width) if lines.iter().any(|l| l.stretch) => longest.max(width),
+                _ => longest,
+            },
             height: self.height * (1.0 + (lines.len() - 1) as f32 * self.line_spacing),
         };
 
@@ -232,14 +255,22 @@ impl TextBuilder {
             VerticalAlign::Bottom => size.height,
         };
         let mut quads = Vec::new();
-        for (index, (line, width)) in lines.iter().zip(&widths).enumerate() {
+        for (index, line) in lines.iter().enumerate() {
             let line_top = top - index as f32 * self.height * self.line_spacing;
             let mut x = match self.horizontal {
-                HorizontalAlign::Left => 0.0,
-                HorizontalAlign::Center => -width / 2.0,
-                HorizontalAlign::Right => -width,
+                HorizontalAlign::Left | HorizontalAlign::Justify => 0.0,
+                HorizontalAlign::Center => -line.width / 2.0,
+                HorizontalAlign::Right => -line.width,
             };
-            for c in line.chars().filter(|&c| c != '\r') {
+            // Justified lines share the room left over among their spaces.
+            let spaces = line.chars.iter().filter(|&&c| c == ' ').count();
+            let space_extra = match justify_width {
+                Some(width) if line.stretch && spaces > 0 && line.width < width => {
+                    (width - line.width) / spaces as f32
+                }
+                _ => 0.0,
+            };
+            for &c in &line.chars {
                 let (advance, rect) = glyph(c);
                 if let (Some((u, v)), false) = (rect, c.is_whitespace()) {
                     quads.push(Quad {
@@ -250,9 +281,62 @@ impl TextBuilder {
                     });
                 }
                 x += advance;
+                if c == ' ' {
+                    x += space_extra;
+                }
             }
         }
         (quads, size)
+    }
+
+    /// The lines of `text`: split at `\n` (without `\r`) and, with `wrap`, broken between
+    /// words to fit in it. `advance` gives a character's width.
+    fn lines(&self, text: &str, advance: &mut dyn FnMut(char) -> f32) -> Vec<Line> {
+        let width_of = |chars: &[char], advance: &mut dyn FnMut(char) -> f32| -> f32 {
+            chars.iter().map(|&c| advance(c)).sum()
+        };
+        let mut lines = Vec::new();
+        for paragraph in text.split('\n') {
+            let chars: Vec<char> = paragraph.chars().filter(|&c| c != '\r').collect();
+            let Some(max_width) = self.wrap else {
+                let width = width_of(&chars, advance);
+                lines.push(Line {
+                    chars,
+                    width,
+                    stretch: false,
+                });
+                continue;
+            };
+            let space = advance(' ');
+            let mut line = Line {
+                chars: Vec::new(),
+                width: 0.0,
+                stretch: false,
+            };
+            for word in chars.split(|&c| c == ' ') {
+                let word_width = width_of(word, advance);
+                if !line.chars.is_empty() && line.width + space + word_width > max_width {
+                    // The line is full: it is stretched when justified.
+                    line.stretch = true;
+                    lines.push(std::mem::replace(
+                        &mut line,
+                        Line {
+                            chars: Vec::new(),
+                            width: 0.0,
+                            stretch: false,
+                        },
+                    ));
+                } else if !line.chars.is_empty() {
+                    line.chars.push(' ');
+                    line.width += space;
+                }
+                line.chars.extend_from_slice(word);
+                line.width += word_width;
+            }
+            // The last line of a paragraph keeps its natural width.
+            lines.push(line);
+        }
+        lines
     }
 
     /// The transform of a glyph node showing `quad`: it scales and moves the glyph mesh
@@ -406,6 +490,15 @@ impl Text {
 
     pub fn get_builder(&self) -> &TextBuilder {
         &self.builder
+    }
+
+    /// Removes the text from the scene: its node, with its glyph nodes, and its mesh. The
+    /// glyph mesh and the material stay, for other texts.
+    pub fn remove(mut self, scene: &mut Scene) -> Result<()> {
+        if let Some(mesh) = self.mesh.take() {
+            scene.remove_mesh(mesh)?;
+        }
+        scene.remove_node(self.node)
     }
 
     /// Shows `text` instead. Does nothing if the text is the same.
@@ -895,5 +988,101 @@ mod tests {
             "A",
         )
         .unwrap();
+    }
+
+    #[test]
+    fn wrapping_breaks_lines_between_words() {
+        let mut scene = Scene::new();
+        // Lines 1 high: `A` is 0.5 wide, the space 0.25, `i` 0.125.
+        let builder = TextBuilder::new(font(&mut scene)).wrap(Some(1.6));
+        let lines = |text: &str| {
+            let (quads, size) = layout(&builder, &scene, text);
+            let mut tops: Vec<f32> = quads.iter().map(|q| q.y.1).collect();
+            tops.dedup();
+            (tops.len(), size)
+        };
+        // "AA AA" is 2.25 wide: it doesn't fit, so it takes two lines.
+        let (count, size) = lines("AA AA");
+        assert_eq!(count, 2);
+        assert_eq!(
+            size,
+            TextSize {
+                width: 1.0,
+                height: 2.0
+            }
+        );
+        // "AA i" is 1.375: one line.
+        assert_eq!(lines("AA i").0, 1);
+        // A new paragraph still starts a new line, and a word too long has a line of its own.
+        assert_eq!(lines("A\nAAAA i").0, 3);
+    }
+
+    #[test]
+    fn justified_lines_fill_the_wrap_width_except_the_last() {
+        let mut scene = Scene::new();
+        let atlas = font(&mut scene);
+        let builder = TextBuilder::new(atlas)
+            .wrap(Some(2.0))
+            .align(HorizontalAlign::Justify, VerticalAlign::Top);
+        // "A A A A A": 5 x 0.5 + 4 x 0.25 = 3.5 > 2; "A A A" (2.0) fits on the first line.
+        let (quads, size) = layout(&builder, &scene, "A A A A A");
+        assert_eq!(size.width, 2.0);
+        let first: Vec<_> = quads.iter().filter(|q| q.y.1 == 0.0).collect();
+        let second: Vec<_> = quads.iter().filter(|q| q.y.1 == -1.0).collect();
+        assert_eq!((first.len(), second.len()), (3, 2));
+        // The first line is already full width; the last line is not stretched.
+        assert_eq!(first[2].x.1, 2.0);
+        assert_eq!(
+            second.iter().map(|q| q.x.0).collect::<Vec<_>>(),
+            [0.0, 0.75]
+        );
+
+        // A line with room left over is stretched to the full width.
+        let builder = builder.wrap(Some(2.5));
+        let (quads, _) = layout(&builder, &scene, "A A A A A");
+        let first: Vec<_> = quads.iter().filter(|q| q.y.1 == 0.0).collect();
+        assert_eq!(first.len(), 3);
+        assert!((first[2].x.1 - 2.5).abs() < 1e-6, "{:?}", first[2].x);
+
+        // Without wrapping, justified is left aligned.
+        let builder = TextBuilder::new(atlas).align(HorizontalAlign::Justify, VerticalAlign::Top);
+        let (quads, size) = layout(&builder, &scene, "A A");
+        assert_eq!((quads[0].x.0, size.width), (0.0, 1.25));
+    }
+
+    #[test]
+    fn removing_text_removes_its_node_and_mesh() {
+        let (mut scene, root, atlas, material) = glyph_scene();
+        let one_mesh = Text::create(
+            &mut scene,
+            root,
+            None,
+            material,
+            TextBuilder::new(atlas),
+            "A",
+        )
+        .unwrap();
+        let builder = TextBuilder::new(atlas).method(TextMethod::NodePerGlyph);
+        let glyphs = Text::create(&mut scene, root, None, material, builder, "AA").unwrap();
+        let glyph_nodes = glyphs.get_glyph_nodes().to_vec();
+        let (node, mesh) = (
+            one_mesh.get_node(),
+            scene
+                .get_node(one_mesh.get_node())
+                .unwrap()
+                .get_mesh()
+                .unwrap(),
+        );
+
+        one_mesh.remove(&mut scene).unwrap();
+        assert!(scene.get_node(node).is_none());
+        assert!(scene.get_mesh(mesh).is_none());
+
+        let node = glyphs.get_node();
+        glyphs.remove(&mut scene).unwrap();
+        assert!(scene.get_node(node).is_none());
+        assert!(glyph_nodes.iter().all(|&g| scene.get_node(g).is_none()));
+        assert!(scene.find_mesh(GLYPH_MESH_NAME).is_some());
+        assert_eq!(scene.get_node(root).unwrap().get_children().len(), 0);
     }
 }

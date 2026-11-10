@@ -1,0 +1,4 @@
+# Demo 11's font: Segoe UI Bold, 64 pixels high, with the font creator's default
+# characters. Rendered into an atlas during the build.
+font = Segoe UI Bold
+height = 64

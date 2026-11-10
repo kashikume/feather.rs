@@ -17,6 +17,7 @@ use super::demo_007_vases::VasesDemo;
 use super::demo_008_walker::WalkerDemo;
 use super::demo_009_spider::SpiderDemo;
 use super::demo_010_text::TextDemo;
+use super::demo_011_crawl::CrawlDemo;
 
 /// One demo of the test app: a scene, the camera looking at it, and its animation.
 pub trait Demo {
@@ -77,6 +78,10 @@ pub const DEMOS: &[DemoInfo] = &[
     DemoInfo {
         name: "Text",
         create: |assets| Ok(Box::new(TextDemo::new(assets)?)),
+    },
+    DemoInfo {
+        name: "Crawl",
+        create: |assets| Ok(Box::new(CrawlDemo::new(assets)?)),
     },
 ];
 
@@ -651,5 +656,47 @@ mod tests {
         let turned = demo.scene().get_node(turntable).unwrap().get_transform();
         demo.update(2.0).unwrap();
         assert_ne!(demo.scene().get_node(turntable).unwrap().get_transform(), turned);
+    }
+
+    #[test]
+    fn crawl_never_ends_and_cleans_up_after_itself() {
+        let mut demo = demo(11);
+        let episodes = |scene: &Scene| {
+            let crawl = scene.get_node(scene.find_node("Crawl").unwrap()).unwrap();
+            let mut names: Vec<String> = crawl
+                .get_children()
+                .iter()
+                .map(|&e| scene.get_node(e).unwrap().get_name().unwrap())
+                .collect();
+            names.sort();
+            names
+        };
+        assert_eq!(episodes(demo.scene()), ["Episode 1"]);
+        let stars = demo.scene().find_node("Stars").unwrap();
+        assert!(demo.scene().get_node(stars).unwrap().get_mesh().is_some());
+
+        // Ten minutes, two updates a second (building mesh buffers as the renderer would).
+        let mut most = (0, 0, 0);
+        for step in 1..=1200 {
+            demo.update(step as f32 * 0.5).unwrap();
+            let scene = demo.scene();
+            scene.build_missing_mesh_buffers().unwrap();
+            let counts = (
+                scene.nodes.iter().count(),
+                scene.meshes.iter().count(),
+                scene.buffers.iter().count(),
+            );
+            most = (most.0.max(counts.0), most.1.max(counts.1), most.2.max(counts.2));
+        }
+        let names = episodes(demo.scene());
+        assert!(!names.contains(&"Episode 1".to_string()), "{names:?}");
+        let newest: u32 = names
+            .iter()
+            .map(|n| n["Episode ".len()..].parse::<u32>().unwrap())
+            .max()
+            .unwrap();
+        assert!(newest > 10, "only {newest} episodes in ten minutes");
+        // Old episodes are removed: a few episodes' worth of objects at most.
+        assert!(most.0 < 40 && most.1 < 20 && most.2 < 20, "{most:?}");
     }
 }
