@@ -37,6 +37,14 @@ impl Mesh {
         }
     }
 
+    pub fn get_vertices(&self) -> &[Vertex] {
+        &self.vertices
+    }
+
+    pub fn get_indices(&self) -> &[u32] {
+        &self.indices
+    }
+
     pub fn data_size_for_vertexes(&self) -> usize {
         size_of::<Vertex>() * self.vertices.len()
     }

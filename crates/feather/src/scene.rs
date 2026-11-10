@@ -129,6 +129,20 @@ impl Scene {
         Ok(())
     }
 
+    /// Removes a node and all its descendants from the scene. Their meshes and materials stay.
+    /// Fails if the node does not exist.
+    pub fn remove_node(&mut self, node_handle: usize) -> Result<()> {
+        self.disconnect_node(node_handle)?;
+        let mut stack = vec![node_handle];
+        while let Some(handle) = stack.pop() {
+            if let Some(node) = self.nodes.get(handle) {
+                stack.extend(node.get_children().iter().copied());
+            }
+            self.nodes.remove(handle);
+        }
+        Ok(())
+    }
+
     pub fn get_node(&self, handle: usize) -> Option<&Node> {
         self.nodes.get(handle)
     }
@@ -139,6 +153,32 @@ impl Scene {
 
     pub fn get_mesh(&self, handle: usize) -> Option<&Mesh> {
         self.meshes.get(handle)
+    }
+
+    /// Removes a mesh from the scene and from every node that uses it. Its mesh buffer is
+    /// removed with its last mesh, and the renderer then releases its GPU memory. Use it for
+    /// meshes that are replaced while the scene is shown, like changing text. Fails if the
+    /// mesh does not exist.
+    pub fn remove_mesh(&mut self, mesh_handle: usize) -> Result<()> {
+        let mesh = self
+            .meshes
+            .get(mesh_handle)
+            .ok_or_else(|| anyhow::anyhow!("Mesh {mesh_handle} not found"))?;
+        if let Some(data) = &mesh.mesh_buffer_data {
+            let buffer_handle = data.buffer_handle;
+            if let Some(buffer) = self.buffers.get_mut(buffer_handle) {
+                if buffer.remove_mesh(mesh_handle) {
+                    self.buffers.remove(buffer_handle);
+                }
+            }
+        }
+        self.meshes.remove(mesh_handle);
+        for node in self.nodes.iter_mut() {
+            if node.get_mesh() == Some(mesh_handle) {
+                node.remove_mesh();
+            }
+        }
+        Ok(())
     }
 
     pub fn node_set_mesh(&mut self, node_handle: usize, mesh_handle: usize) -> Result<()> {
@@ -1273,6 +1313,71 @@ mod tests {
         assert_eq!(d1.vertex_size, 4);
         assert_eq!(d1.index_begin_index, 6);
         assert_eq!(d1.index_size, 9);
+    }
+
+    #[test]
+    fn remove_node_removes_its_subtree() {
+        let mut scene = Scene::new();
+        let root = scene.create_root_node(None);
+        let kept = scene.create_node(Some("kept".into()), root).unwrap();
+        let node = scene.create_node(None, root).unwrap();
+        let child = scene.create_node(None, node).unwrap();
+        let grandchild = scene.create_node(None, child).unwrap();
+        let mesh = scene.add_mesh(test_mesh(3, 3));
+        scene.node_set_mesh(child, mesh).unwrap();
+
+        scene.remove_node(node).unwrap();
+        for removed in [node, child, grandchild] {
+            assert!(scene.get_node(removed).is_none());
+        }
+        assert_eq!(
+            scene.get_node(root).unwrap().get_children().iter().copied().collect::<Vec<_>>(),
+            vec![kept]
+        );
+        assert!(scene.get_mesh(mesh).is_some());
+        assert!(scene.remove_node(node).is_err());
+    }
+
+    #[test]
+    fn remove_mesh_removes_it_from_nodes_and_its_buffer() {
+        let mut scene = Scene::new();
+        let root = scene.create_root_node(None);
+        let node = scene.create_node(None, root).unwrap();
+        let m0 = scene.add_mesh(test_mesh(3, 3));
+        let m1 = scene.add_mesh(test_mesh(4, 6));
+        scene.node_set_mesh(node, m0).unwrap();
+        scene.build_missing_mesh_buffers().unwrap();
+        let buffer = scene.buffers.iter().next().unwrap().get_handle();
+
+        scene.remove_mesh(m0).unwrap();
+        assert!(scene.get_mesh(m0).is_none());
+        assert_eq!(scene.get_node(node).unwrap().get_mesh(), None);
+        // The other mesh keeps the buffer, and its place in it.
+        let data = scene.get_mesh(m1).unwrap().mesh_buffer_data.as_ref().unwrap();
+        assert_eq!((data.buffer_handle, data.vertex_begin_index), (buffer, 3));
+        assert_eq!(scene.buffers.get(buffer).unwrap().get_mesh_handles(), vec![m1]);
+
+        // The last mesh takes the buffer with it.
+        scene.remove_mesh(m1).unwrap();
+        assert_eq!(scene.buffers.iter().count(), 0);
+        assert!(scene.remove_mesh(m1).is_err());
+    }
+
+    #[test]
+    fn a_new_buffer_reusing_a_removed_buffers_handle_has_another_id() {
+        let mut scene = Scene::new();
+        let m0 = scene.add_mesh(test_mesh(3, 3));
+        scene.build_missing_mesh_buffers().unwrap();
+        let old = scene.buffers.iter().next().unwrap();
+        let (old_handle, old_id) = (old.get_handle(), old.get_id());
+
+        scene.remove_mesh(m0).unwrap();
+        let m1 = scene.add_mesh(test_mesh(5, 6));
+        scene.build_missing_mesh_buffers().unwrap();
+        let new = scene.buffers.iter().next().unwrap();
+        assert_eq!(new.get_handle(), old_handle);
+        assert_ne!(new.get_id(), old_id);
+        assert_eq!(new.get_mesh_handles(), vec![m1]);
     }
 
     #[test]

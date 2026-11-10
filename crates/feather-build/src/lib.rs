@@ -1,7 +1,8 @@
 //! Helpers for the build scripts (`build.rs`) of the feather crates and apps.
 //!
 //! - [`compile_shaders`] compiles GLSL shaders to SPIR-V with `glslc`.
-//! - [`build_atlases`] packs the images listed in `.atlist` files into atlases.
+//! - [`build_atlases`] packs the images listed in `.atlist` files into atlases, and renders
+//!   the fonts described in `.font` files into atlases of their characters.
 //! - [`copy_dir`], [`copy_file`] and [`assets_dir`] put an app's assets next to its executable.
 //!
 //! `glslc` is looked up in this order (see [`find_glslc`]):
@@ -141,7 +142,8 @@ pub fn copy_file(source: &Path, target: &Path) {
 
 /// An atlas created by [`build_atlases`].
 pub struct BuiltAtlas {
-    /// The input list, e.g. `atlases/sprites.atlist`.
+    /// The source: an input list, e.g. `atlases/sprites.atlist`, or a font description, e.g.
+    /// `atlases/font.font`.
     pub source: PathBuf,
     /// The atlas image, e.g. `$OUT_DIR/atlases/sprites.png`.
     pub png: PathBuf,
@@ -157,52 +159,101 @@ fn atlas_sizes() -> impl Iterator<Item = (usize, usize)> {
     (6..=13).flat_map(|p| [(1 << p, 1 << (p - 1)), (1 << p, 1 << p)])
 }
 
-/// Creates an atlas for every `.atlist` file directly in `atlas_dir` with the atlas creator:
-/// `atlas_dir/<name>.atlist` -> `out_dir/<name>.png` and `out_dir/<name>.atlas`. Each atlas
-/// gets the smallest size from 64x32, 64x64, 128x64, ... 8192x8192 its images fit in.
+/// Creates an atlas for every `.atlist` and `.font` file directly in `atlas_dir`:
+/// `atlas_dir/<name>.atlist` (or `.font`) -> `out_dir/<name>.png` and `out_dir/<name>.atlas`.
+/// Each atlas gets the smallest size from 64x32, 64x64, 128x64, ... 8192x8192 its images fit
+/// in.
 ///
-/// An `.atlist` file lists PNG images, one per line, relative to the list. Prints
-/// `cargo:rerun-if-changed` for `atlas_dir` (Cargo then watches every file in it). Panics
-/// (failing the build) if an atlas can't be created.
+/// - An `.atlist` file lists PNG images, one per line, relative to the list; the atlas creator
+///   packs them.
+/// - A `.font` file names a font installed in Windows, the image height and the characters
+///   (see `font_creator::FontSpec`). The font creator renders a PNG image per character into
+///   `out_dir/<name>/` and lists them in `out_dir/<name>.atlist`, which is then packed. The
+///   images are named by code point (`65` for `A`), and so are the textures of the atlas.
+///
+/// Prints `cargo:rerun-if-changed` for `atlas_dir` (Cargo then watches every file in it).
+/// Panics (failing the build) if an atlas can't be created, or if two sources have the same
+/// name.
 pub fn build_atlases(atlas_dir: &Path, out_dir: &Path) -> Vec<BuiltAtlas> {
     println!("cargo:rerun-if-changed={}", atlas_dir.display());
     fs::create_dir_all(out_dir)
         .unwrap_or_else(|e| panic!("failed to create {}: {e}", out_dir.display()));
 
-    let mut lists: Vec<PathBuf> = fs::read_dir(atlas_dir)
+    let mut sources: Vec<PathBuf> = fs::read_dir(atlas_dir)
         .unwrap_or_else(|e| panic!("failed to read dir {}: {e}", atlas_dir.display()))
         .map(|entry| entry.expect("failed to read dir entry").path())
-        .filter(|path| path.is_file() && path.extension().is_some_and(|e| e == "atlist"))
+        .filter(|path| {
+            path.is_file()
+                && path
+                    .extension()
+                    .is_some_and(|e| e == "atlist" || e == "font")
+        })
         .collect();
-    lists.sort();
+    sources.sort();
+    for pair in sources.windows(2) {
+        if pair[0].file_stem() == pair[1].file_stem() {
+            panic!(
+                "{} and {} would make the same atlas",
+                pair[0].display(),
+                pair[1].display()
+            );
+        }
+    }
 
-    lists
+    sources
         .into_iter()
         .map(|source| {
             let stem = source.file_stem().unwrap();
-            let png = out_dir.join(stem).with_extension("png");
-            let metadata = out_dir.join(stem).with_extension("atlas");
-            for (width, height) in atlas_sizes() {
-                match atlas_creator::create_atlas(&source, &png, &metadata, width, height) {
-                    Ok(()) => {
-                        return BuiltAtlas {
-                            source,
-                            png,
-                            metadata,
-                            width,
-                            height,
-                        }
-                    }
-                    Err(atlas_creator::AtlasError::DoesNotFit) => continue,
-                    Err(e) => panic!("failed to create atlas {}: {e}", source.display()),
-                }
-            }
-            panic!(
-                "failed to create atlas {}: the images don't fit in 8192x8192",
-                source.display()
-            )
+            let list = if source.extension().is_some_and(|e| e == "font") {
+                let list = out_dir.join(stem).with_extension("atlist");
+                render_font(&source, &out_dir.join(stem), &list);
+                list
+            } else {
+                source.clone()
+            };
+            pack_atlas(source, &list, out_dir)
         })
         .collect()
+}
+
+/// Renders the font described in the `.font` file `source` into images in `image_dir`, listed
+/// in `list`. Panics if it can't.
+fn render_font(source: &Path, image_dir: &Path, list: &Path) {
+    let spec = font_creator::FontSpec::load(source).unwrap_or_else(|e| panic!("{e}"));
+    // Images of characters no longer in the spec must not stay around.
+    if image_dir.exists() {
+        fs::remove_dir_all(image_dir)
+            .unwrap_or_else(|e| panic!("failed to clear {}: {e}", image_dir.display()));
+    }
+    font_creator::create_font_images(&spec.font, spec.height, &spec.chars, image_dir, list)
+        .unwrap_or_else(|e| panic!("failed to render font {}: {e}", source.display()));
+}
+
+/// Packs the images listed in `list` into `out_dir/<name of source>.png` and `.atlas`, in the
+/// smallest atlas they fit in.
+fn pack_atlas(source: PathBuf, list: &Path, out_dir: &Path) -> BuiltAtlas {
+    let stem = source.file_stem().unwrap();
+    let png = out_dir.join(stem).with_extension("png");
+    let metadata = out_dir.join(stem).with_extension("atlas");
+    for (width, height) in atlas_sizes() {
+        match atlas_creator::create_atlas(list, &png, &metadata, width, height) {
+            Ok(()) => {
+                return BuiltAtlas {
+                    source,
+                    png,
+                    metadata,
+                    width,
+                    height,
+                }
+            }
+            Err(atlas_creator::AtlasError::DoesNotFit) => continue,
+            Err(e) => panic!("failed to create atlas {}: {e}", source.display()),
+        }
+    }
+    panic!(
+        "failed to create atlas {}: the images don't fit in 8192x8192",
+        source.display()
+    )
 }
 
 /// Finds `glslc`: `$GLSLC`, then the Vulkan SDK, then `PATH`.

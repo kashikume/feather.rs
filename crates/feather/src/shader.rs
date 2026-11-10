@@ -225,6 +225,8 @@ pub(crate) mod tests {
         include_bytes!(concat!(env!("OUT_DIR"), "/shaders/basic.vert.spv"));
     pub(crate) const FRAG: &[u8] =
         include_bytes!(concat!(env!("OUT_DIR"), "/shaders/basic.frag.spv"));
+    pub(crate) const TEXT_FRAG: &[u8] =
+        include_bytes!(concat!(env!("OUT_DIR"), "/shaders/text.frag.spv"));
     const TYPES_VERT: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/shaders/types.vert.spv"));
     const TYPES_FRAG: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/shaders/types.frag.spv"));
 

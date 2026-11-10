@@ -8,5 +8,6 @@ pub mod demo_006_bouncing_balls;
 pub mod demo_007_vases;
 pub mod demo_008_walker;
 pub mod demo_009_spider;
+pub mod demo_010_text;
 pub mod random;
 pub mod testapp;

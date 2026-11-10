@@ -42,6 +42,7 @@ pub mod skeleton;
 pub mod swapchain;
 pub mod swapchainsupport;
 pub mod syncobjects;
+pub mod text;
 pub mod texture;
 pub mod uniform;
 pub mod uniformdata;

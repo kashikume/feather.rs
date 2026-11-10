@@ -1,0 +1,4 @@
+# Demo 10's regular font: Segoe UI, 64 pixels high, with the font creator's default
+# characters. Rendered into an atlas during the build.
+font = Segoe UI
+height = 64

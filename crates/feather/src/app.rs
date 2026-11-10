@@ -373,13 +373,14 @@ impl App {
             queue: self.data.graphics_queue,
         };
 
-        // Mesh buffers. Their contents never change once created.
+        // Mesh buffers. Their contents never change once created. A removed buffer's handle
+        // may already belong to a new buffer: compare ids.
         let removed: Vec<usize> = self
             .data
             .gpu_mesh_buffers
-            .keys()
-            .copied()
-            .filter(|&h| scene.buffers.get(h).is_none())
+            .iter()
+            .filter(|(&h, gpu)| scene.buffers.get(h).map(|b| b.get_id()) != Some(gpu.id))
+            .map(|(&h, _)| h)
             .collect();
         if !removed.is_empty() {
             self.device.device_wait_idle()?;

@@ -8,6 +8,9 @@
 //! - Every `atlases/<name>.atlist` is packed by the atlas creator into
 //!   `$OUT_DIR/atlases/<name>.png` and `<name>.atlas`, copied to `assets/` too. The generated
 //!   atlases are not in the repository; only the images and the `.atlist` lists are.
+//! - Every `atlases/<name>.font` is rendered by the font creator into character images in
+//!   `$OUT_DIR/atlases/<name>/`, packed the same way. Only the `.font` files are in the
+//!   repository.
 //!
 //! See `feather-build` for how `glslc` is found.
 

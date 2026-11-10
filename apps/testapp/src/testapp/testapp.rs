@@ -16,6 +16,7 @@ use super::demo_006_bouncing_balls::BouncingBallsDemo;
 use super::demo_007_vases::VasesDemo;
 use super::demo_008_walker::WalkerDemo;
 use super::demo_009_spider::SpiderDemo;
+use super::demo_010_text::TextDemo;
 
 /// One demo of the test app: a scene, the camera looking at it, and its animation.
 pub trait Demo {
@@ -72,6 +73,10 @@ pub const DEMOS: &[DemoInfo] = &[
     DemoInfo {
         name: "Spider",
         create: |assets| Ok(Box::new(SpiderDemo::new(assets)?)),
+    },
+    DemoInfo {
+        name: "Text",
+        create: |assets| Ok(Box::new(TextDemo::new(assets)?)),
     },
 ];
 
@@ -590,4 +595,61 @@ mod tests {
         );
     }
 
+    #[test]
+    fn text_demo_shows_texts_and_updates_the_clock() {
+        let mut demo = demo(10);
+        let scene = demo.scene();
+
+        // Every character of the font creator's default set is in both fonts.
+        for name in ["Regular", "Bold"] {
+            let atlas = scene.get_atlas(scene.find_atlas(name).unwrap()).unwrap();
+            for c in "Aaż’…".chars() {
+                assert!(atlas.has_texture(&(c as u32).to_string()), "{name}: {c}");
+            }
+        }
+
+        let texts = scene.get_node(scene.find_node("Texts").unwrap()).unwrap();
+        assert_eq!(texts.get_children().len(), 8);
+        let wave = scene.find_node("Wave").unwrap();
+        for &text in texts.get_children().iter().filter(|&&t| t != wave) {
+            let node = scene.get_node(text).unwrap();
+            assert!(node.is_transparent(), "{:?}", node.get_name());
+            assert!(node.get_mesh().is_some(), "{:?}", node.get_name());
+        }
+
+        // The wave has a node per letter, sharing one mesh, each in its own colour and moving.
+        let letters: Vec<usize> = scene.get_node(wave).unwrap().get_children().iter().copied().collect();
+        assert_eq!(letters.len(), "Anodeperletter:eachonemovesonitsown".chars().count());
+        assert_eq!(scene.get_node(wave).unwrap().get_mesh(), None);
+        let meshes: std::collections::HashSet<_> =
+            letters.iter().map(|&l| scene.get_node(l).unwrap().get_mesh().unwrap()).collect();
+        assert_eq!(meshes.len(), 1);
+        let colours: std::collections::HashSet<String> = letters
+            .iter()
+            .map(|&l| format!("{:?}", scene.get_node(l).unwrap().uniforms().get("color")))
+            .collect();
+        assert!(colours.len() > 10, "{} colours", colours.len());
+        let before = scene.get_node(letters[0]).unwrap().get_transform();
+        demo.update(0.3).unwrap();
+        assert_ne!(demo.scene().get_node(letters[0]).unwrap().get_transform(), before);
+        let scene = demo.scene();
+        let floor_text = scene.get_node(scene.find_node("Floor text").unwrap()).unwrap();
+        let floor_mesh = scene.get_mesh(floor_text.get_mesh().unwrap()).unwrap();
+        assert!(floor_mesh.get_vertices().iter().all(|v| v.pos.y == 0.0), "not in the XZ plane");
+
+        // The clock's mesh is replaced when its text changes, and the old one removed.
+        let clock = scene.find_node("Clock").unwrap();
+        let mesh = |demo: &mut Box<dyn Demo>| demo.scene().get_node(clock).unwrap().get_mesh();
+        let meshes = scene.meshes.iter().count();
+        let first = mesh(&mut demo);
+        demo.update(0.32).unwrap();
+        assert_eq!(mesh(&mut demo), first);
+        demo.update(1.25).unwrap();
+        assert!(mesh(&mut demo).is_some());
+        assert_eq!(demo.scene().meshes.iter().count(), meshes);
+        let turntable = demo.scene().find_node("Turntable").unwrap();
+        let turned = demo.scene().get_node(turntable).unwrap().get_transform();
+        demo.update(2.0).unwrap();
+        assert_ne!(demo.scene().get_node(turntable).unwrap().get_transform(), turned);
+    }
 }

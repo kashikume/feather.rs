@@ -30,9 +30,15 @@ What works today:
 - Perspective camera
 - Atlases uploaded with mipmaps; a material's texture passes its UV rectangle to the shader
   (`umin`, `umax`, `vmin`, `vmax` uniforms)
-- Atlases built from `.atlist` image lists by the atlas creator during the build
+- Atlases built from `.atlist` image lists by the atlas creator during the build, and font
+  atlases rendered from Windows fonts described in `.font` files
 - Transparent nodes, alpha-blended; draws sorted: opaque nodes by shader, then transparent nodes
   back to front
+- Text from font atlases made by the font creator: laid out (alignment, several lines, in the XY
+  or XZ plane) into one mesh per text or a node per character, updated when the text changes
+  (`TextBuilder`, `Text`)
+- Nodes and meshes removable while the scene is shown (`Scene::remove_node`,
+  `Scene::remove_mesh`); mesh GPU buffers are released with their last mesh
 - Skeletal animation (rigid): bones are scene nodes (`Skeleton`), moved by looping keyframe
   clips loaded from JSON (`AnimationClip`)
 - MSAA
@@ -80,6 +86,7 @@ only command line argument is the number of the demo to start with (default 0). 
 | 7    | Vases       | 12 vases of 3 shapes (generated OBJ files with thick walls) in different sizes and colours on a turning floor plate; some opaque, some see-through glass, all from the scene file |
 | 8    | Walker      | A textured person walking in a circle: body parts hang from bones, moved by a walk-cycle animation clip |
 | 9    | Spider      | A textured spider walking in a circle with the same bone system: 8 legs of 4 bones each, in the alternating tetrapod gait |
+| 10   | Text        | Text in two fonts (Segoe UI and Segoe UI Bold, made with the font creator): a title changing colour, lines aligned left, centred and right, Polish, German and Spanish letters, a clock updated ten times a second, a line whose letters (a node each) bob in a wave in their own colours, and text lying on a turning floor |
 
 Each demo is in its own file, `apps/testapp/src/testapp/demo_NNN_<name>.rs`, and its resources
 are named `demo_NNN_<name>_<kind>` (`scene`, `atlas`, `mesh`, `shader`, ...). Demos are listed in
@@ -119,6 +126,37 @@ around every image. The generated atlases are not in the repository, only the im
 demo 2's are `apps/testapp/atlases/demo_002_atlas_atlas.atlist` and
 `apps/testapp/atlases/demo_002_atlas/plate_01.png` ... `plate_16.png` (demo 3 has its own copy
 under `demo_003_waving_atlas`).
+
+### Fonts
+
+Font atlases are made entirely during the build: an `apps/testapp/atlases/<name>.font` file
+describes one, and `build_atlases` renders the font's characters with the font creator
+(`tools/font-creator`, used as a library) into `$OUT_DIR/atlases/<name>/`, lists them in
+`$OUT_DIR/atlases/<name>.atlist` and packs them like any other atlas into `<name>.png` and
+`<name>.atlas`. No character images are in the repository. Demo 10's regular font:
+
+```
+# Segoe UI, 64 pixels high, with the default characters.
+font = Segoe UI
+height = 64
+```
+
+`font` is a font installed in Windows, by its full name (`Arial Bold`), its file name in the
+Windows font directory (`arialbd`) or a path; the build fails if it isn't found. Every image is
+`height` pixels high (the font's ascent to descent, with the baseline at the same row in all of
+them) and as wide as the character's advance, so images put side by side make the text. Images
+are named by the character's code point (`65.png` for `A`), which becomes the texture name in
+the `.atlas` file. The default characters are printable ASCII (with the space), Polish, German
+and Spanish letters, typographic quotes and apostrophe, ellipsis, the non-breaking space and a
+few symbols (`€ ° • § ·`); `chars = ...` replaces them and `add-chars = ...` adds to them.
+Characters the font has no glyph for are skipped.
+
+The font creator is also a command line tool, to look at the images or list the fonts:
+
+```powershell
+cargo run -p font-creator -- --list    # installed fonts
+cargo run -p font-creator -- -f "Segoe UI Bold" -h 32 -o font -a font.atlist
+```
 
 ## Assets
 
@@ -207,6 +245,7 @@ crates/
     mesh*.rs         meshes and mesh builders (.obj file, cuboid, plane, sphere)
     atlas.rs, texture.rs
                      images loaded from PNG with their .atlas metadata, and textures cut from them
+    text.rs          text laid out with a font atlas into meshes, and nodes showing it
     gpuimage.rs      atlases uploaded to the GPU, and the texture sampler
     shader.rs, material.rs
                      SPIR-V shaders and materials
@@ -226,11 +265,14 @@ apps/
     src/main.rs      entry point: creates the window and starts the engine with TestApp
     src/testapp/     one file per demo, testapp.rs switches them
     shaders/         GLSL sources, compiled by build.rs
-    atlases/         .atlist image lists and their images, packed into atlases by build.rs
+    atlases/         .atlist image lists and their images, and .font font descriptions, made
+                     into atlases by build.rs
     resources/       scene files, models and textures, copied to assets/ by build.rs
     build.rs         compiles shaders, builds atlases and copies assets next to the executable
 tools/
   atlas-creator/     packs PNG images into an atlas: command line tool and library
+  font-creator/      renders a Windows font's characters to PNG images and an .atlist: command
+                     line tool and library
 doc/                 scene file format and plans
 ```
 
@@ -329,6 +371,49 @@ Each key is `[time, [x, y, z]]`, times in seconds in `0..duration`, in increasin
 animation is rigid: meshes hang from bones as child nodes (unnamed, so they aren't bones) and move
 as a whole; they don't bend at the joints (there is no mesh skinning). Demo 8 builds a person this
 way (`demo_008_walker_scene.json`), and demo 9 a spider (`demo_009_spider_scene.json`).
+
+### Text
+
+Text is drawn with a font atlas: images of characters made by the font creator
+([Fonts](#fonts)) and packed by the atlas creator, named after their code points. A
+`TextBuilder` lays text out in scene units; a `Text` shows it on a node and updates it when the
+text changes:
+
+```rust
+let material = create_text_material(&mut scene, None, shader, font_atlas)?; // whole atlas
+let builder = TextBuilder::new(font_atlas)
+    .height(0.5) // line height in scene units
+    .align(HorizontalAlign::Center, VerticalAlign::Center)
+    .plane(TextPlane::XY) // or XZ, lying on a floor
+    .method(TextMethod::OneMesh); // or NodePerGlyph
+let mut clock = Text::create(&mut scene, parent, Some("Clock".into()), material, builder, "")?;
+// every frame; updated only when the text changes:
+clock.set_text(&mut scene, &format!("{:.1} s", time))?;
+```
+
+There are two ways to draw text (`TextMethod`), the two methods of the C++ feather's
+`TextBuilder` (`oneMesh` and `treeOfUnits`):
+
+| | `OneMesh` | `NodePerGlyph` |
+|---|---|---|
+| Nodes | the text's node, transparent, with the mesh | a transparent child per drawn character (`Text::get_glyph_nodes`) |
+| Meshes | one per text: a quad per character, the character's rectangle of the atlas in the texture coordinates | one square shared by all glyph nodes; each node's transform places it, its `umin`, `umax`, `vmin`, `vmax` uniforms hold the rectangle |
+| Draws | one per text | one per character |
+| Changing the text | builds a new mesh, removes the old one (`Scene::remove_mesh`) | reuses the glyph nodes, adding or removing (`Scene::remove_node`) the difference; no meshes |
+| Good for | most text | text whose characters move or are coloured one by one |
+
+Both use one material per font, whose texture is the whole atlas. The shader samples the atlas
+at `mix(vec2(umin, vmin), vec2(umax, vmax), uv)` and takes the colour's alpha from the font
+images, which are white. `create_text_material` sets those uniforms to the whole atlas (0..1),
+which is what one-mesh text needs, and glyph nodes override them with their own. For that the
+shader must not name them for the engine (`umin_uniform` ... in the scene file), or the engine
+would fill them from the material's texture over the nodes' values; `Text::create` checks this.
+Uniforms set on a text's node, like a colour, reach its glyph nodes too.
+
+A `\n` starts a new line; characters missing from the font take a quarter of the line height and
+aren't drawn. Demo 10 shows both methods with one shader (`demo_010_text_shader.frag`, coloured
+with a `color` uniform): the wave is a node per glyph, everything else one mesh per text.
+[doc/text-performance.md](doc/text-performance.md) compares the two methods' performance.
 
 ### Uniforms
 
