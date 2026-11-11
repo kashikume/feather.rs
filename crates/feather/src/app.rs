@@ -1,12 +1,12 @@
 use std::collections::HashMap;
 use std::time::Instant;
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, bail, Result};
 use vulkanalia::loader::{LibloadingLoader, LIBRARY};
 use vulkanalia::prelude::v1_0::*;
 use winit::event::{ElementState, Event, KeyEvent, MouseScrollDelta, WindowEvent};
-use winit::keyboard::PhysicalKey;
-use winit::event_loop::EventLoop;
+use winit::keyboard::{KeyCode, PhysicalKey};
+use winit::event_loop::{EventLoop, EventLoopWindowTarget};
 use winit::window::Window;
 
 use vulkanalia::vk::ExtDebugUtilsExtension;
@@ -28,6 +28,7 @@ use super::framebuffers::create_framebuffers;
 use super::instance::create_instance;
 use super::logicaldevice::create_logical_device;
 use super::physicaldevice::{pick_physical_device, DeviceFeatures};
+use super::queuefamilyindices::QueueFamilyIndices;
 use super::pipeline::{create_render_pass, PipelineKey, PipelineTarget, ShaderPipeline};
 use super::scene::sort_for_rendering;
 use super::swapchain::Swapchain;
@@ -51,6 +52,10 @@ pub struct App {
     frame: usize,
     pub resized: bool,
     start: Instant,
+    /// The queue families the device was created with, for the surface it was created for.
+    queue_families: QueueFamilyIndices,
+    /// Whether the window's surface is gone (`suspend`): nothing is drawn until `resume`.
+    suspended: bool,
 }
 
 impl App {
@@ -94,6 +99,7 @@ impl App {
         let instance = create_instance(window, &entry, &mut data)?;
         data.surface = surface::create_surface(&instance, window)?;
         pick_physical_device(&instance, &mut data)?;
+        let queue_families = QueueFamilyIndices::get(&instance, data.surface, data.physical_device)?;
         data.min_uniform_alignment = instance
             .get_physical_device_properties(data.physical_device)
             .limits
@@ -129,7 +135,63 @@ impl App {
             frame: 0,
             resized: false,
             start: Instant::now(),
+            queue_families,
+            suspended: false,
         })
+    }
+
+    /// Drops the window's surface and the swapchain, with what depends on them (render pass,
+    /// framebuffers, color and depth images, pipelines), and stops drawing. Everything else stays:
+    /// the device, the scenes' meshes and atlases, the app.
+    ///
+    /// For winit's `Suspended`: on Android the window's native window is about to be destroyed
+    /// (the app goes to the background, the screen is locked). Does nothing when already
+    /// suspended.
+    pub unsafe fn suspend(&mut self) -> Result<()> {
+        if self.suspended {
+            return Ok(());
+        }
+        log::info!("Suspended: releasing the surface and the swapchain.");
+        self.device.device_wait_idle()?;
+        self.destroy_swapchain();
+        self.instance.destroy_surface_khr(self.data.surface, None);
+        self.data.surface = vk::SurfaceKHR::null();
+        self.suspended = true;
+        Ok(())
+    }
+
+    /// Makes a new surface for `window` and a swapchain for it, after `suspend`, and tells the app
+    /// the window's size. For winit's `Resumed` after a `Suspended`. Does nothing when not
+    /// suspended.
+    pub unsafe fn resume(&mut self, window: &Window) -> Result<()> {
+        if !self.suspended {
+            return Ok(());
+        }
+        log::info!("Resumed: recreating the surface and the swapchain.");
+        self.data.surface = surface::create_surface(&self.instance, window)?;
+        let present = self.queue_families.present;
+        if !self.instance.get_physical_device_surface_support_khr(
+            self.data.physical_device,
+            present,
+            self.data.surface,
+        )? {
+            bail!("the device's present queue (family {present}) can't present to the new surface");
+        }
+        self.create_swapchain_objects(window)?;
+        self.suspended = false;
+        self.resized = false;
+        let size = window.inner_size();
+        if size.width > 0 && size.height > 0 {
+            if let Err(e) = self.data.app.on_resized(size.width, size.height) {
+                log::error!("Handling the window size after resuming failed: {e:#}");
+            }
+        }
+        Ok(())
+    }
+
+    /// Whether the surface is gone (between `suspend` and `resume`).
+    pub fn is_suspended(&self) -> bool {
+        self.suspended
     }
 
     /// Gets the scenes ready for drawing: advances their animations to `time` (the time passed
@@ -625,6 +687,12 @@ impl App {
     unsafe fn recreate_swapchain(&mut self, window: &Window) -> Result<()> {
         self.device.device_wait_idle()?;
         self.destroy_swapchain();
+        self.create_swapchain_objects(window)
+    }
+
+    /// Creates the swapchain for the current surface and what depends on it (the parts
+    /// `destroy_swapchain` destroys).
+    unsafe fn create_swapchain_objects(&mut self, window: &Window) -> Result<()> {
         self.data.swapchain = Swapchain::create(window, &self.instance, &self.device, &self.data)?;
         self.data.swapchain.create_image_views(&self.device)?;
         create_render_pass(&self.instance, &self.device, &mut self.data)?;
@@ -646,7 +714,9 @@ impl App {
         self.data.app.on_destroy();
         self.device.device_wait_idle().unwrap();
 
-        self.destroy_swapchain();
+        if !self.suspended {
+            self.destroy_swapchain();
+        }
 
         self.data.in_flight_fences.iter().for_each(|f| self.device.destroy_fence(*f, None));
         self.data.render_finished_semaphores.iter().for_each(|s| self.device.destroy_semaphore(*s, None));
@@ -701,97 +771,187 @@ impl App {
         }
     }
 
-    pub fn run(&mut self, window: &Window, event_loop: EventLoop<()>) -> Result<()> {
-        let mut minimized = false;
-        // Where the mouse pointer was last seen: button and wheel events don't say.
-        let mut cursor = (0.0f32, 0.0f32);
-        self.apply_window_title(window);
-        let size = window.inner_size();
-        if size.width > 0 && size.height > 0 {
-            self.data.app.on_resized(size.width, size.height)?;
-        }
-        event_loop.run(move |event, elwt| {
-            match event {
-                // Request a redraw when all events were processed.
-                Event::AboutToWait => window.request_redraw(),
-                Event::WindowEvent { event, .. } => match event {
-                    // Render a frame if our Vulkan app is not being destroyed.
-                    WindowEvent::RedrawRequested if !elwt.exiting() && !minimized => {
-                        unsafe { self.render(&window) }.unwrap();
-                    }
-                    // Mark the window as having been resized.
-                    WindowEvent::Resized(size) => {
-                        if size.width == 0 || size.height == 0 {
-                            minimized = true;
-                        } else {
-                            minimized = false;
-                            self.resized = true;
-                            if let Err(e) = self.data.app.on_resized(size.width, size.height) {
-                                log::error!("Handling the window resize failed: {e:#}");
-                            }
-                        }
-                    }
-                    // Pass the mouse to the app.
-                    WindowEvent::CursorMoved { position, .. } => {
-                        cursor = (position.x as f32, position.y as f32);
-                        if let Err(e) = self.data.app.on_mouse_moved(cursor.0, cursor.1) {
-                            log::error!("Handling a mouse move failed: {e:#}");
-                        }
-                    }
-                    WindowEvent::CursorLeft { .. } => {
-                        if let Err(e) = self.data.app.on_mouse_left() {
-                            log::error!("Handling the mouse leaving failed: {e:#}");
-                        }
-                    }
-                    WindowEvent::MouseInput { state, button, .. } => {
-                        let pressed = state == ElementState::Pressed;
-                        if let Err(e) =
-                            self.data.app.on_mouse_button(button, pressed, cursor.0, cursor.1)
-                        {
-                            log::error!("Handling mouse button {button:?} failed: {e:#}");
-                        }
-                        self.apply_window_title(window);
-                    }
-                    WindowEvent::MouseWheel { delta, .. } => {
-                        let (x, y) = match delta {
-                            MouseScrollDelta::LineDelta(x, y) => (x, y),
-                            MouseScrollDelta::PixelDelta(p) => (
-                                p.x as f32 / PIXELS_PER_WHEEL_LINE,
-                                p.y as f32 / PIXELS_PER_WHEEL_LINE,
-                            ),
-                        };
-                        if let Err(e) = self.data.app.on_mouse_wheel(x, y, cursor.0, cursor.1) {
-                            log::error!("Handling the mouse wheel failed: {e:#}");
-                        }
-                    }
-                    // Pass key presses to the app.
-                    WindowEvent::KeyboardInput {
-                        event:
-                            KeyEvent {
-                                physical_key: PhysicalKey::Code(key),
-                                state: ElementState::Pressed,
-                                repeat: false,
-                                ..
-                            },
-                        ..
-                    } => {
-                        if let Err(e) = self.data.app.on_key_pressed(key) {
-                            log::error!("Handling key {key:?} failed: {e:#}");
-                        }
-                        self.apply_window_title(window);
-                    }
-                    // Destroy our Vulkan app.
-                    WindowEvent::CloseRequested => {
-                        elwt.exit();
-                        unsafe {
-                            self.destroy();
-                        }
-                    }
-                    _ => {}
-                },
-                _ => {}
+    /// Runs `app` in `window` until the window is closed (on Android: the activity is finished).
+    ///
+    /// The engine follows winit's lifecycle events, which every platform sends:
+    ///
+    /// - the first `Resumed` creates the engine (`App::create`) and calls the app's
+    ///   `on_create`; on Android the window has no surface before it;
+    /// - `Suspended` drops the surface and the swapchain (`suspend`); a later `Resumed` makes
+    ///   them again (`resume`);
+    /// - `LoopExiting` destroys the engine and the app (`destroy`).
+    ///
+    /// In debug builds, F9 suspends and resumes at once, to exercise on Windows what Android
+    /// does when the app goes to the background and back.
+    ///
+    /// An error creating, resuming or drawing ends the loop and is returned. Errors from the
+    /// app's input and resize handlers are logged.
+    pub fn run(window: Window, event_loop: EventLoop<()>, app: Box<dyn FeatherApp>) -> Result<()> {
+        let mut runner = Runner {
+            window,
+            pending: Some(app),
+            engine: None,
+            minimized: false,
+            cursor: (0.0, 0.0),
+            error: None,
+        };
+        event_loop.run(|event, elwt| {
+            if let Err(e) = runner.handle(event, elwt) {
+                log::error!("{e:#}");
+                runner.error.get_or_insert(e);
+                elwt.exit();
             }
         })?;
+        match runner.error {
+            Some(e) => Err(e),
+            None => Ok(()),
+        }
+    }
+}
+
+/// The state of `App::run`'s event loop.
+struct Runner {
+    window: Window,
+    /// The app, until the engine is created on the first `Resumed`.
+    pending: Option<Box<dyn FeatherApp>>,
+    engine: Option<App>,
+    minimized: bool,
+    /// Where the mouse pointer was last seen: button and wheel events don't say.
+    cursor: (f32, f32),
+    /// The first error that ended the loop.
+    error: Option<anyhow::Error>,
+}
+
+impl Runner {
+    fn handle(&mut self, event: Event<()>, elwt: &EventLoopWindowTarget<()>) -> Result<()> {
+        match event {
+            Event::Resumed => self.resumed()?,
+            Event::Suspended => {
+                if let Some(engine) = &mut self.engine {
+                    unsafe { engine.suspend()? };
+                }
+            }
+            Event::LoopExiting => {
+                if let Some(mut engine) = self.engine.take() {
+                    unsafe { engine.destroy() };
+                }
+            }
+            // Request a redraw when all events were processed.
+            Event::AboutToWait => self.window.request_redraw(),
+            Event::WindowEvent { event, .. } => self.window_event(event, elwt)?,
+            _ => {}
+        }
+        Ok(())
+    }
+
+    /// The first `Resumed` creates the engine; later ones (after `Suspended`) bring back the
+    /// surface.
+    fn resumed(&mut self) -> Result<()> {
+        if let Some(app) = self.pending.take() {
+            let mut engine = unsafe { App::create(&self.window, app)? };
+            engine.apply_window_title(&self.window);
+            let size = self.window.inner_size();
+            if size.width > 0 && size.height > 0 {
+                engine.data.app.on_resized(size.width, size.height)?;
+            }
+            self.engine = Some(engine);
+        } else if let Some(engine) = &mut self.engine {
+            unsafe { engine.resume(&self.window)? };
+        }
+        Ok(())
+    }
+
+    fn window_event(&mut self, event: WindowEvent, elwt: &EventLoopWindowTarget<()>) -> Result<()> {
+        let Some(engine) = &mut self.engine else {
+            return Ok(());
+        };
+        let window = &self.window;
+        match event {
+            // Render a frame if the engine is not being destroyed and has a surface.
+            WindowEvent::RedrawRequested
+                if !elwt.exiting() && !self.minimized && !engine.is_suspended() =>
+            {
+                unsafe { engine.render(window)? };
+            }
+            // Mark the window as having been resized.
+            WindowEvent::Resized(size) => {
+                if size.width == 0 || size.height == 0 {
+                    self.minimized = true;
+                } else {
+                    self.minimized = false;
+                    engine.resized = true;
+                    if let Err(e) = engine.data.app.on_resized(size.width, size.height) {
+                        log::error!("Handling the window resize failed: {e:#}");
+                    }
+                }
+            }
+            // Pass the mouse to the app.
+            WindowEvent::CursorMoved { position, .. } => {
+                self.cursor = (position.x as f32, position.y as f32);
+                if let Err(e) = engine.data.app.on_mouse_moved(self.cursor.0, self.cursor.1) {
+                    log::error!("Handling a mouse move failed: {e:#}");
+                }
+            }
+            WindowEvent::CursorLeft { .. } => {
+                if let Err(e) = engine.data.app.on_mouse_left() {
+                    log::error!("Handling the mouse leaving failed: {e:#}");
+                }
+            }
+            WindowEvent::MouseInput { state, button, .. } => {
+                let pressed = state == ElementState::Pressed;
+                let (x, y) = self.cursor;
+                if let Err(e) = engine.data.app.on_mouse_button(button, pressed, x, y) {
+                    log::error!("Handling mouse button {button:?} failed: {e:#}");
+                }
+                engine.apply_window_title(window);
+            }
+            WindowEvent::MouseWheel { delta, .. } => {
+                let (dx, dy) = match delta {
+                    MouseScrollDelta::LineDelta(x, y) => (x, y),
+                    MouseScrollDelta::PixelDelta(p) => (
+                        p.x as f32 / PIXELS_PER_WHEEL_LINE,
+                        p.y as f32 / PIXELS_PER_WHEEL_LINE,
+                    ),
+                };
+                let (x, y) = self.cursor;
+                if let Err(e) = engine.data.app.on_mouse_wheel(dx, dy, x, y) {
+                    log::error!("Handling the mouse wheel failed: {e:#}");
+                }
+            }
+            // F9 in debug builds: suspend and resume, as Android does (see `App::run`).
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::F9),
+                        state: ElementState::Pressed,
+                        repeat: false,
+                        ..
+                    },
+                ..
+            } if cfg!(debug_assertions) => unsafe {
+                engine.suspend()?;
+                engine.resume(window)?;
+            },
+            // Pass key presses to the app.
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(key),
+                        state: ElementState::Pressed,
+                        repeat: false,
+                        ..
+                    },
+                ..
+            } => {
+                if let Err(e) = engine.data.app.on_key_pressed(key) {
+                    log::error!("Handling key {key:?} failed: {e:#}");
+                }
+                engine.apply_window_title(window);
+            }
+            // Leave the loop; the engine is destroyed on `LoopExiting`.
+            WindowEvent::CloseRequested => elwt.exit(),
+            _ => {}
+        }
         Ok(())
     }
 }

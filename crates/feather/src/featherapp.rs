@@ -26,7 +26,8 @@ pub trait FeatherApp {
     }
 
     /// Called with the size of the window's drawing area in pixels: once before the first
-    /// frame, and whenever it changes (not while the window is minimized).
+    /// frame, whenever it changes (not while the window is minimized), and after the engine
+    /// resumes from `Suspended` (Android: back from the background).
     fn on_resized(&mut self, _width: u32, _height: u32) -> Result<()> {
         Ok(())
     }

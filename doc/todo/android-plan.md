@@ -320,10 +320,14 @@ Every step ends with its part of `doc/android.md` (in brackets below), verified 
    `sample_rate_shading` (`DeviceFeatures` in `AppData`, used by the device, the texture sampler
    and `PipelineTarget::sample_shading`). Desktop: demo 16 runs with validation on and no
    errors. [Doc: validation layers in *Logs and debugging*.]
-5. **Lifecycle**: `App::run` with a factory, engine created on the first `Resumed`, surface and
-   swapchain dropped on `Suspended` and rebuilt on `Resumed`, `destroy()` on `LoopExiting`. On
-   Windows, minimizing and restoring and closing the window still work; `Suspended` / `Resumed`
-   can be exercised on Windows only through a test calling the same methods. [Doc: the
+5. **Lifecycle**: *Done.* `App::run(window, event_loop, app)` (the app boxed, not a factory:
+   creating it doesn't need Vulkan, only `on_create` does, which `App::create` calls), engine
+   created on the first `Resumed`, surface and swapchain dropped on `Suspended` and rebuilt on
+   `Resumed` (both do nothing when repeated, as winit asks), `destroy()` on `LoopExiting`.
+   Errors creating, resuming or drawing end the loop and are returned instead of panicking.
+   Instead of a test (it needs a Vulkan device), debug builds suspend and resume on **F9**:
+   checked on Windows with demos 14 to 19, F9 four times between demo switches, no validation
+   errors, clean exit on closing the window. [Doc: the
    lifecycle diagram in *Overview*; what an app may assume across `Suspended` / `Resumed`.]
 6. **Swapchain on Android**: format, composite alpha, `IDENTITY` transform and extent,
    `SUBOPTIMAL_KHR` ignored on Android, start-up log of the surface's capabilities. [Doc: reading

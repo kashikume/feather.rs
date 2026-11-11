@@ -25,8 +25,55 @@ MainActivity.kt + AndroidManifest.xml ───┘
   with `glslc`, atlases packed, fonts rendered.
 - **Gradle** packs the library, the assets and the activity into an APK and installs it.
 
-The app's lifecycle on Android (the window coming and going) is described here once it is
-implemented (plan step 5).
+### Lifecycle
+
+On Windows a window exists from start to end. On Android the activity's window (and so the Vulkan
+surface the engine draws into) is destroyed whenever the app goes to the background or the screen
+is locked, and made again when it comes back, while the process and everything in memory stay.
+winit reports this with two events, sent on every platform, and the engine
+(`App::run`) follows them:
+
+```
+start ──▶ Resumed (first) ──▶ engine created: Vulkan device, surface, swapchain;
+                              app.on_create(); app.on_resized()
+               │
+               ▼
+          drawing frames ◀──────────────────────────────┐
+               │                                        │
+               ▼                                        │
+          Suspended ──▶ surface and swapchain released; │
+                        nothing drawn                   │
+               │                                        │
+               ▼                                        │
+          Resumed ────▶ surface and swapchain made      │
+                        again; app.on_resized() ────────┘
+
+window closed / activity finished ──▶ LoopExiting ──▶ engine and app destroyed
+```
+
+What an app can count on across `Suspended` / `Resumed`:
+
+- **Kept**: the app itself and its state, its scenes, and the GPU copies of their meshes and
+  atlases (the Vulkan device stays). Nothing has to be reloaded.
+- **Rebuilt by the engine**: the surface, the swapchain and what depends on them (pipelines,
+  framebuffers). This is the same work as when the window is resized.
+- **Told to the app**: `on_resized` with the window's size after each `Resumed`, since it may
+  have changed meanwhile.
+- **Not drawn**: no frames between `Suspended` and `Resumed`; `on_update` and `on_render` aren't
+  called. Scene animations follow the clock, so they jump ahead by the time spent in the
+  background.
+
+(The C++ engine on Android loses its whole OpenGL context and reloads every GPU resource on
+resume. With Vulkan only the surface goes.)
+
+On Windows the same path can be exercised without a device: in a debug build, **F9** suspends and
+resumes at once. Running a demo, pressing F9 a few times and switching demos in between should
+show no validation errors, and the log shows each step:
+
+```
+INFO  feather::app > Suspended: releasing the surface and the swapchain.
+INFO  feather::app > Resumed: recreating the surface and the swapchain.
+```
 
 ## Setup
 

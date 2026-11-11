@@ -22,10 +22,7 @@ fn main() -> Result<()> {
         .with_inner_size(LogicalSize::new(1024, 768))
         .build(&event_loop)?;
 
-    let mut app = unsafe { App::create(&window, Box::new(TestApp::new(demo)?))? };
-    app.run(&window, event_loop)?;
-
-    Ok(())
+    App::run(window, event_loop, Box::new(TestApp::new(demo)?))
 }
 
 /// The demo number from the command line arguments (without the program name).
