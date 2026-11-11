@@ -1,0 +1,161 @@
+{
+  "meshes": [
+    { "name": "Plate", "cuboid": { "x": [-4, 4], "y": [-4, 4], "z": [-0.25, 0] } },
+    { "name": "Classic", "file": "demo_007_vases_classic_mesh.obj" },
+    { "name": "Bottle", "file": "demo_007_vases_bottle_mesh.obj" },
+    { "name": "Urn", "file": "demo_007_vases_urn_mesh.obj" }
+  ],
+  "shaders": [
+    {
+      "name": "Colored",
+      "vertex": "demo_018_vases_shader.vert.spv",
+      "fragment": "demo_018_vases_shader.frag.spv",
+      "model_uniform": "model",
+      "view_uniform": "view",
+      "projection_uniform": "proj",
+      "shadow_matrix_uniform": "lightViewProj",
+      "shadow_map_sampler": "shadowMap"
+    }
+  ],
+  "materials": [
+    {
+      "name": "Ceramic",
+      "shader": "Colored",
+      "uniforms": { "shininess": { "float": 32.0 }, "specularStrength": { "float": 0.5 }, "opacity": { "float": 1.0 } }
+    },
+    {
+      "name": "Glass",
+      "shader": "Colored",
+      "uniforms": { "shininess": { "float": 80.0 }, "specularStrength": { "float": 1.0 }, "opacity": { "float": 0.4 } }
+    },
+    {
+      "name": "Matte",
+      "shader": "Colored",
+      "uniforms": { "shininess": { "float": 8.0 }, "specularStrength": { "float": 0.1 }, "opacity": { "float": 1.0 } }
+    }
+  ],
+  "shadow_light": { "direction": [-0.5, 0.7, -1.4], "center": [0, 0, 1], "radius": 7.0 },
+  "root": {
+    "name": "Scene root",
+    "uniforms": { "light": { "vec3": [0.5, -0.7, 1.4] } },
+    "children": [
+      {
+        "name": "Turntable",
+        "children": [
+          {
+            "name": "Floor",
+            "mesh": "Plate",
+            "material": "Matte",
+            "uniforms": { "color": { "vec3": [0.45, 0.5, 0.58] } }
+          },
+          {
+            "name": "Vases",
+            "children": [
+              {
+                "name": "Vase 1",
+                "mesh": "Classic",
+                "material": "Ceramic",
+                "transform": { "translation": [2.7, 0.0, 0], "rotation": [0, 0, 0], "scale": 1.5 },
+                "uniforms": { "color": { "vec3": [0.9, 0.27, 0.27] } },
+                "casts_shadow": true
+              },
+              {
+                "name": "Vase 2",
+                "mesh": "Bottle",
+                "material": "Glass",
+                "transform": { "translation": [2.425, 1.4, 0], "rotation": [0, 0, 37], "scale": 1.8 },
+                "uniforms": { "color": { "vec3": [0.9, 0.63, 0.36] } },
+                "transparent": true,
+                "casts_shadow": true
+              },
+              {
+                "name": "Vase 3",
+                "mesh": "Urn",
+                "material": "Ceramic",
+                "transform": { "translation": [1.3, 2.252, 0], "rotation": [0, 0, 74], "scale": 1.1 },
+                "uniforms": { "color": { "vec3": [0.9, 0.9, 0.27] } },
+                "casts_shadow": true
+              },
+              {
+                "name": "Vase 4",
+                "mesh": "Classic",
+                "material": "Glass",
+                "transform": { "translation": [-0.486, 2.757, 0], "rotation": [0, 0, 111], "scale": 1.0 },
+                "uniforms": { "color": { "vec3": [0.63, 0.9, 0.36] } },
+                "transparent": true,
+                "casts_shadow": true
+              },
+              {
+                "name": "Vase 5",
+                "mesh": "Bottle",
+                "material": "Ceramic",
+                "transform": { "translation": [-1.838, 1.838, 0], "rotation": [0, 0, 148], "scale": 1.3 },
+                "uniforms": { "color": { "vec3": [0.27, 0.9, 0.27] } },
+                "casts_shadow": true
+              },
+              {
+                "name": "Vase 6",
+                "mesh": "Urn",
+                "material": "Glass",
+                "transform": { "translation": [-2.659, 0.469, 0], "rotation": [0, 0, 185], "scale": 1.6 },
+                "uniforms": { "color": { "vec3": [0.36, 0.9, 0.63] } },
+                "transparent": true,
+                "casts_shadow": true
+              },
+              {
+                "name": "Vase 7",
+                "mesh": "Classic",
+                "material": "Ceramic",
+                "transform": { "translation": [-2.212, -1.549, 0], "rotation": [0, 0, 222], "scale": 1.9 },
+                "uniforms": { "color": { "vec3": [0.27, 0.9, 0.9] } },
+                "casts_shadow": true
+              },
+              {
+                "name": "Vase 8",
+                "mesh": "Bottle",
+                "material": "Ceramic",
+                "transform": { "translation": [-0.958, -2.631, 0], "rotation": [0, 0, 259], "scale": 1.0 },
+                "uniforms": { "color": { "vec3": [0.27, 0.585, 0.9] } },
+                "casts_shadow": true
+              },
+              {
+                "name": "Vase 9",
+                "mesh": "Urn",
+                "material": "Glass",
+                "transform": { "translation": [0.889, -2.443, 0], "rotation": [0, 0, 296], "scale": 0.9 },
+                "uniforms": { "color": { "vec3": [0.36, 0.36, 0.9] } },
+                "transparent": true,
+                "casts_shadow": true
+              },
+              {
+                "name": "Vase 10",
+                "mesh": "Classic",
+                "material": "Ceramic",
+                "transform": { "translation": [2.425, -1.4, 0], "rotation": [0, 0, 333], "scale": 1.2 },
+                "uniforms": { "color": { "vec3": [0.585, 0.27, 0.9] } },
+                "casts_shadow": true
+              },
+              {
+                "name": "Vase 11",
+                "mesh": "Urn",
+                "material": "Ceramic",
+                "transform": { "translation": [0.636, 0.636, 0], "rotation": [0, 0, 10], "scale": 1.4 },
+                "uniforms": { "color": { "vec3": [0.9, 0.27, 0.9] } },
+                "casts_shadow": true
+              },
+              {
+                "name": "Vase 12",
+                "mesh": "Bottle",
+                "material": "Glass",
+                "transform": { "translation": [-0.707, -0.707, 0], "rotation": [0, 0, 47], "scale": 2.2 },
+                "uniforms": { "color": { "vec3": [0.9, 0.36, 0.63] } },
+                "transparent": true,
+                "casts_shadow": true
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

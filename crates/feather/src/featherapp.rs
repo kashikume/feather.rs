@@ -18,4 +18,10 @@ pub trait FeatherApp {
     fn on_key_pressed(&mut self, _key: KeyCode) -> Result<()> {
         Ok(())
     }
+
+    /// Text for the window's title bar. `None` leaves the title the window was created with.
+    /// The engine applies this at startup and after each key press.
+    fn window_title(&self) -> Option<String> {
+        None
+    }
 }

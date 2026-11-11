@@ -23,6 +23,10 @@ use super::demo_013_simple_shadow::SimpleShadowDemo;
 use super::demo_014_shadows::ShadowsDemo;
 use super::demo_015_city::CityDemo;
 use super::demo_016_city::CityAssetsDemo;
+use super::demo_017_bouncing_balls::BouncingBallsShadowDemo;
+use super::demo_018_vases::VasesShadowDemo;
+use super::demo_019_walker::WalkerShadowDemo;
+use super::demo_020_spider::SpiderShadowDemo;
 
 /// One demo of the test app: a scene, the camera looking at it, and its animation. A demo may
 /// have more scenes, each with its own camera, drawn one over the other (`scene_count`).
@@ -123,6 +127,22 @@ pub const DEMOS: &[DemoInfo] = &[
         name: "City (assets)",
         create: |assets| Ok(Box::new(CityAssetsDemo::new(assets)?)),
     },
+    DemoInfo {
+        name: "Bouncing balls (shadows)",
+        create: |assets| Ok(Box::new(BouncingBallsShadowDemo::new(assets)?)),
+    },
+    DemoInfo {
+        name: "Vases (shadows)",
+        create: |assets| Ok(Box::new(VasesShadowDemo::new(assets)?)),
+    },
+    DemoInfo {
+        name: "Walker (shadows)",
+        create: |assets| Ok(Box::new(WalkerShadowDemo::new(assets)?)),
+    },
+    DemoInfo {
+        name: "Spider (shadows)",
+        create: |assets| Ok(Box::new(SpiderShadowDemo::new(assets)?)),
+    },
 ];
 
 /// The development app: shows one demo at a time. Left and right arrows switch to the
@@ -177,6 +197,15 @@ impl FeatherApp for TestApp {
             _ => Ok(()),
         }
     }
+
+    fn window_title(&self) -> Option<String> {
+        Some(demo_window_title(self.demo_index))
+    }
+}
+
+/// The window title for demo `index`: the app name, then the demo's number and name.
+pub fn demo_window_title(index: usize) -> String {
+    format!("Feather development app - {index} {}", DEMOS[index].name)
 }
 
 impl TestApp {
@@ -251,6 +280,19 @@ mod tests {
         for index in 0..DEMOS.len() {
             demo(index);
         }
+    }
+
+    #[test]
+    fn window_title_names_the_demo() {
+        assert_eq!(demo_window_title(0), "Feather development app - 0 Viking room");
+        assert_eq!(
+            demo_window_title(6),
+            "Feather development app - 6 Bouncing balls"
+        );
+        assert_eq!(
+            demo_window_title(17),
+            "Feather development app - 17 Bouncing balls (shadows)"
+        );
     }
 
     #[test]
@@ -948,5 +990,79 @@ mod tests {
         assert!(moved > cars.len() / 2, "cars don't move");
         assert_ne!(demo.camera().get_view(), view);
         assert_eq!(demo.scene_count(), 2);
+    }
+
+    #[test]
+    fn shadow_recreations_cast_real_shadows() {
+        // Demos 17-20 are demos 6-9 with a shadow map: a light, casters, a floor that only
+        // receives, and no flat shadow disc.
+        for index in 17..=20 {
+            let mut demo = demo(index);
+            let scene = demo.scene();
+            scene.build_missing_mesh_buffers().unwrap();
+            scene.update_nodes();
+            assert!(scene.get_shadow_light().is_some(), "demo {index}");
+            assert!(scene.find_material("Shadow").is_none(), "demo {index}");
+
+            let shader = scene.shaders.iter().next().unwrap();
+            assert_eq!(shader.get_uniform_shadow_matrix_name(), Some("lightViewProj"));
+            assert_eq!(shader.get_shadow_map_sampler_name(), Some("shadowMap"));
+
+            let floor = scene.find_node("Floor").unwrap();
+            let items = scene.draw_items();
+            assert!(items.iter().any(|item| item.casts_shadow), "demo {index}");
+            assert!(items.iter().filter(|item| item.node == floor).all(|item| !item.casts_shadow));
+            assert!(items.iter().filter(|item| item.node != floor).all(|item| item.casts_shadow));
+        }
+
+        // The balls bounce, and each one casts.
+        let mut balls = demo(17);
+        let scene = balls.scene();
+        let group = scene.get_node(scene.find_node("Balls").unwrap()).unwrap();
+        assert_eq!(group.get_children().len(), 12);
+        for &ball in group.get_children() {
+            assert!(scene.get_node(ball).unwrap().casts_shadow());
+        }
+        let first = *group.get_children().iter().next().unwrap();
+        let before = scene.get_node(first).unwrap().get_transform();
+        balls.update(0.5).unwrap();
+        assert_ne!(balls.scene().get_node(first).unwrap().get_transform(), before);
+
+        // The vases still turn, and the glass ones stay see-through while they cast.
+        let mut vases = demo(18);
+        let scene = vases.scene();
+        let group = scene.get_node(scene.find_node("Vases").unwrap()).unwrap();
+        assert_eq!(group.get_children().len(), 12);
+        let mut glass = 0;
+        for &vase in group.get_children() {
+            let vase = scene.get_node(vase).unwrap();
+            assert!(vase.casts_shadow());
+            let material = scene.get_material(vase.get_material().unwrap()).unwrap();
+            if material.get_name() == Some("Glass".to_string()) {
+                assert!(vase.is_transparent());
+                glass += 1;
+            }
+        }
+        assert_eq!(glass, 5);
+        let turntable = scene.find_node("Turntable").unwrap();
+        vases.update(2.0).unwrap();
+        let turned = vases.scene().get_node(turntable).unwrap().get_transform();
+        assert_ne!(turned, <Mat4 as cgmath::SquareMatrix>::identity());
+
+        // The walker and the spider move, and nothing of them is a transparent disc.
+        for index in [19, 20] {
+            let mut demo = demo(index);
+            let start = {
+                let scene = demo.scene();
+                let root = if index == 19 { "Walker" } else { "Spider" };
+                scene.get_node(scene.find_node(root).unwrap()).unwrap().get_transform()
+            };
+            demo.update(1.0).unwrap();
+            let scene = demo.scene();
+            let root = if index == 19 { "Walker" } else { "Spider" };
+            let later = scene.get_node(scene.find_node(root).unwrap()).unwrap().get_transform();
+            assert_ne!(later, start);
+            assert!(scene.nodes.iter().all(|node| !node.is_transparent()));
+        }
     }
 }

@@ -6,7 +6,7 @@ use winit::window::WindowBuilder;
 use feather::app::App;
 
 mod testapp;
-use testapp::testapp::{TestApp, DEMOS};
+use testapp::testapp::{demo_window_title, TestApp, DEMOS};
 
 /// Usage: `testapp [demo]`, where `demo` is the number of the demo to show first
 /// (default 0). Left and right arrows switch demos.
@@ -18,7 +18,7 @@ fn main() -> Result<()> {
 
     let event_loop = EventLoop::new()?;
     let window = WindowBuilder::new()
-        .with_title("Feather development app")
+        .with_title(demo_window_title(demo))
         .with_inner_size(LogicalSize::new(1024, 768))
         .build(&event_loop)?;
 

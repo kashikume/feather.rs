@@ -1,0 +1,479 @@
+{
+  "atlases": [{ "name": "Spider", "bitmap": "demo_009_spider_atlas.png", "metadata": "demo_009_spider_atlas.atlas" }],
+  "meshes": [
+    { "name": "Plate", "cuboid": { "x": [-4, 4], "y": [-4, 4], "z": [-0.25, 0] } },
+    { "name": "Ball", "sphere": { "radius": 1.0, "segments": 32, "rings": 16 } },
+    { "name": "Femur", "file": "demo_009_spider_femur_mesh.obj" },
+    { "name": "Tibia", "file": "demo_009_spider_tibia_mesh.obj" },
+    { "name": "Tarsus", "file": "demo_009_spider_tarsus_mesh.obj" }
+  ],
+  "shaders": [
+    {
+      "name": "Textured",
+      "vertex": "demo_020_spider_shader.vert.spv",
+      "fragment": "demo_020_spider_shader.frag.spv",
+      "model_uniform": "model",
+      "view_uniform": "view",
+      "projection_uniform": "proj",
+      "umin_uniform": "umin",
+      "umax_uniform": "umax",
+      "vmin_uniform": "vmin",
+      "vmax_uniform": "vmax",
+      "shadow_matrix_uniform": "lightViewProj",
+      "shadow_map_sampler": "shadowMap"
+    }
+  ],
+  "materials": [
+    {
+      "name": "Carapace",
+      "shader": "Textured",
+      "texture": { "atlas": "Spider", "name": "carapace" },
+      "uniforms": { "shininess": { "float": 30.0 }, "specularStrength": { "float": 0.35 } }
+    },
+    {
+      "name": "Abdomen",
+      "shader": "Textured",
+      "texture": { "atlas": "Spider", "name": "abdomen" },
+      "uniforms": { "shininess": { "float": 30.0 }, "specularStrength": { "float": 0.4 } }
+    },
+    {
+      "name": "Leg",
+      "shader": "Textured",
+      "texture": { "atlas": "Spider", "name": "leg" },
+      "uniforms": { "shininess": { "float": 20.0 }, "specularStrength": { "float": 0.25 } }
+    },
+    {
+      "name": "Eye",
+      "shader": "Textured",
+      "texture": { "atlas": "Spider", "name": "eye" },
+      "uniforms": { "shininess": { "float": 90.0 }, "specularStrength": { "float": 1.0 } }
+    },
+    {
+      "name": "Floor",
+      "shader": "Textured",
+      "texture": { "atlas": "Spider", "name": "floor" },
+      "uniforms": { "shininess": { "float": 8.0 }, "specularStrength": { "float": 0.1 } }
+    }
+  ],
+  "shadow_light": { "direction": [-0.6, 0.8, -1.5], "center": [0, 0, 0.6], "radius": 7.0 },
+  "root": {
+    "name": "Scene root",
+    "uniforms": { "light": { "vec3": [0.6, -0.8, 1.5] } },
+    "children": [
+      { "name": "Floor", "mesh": "Plate", "material": "Floor" },
+      {
+        "name": "Spider",
+        "children": [
+          {
+            "name": "Body",
+            "transform": { "translation": [0, 0, 0.573] },
+            "children": [
+              {
+                "mesh": "Ball",
+                "material": "Carapace",
+                "transform": { "translation": [0, 0.05, 0.02], "scale": [0.2, 0.26, 0.13] },
+                "casts_shadow": true
+              },
+              {
+                "mesh": "Ball",
+                "material": "Eye",
+                "transform": { "translation": [-0.04, 0.29, 0.08], "scale": 0.026 },
+                "casts_shadow": true
+              },
+              {
+                "mesh": "Ball",
+                "material": "Eye",
+                "transform": { "translation": [0.04, 0.29, 0.08], "scale": 0.026 },
+                "casts_shadow": true
+              },
+              {
+                "mesh": "Ball",
+                "material": "Eye",
+                "transform": { "translation": [-0.09, 0.27, 0.07], "scale": 0.018 },
+                "casts_shadow": true
+              },
+              {
+                "mesh": "Ball",
+                "material": "Eye",
+                "transform": { "translation": [0.09, 0.27, 0.07], "scale": 0.018 },
+                "casts_shadow": true
+              },
+              {
+                "mesh": "Ball",
+                "material": "Eye",
+                "transform": { "translation": [-0.03, 0.26, 0.12], "scale": 0.015 },
+                "casts_shadow": true
+              },
+              {
+                "mesh": "Ball",
+                "material": "Eye",
+                "transform": { "translation": [0.03, 0.26, 0.12], "scale": 0.015 },
+                "casts_shadow": true
+              },
+              {
+                "mesh": "Ball",
+                "material": "Eye",
+                "transform": { "translation": [-0.08, 0.24, 0.11], "scale": 0.012 },
+                "casts_shadow": true
+              },
+              {
+                "mesh": "Ball",
+                "material": "Eye",
+                "transform": { "translation": [0.08, 0.24, 0.11], "scale": 0.012 },
+                "casts_shadow": true
+              },
+              {
+                "name": "Abdomen",
+                "transform": { "translation": [0, -0.2, 0.06] },
+                "children": [
+                  {
+                    "mesh": "Ball",
+                    "material": "Abdomen",
+                    "transform": { "translation": [0, -0.28, 0.08], "rotation": [-12, 0, 0], "scale": [0.3, 0.38, 0.27] },
+                    "casts_shadow": true
+                  }
+                ]
+              },
+              {
+                "name": "L1Hip",
+                "transform": { "translation": [-0.13, 0.17, 0], "rotation": [0, 0, 122] },
+                "children": [
+                  {
+                    "name": "L1Femur",
+                    "transform": { "rotation": [0, -30.0, 0] },
+                    "children": [
+                      {
+                        "mesh": "Femur",
+                        "material": "Leg",
+                        "transform": { "rotation": [0, -90, 0] },
+                        "casts_shadow": true
+                      },
+                      {
+                        "name": "L1Knee",
+                        "transform": { "translation": [0.55, 0, 0], "rotation": [0, 90.0, 0] },
+                        "children": [
+                          {
+                            "mesh": "Tibia",
+                            "material": "Leg",
+                            "transform": { "rotation": [0, -90, 0] },
+                            "casts_shadow": true
+                          },
+                          {
+                            "name": "L1Ankle",
+                            "transform": { "translation": [0.6, 0, 0], "rotation": [0, 25.0, 0] },
+                            "children": [
+                              {
+                                "mesh": "Tarsus",
+                                "material": "Leg",
+                                "transform": { "rotation": [0, -90, 0] },
+                                "casts_shadow": true
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "name": "L2Hip",
+                "transform": { "translation": [-0.15, 0.07, 0], "rotation": [0, 0, 160] },
+                "children": [
+                  {
+                    "name": "L2Femur",
+                    "transform": { "rotation": [0, -30.0, 0] },
+                    "children": [
+                      {
+                        "mesh": "Femur",
+                        "material": "Leg",
+                        "transform": { "rotation": [0, -90, 0] },
+                        "casts_shadow": true
+                      },
+                      {
+                        "name": "L2Knee",
+                        "transform": { "translation": [0.55, 0, 0], "rotation": [0, 90.0, 0] },
+                        "children": [
+                          {
+                            "mesh": "Tibia",
+                            "material": "Leg",
+                            "transform": { "rotation": [0, -90, 0] },
+                            "casts_shadow": true
+                          },
+                          {
+                            "name": "L2Ankle",
+                            "transform": { "translation": [0.6, 0, 0], "rotation": [0, 25.0, 0] },
+                            "children": [
+                              {
+                                "mesh": "Tarsus",
+                                "material": "Leg",
+                                "transform": { "rotation": [0, -90, 0] },
+                                "casts_shadow": true
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "name": "L3Hip",
+                "transform": { "translation": [-0.15, -0.03, 0], "rotation": [0, 0, 202] },
+                "children": [
+                  {
+                    "name": "L3Femur",
+                    "transform": { "rotation": [0, -30.0, 0] },
+                    "children": [
+                      {
+                        "mesh": "Femur",
+                        "material": "Leg",
+                        "transform": { "rotation": [0, -90, 0] },
+                        "casts_shadow": true
+                      },
+                      {
+                        "name": "L3Knee",
+                        "transform": { "translation": [0.55, 0, 0], "rotation": [0, 90.0, 0] },
+                        "children": [
+                          {
+                            "mesh": "Tibia",
+                            "material": "Leg",
+                            "transform": { "rotation": [0, -90, 0] },
+                            "casts_shadow": true
+                          },
+                          {
+                            "name": "L3Ankle",
+                            "transform": { "translation": [0.6, 0, 0], "rotation": [0, 25.0, 0] },
+                            "children": [
+                              {
+                                "mesh": "Tarsus",
+                                "material": "Leg",
+                                "transform": { "rotation": [0, -90, 0] },
+                                "casts_shadow": true
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "name": "L4Hip",
+                "transform": { "translation": [-0.13, -0.13, 0], "rotation": [0, 0, 242] },
+                "children": [
+                  {
+                    "name": "L4Femur",
+                    "transform": { "rotation": [0, -30.0, 0] },
+                    "children": [
+                      {
+                        "mesh": "Femur",
+                        "material": "Leg",
+                        "transform": { "rotation": [0, -90, 0] },
+                        "casts_shadow": true
+                      },
+                      {
+                        "name": "L4Knee",
+                        "transform": { "translation": [0.55, 0, 0], "rotation": [0, 90.0, 0] },
+                        "children": [
+                          {
+                            "mesh": "Tibia",
+                            "material": "Leg",
+                            "transform": { "rotation": [0, -90, 0] },
+                            "casts_shadow": true
+                          },
+                          {
+                            "name": "L4Ankle",
+                            "transform": { "translation": [0.6, 0, 0], "rotation": [0, 25.0, 0] },
+                            "children": [
+                              {
+                                "mesh": "Tarsus",
+                                "material": "Leg",
+                                "transform": { "rotation": [0, -90, 0] },
+                                "casts_shadow": true
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "name": "R1Hip",
+                "transform": { "translation": [0.13, 0.17, 0], "rotation": [0, 0, 58] },
+                "children": [
+                  {
+                    "name": "R1Femur",
+                    "transform": { "rotation": [0, -30.0, 0] },
+                    "children": [
+                      {
+                        "mesh": "Femur",
+                        "material": "Leg",
+                        "transform": { "rotation": [0, -90, 0] },
+                        "casts_shadow": true
+                      },
+                      {
+                        "name": "R1Knee",
+                        "transform": { "translation": [0.55, 0, 0], "rotation": [0, 90.0, 0] },
+                        "children": [
+                          {
+                            "mesh": "Tibia",
+                            "material": "Leg",
+                            "transform": { "rotation": [0, -90, 0] },
+                            "casts_shadow": true
+                          },
+                          {
+                            "name": "R1Ankle",
+                            "transform": { "translation": [0.6, 0, 0], "rotation": [0, 25.0, 0] },
+                            "children": [
+                              {
+                                "mesh": "Tarsus",
+                                "material": "Leg",
+                                "transform": { "rotation": [0, -90, 0] },
+                                "casts_shadow": true
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "name": "R2Hip",
+                "transform": { "translation": [0.15, 0.07, 0], "rotation": [0, 0, 20] },
+                "children": [
+                  {
+                    "name": "R2Femur",
+                    "transform": { "rotation": [0, -30.0, 0] },
+                    "children": [
+                      {
+                        "mesh": "Femur",
+                        "material": "Leg",
+                        "transform": { "rotation": [0, -90, 0] },
+                        "casts_shadow": true
+                      },
+                      {
+                        "name": "R2Knee",
+                        "transform": { "translation": [0.55, 0, 0], "rotation": [0, 90.0, 0] },
+                        "children": [
+                          {
+                            "mesh": "Tibia",
+                            "material": "Leg",
+                            "transform": { "rotation": [0, -90, 0] },
+                            "casts_shadow": true
+                          },
+                          {
+                            "name": "R2Ankle",
+                            "transform": { "translation": [0.6, 0, 0], "rotation": [0, 25.0, 0] },
+                            "children": [
+                              {
+                                "mesh": "Tarsus",
+                                "material": "Leg",
+                                "transform": { "rotation": [0, -90, 0] },
+                                "casts_shadow": true
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "name": "R3Hip",
+                "transform": { "translation": [0.15, -0.03, 0], "rotation": [0, 0, -22] },
+                "children": [
+                  {
+                    "name": "R3Femur",
+                    "transform": { "rotation": [0, -30.0, 0] },
+                    "children": [
+                      {
+                        "mesh": "Femur",
+                        "material": "Leg",
+                        "transform": { "rotation": [0, -90, 0] },
+                        "casts_shadow": true
+                      },
+                      {
+                        "name": "R3Knee",
+                        "transform": { "translation": [0.55, 0, 0], "rotation": [0, 90.0, 0] },
+                        "children": [
+                          {
+                            "mesh": "Tibia",
+                            "material": "Leg",
+                            "transform": { "rotation": [0, -90, 0] },
+                            "casts_shadow": true
+                          },
+                          {
+                            "name": "R3Ankle",
+                            "transform": { "translation": [0.6, 0, 0], "rotation": [0, 25.0, 0] },
+                            "children": [
+                              {
+                                "mesh": "Tarsus",
+                                "material": "Leg",
+                                "transform": { "rotation": [0, -90, 0] },
+                                "casts_shadow": true
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "name": "R4Hip",
+                "transform": { "translation": [0.13, -0.13, 0], "rotation": [0, 0, -62] },
+                "children": [
+                  {
+                    "name": "R4Femur",
+                    "transform": { "rotation": [0, -30.0, 0] },
+                    "children": [
+                      {
+                        "mesh": "Femur",
+                        "material": "Leg",
+                        "transform": { "rotation": [0, -90, 0] },
+                        "casts_shadow": true
+                      },
+                      {
+                        "name": "R4Knee",
+                        "transform": { "translation": [0.55, 0, 0], "rotation": [0, 90.0, 0] },
+                        "children": [
+                          {
+                            "mesh": "Tibia",
+                            "material": "Leg",
+                            "transform": { "rotation": [0, -90, 0] },
+                            "casts_shadow": true
+                          },
+                          {
+                            "name": "R4Ankle",
+                            "transform": { "translation": [0.6, 0, 0], "rotation": [0, 25.0, 0] },
+                            "children": [
+                              {
+                                "mesh": "Tarsus",
+                                "material": "Leg",
+                                "transform": { "rotation": [0, -90, 0] },
+                                "casts_shadow": true
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

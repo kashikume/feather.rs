@@ -683,8 +683,16 @@ impl App {
         self.data.swapchain.destroy(&self.device);
     }
 
+    /// Sets the window title from the app, when it has one (`FeatherApp::window_title`).
+    fn apply_window_title(&self, window: &Window) {
+        if let Some(title) = self.data.app.window_title() {
+            window.set_title(&title);
+        }
+    }
+
     pub fn run(&mut self, window: &Window, event_loop: EventLoop<()>) -> Result<()> {
         let mut minimized = false;
+        self.apply_window_title(window);
         event_loop.run(move |event, elwt| {
             match event {
                 // Request a redraw when all events were processed.
@@ -717,6 +725,7 @@ impl App {
                         if let Err(e) = self.data.app.on_key_pressed(key) {
                             log::error!("Handling key {key:?} failed: {e:#}");
                         }
+                        self.apply_window_title(window);
                     }
                     // Destroy our Vulkan app.
                     WindowEvent::CloseRequested => {
