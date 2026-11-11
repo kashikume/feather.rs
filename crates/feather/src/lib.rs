@@ -51,6 +51,7 @@ pub mod swapchainsupport;
 pub mod syncobjects;
 pub mod text;
 pub mod texture;
+pub mod touch;
 pub mod uniform;
 pub mod uniformdata;
 pub mod uniformname;

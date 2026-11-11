@@ -4,7 +4,7 @@ use std::time::Instant;
 use anyhow::{anyhow, bail, Result};
 use vulkanalia::loader::{LibloadingLoader, LIBRARY};
 use vulkanalia::prelude::v1_0::*;
-use winit::event::{ElementState, Event, KeyEvent, MouseScrollDelta, WindowEvent};
+use winit::event::{ElementState, Event, KeyEvent, MouseButton, MouseScrollDelta, Touch, WindowEvent};
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::event_loop::{EventLoop, EventLoopWindowTarget};
 use winit::window::Window;
@@ -34,6 +34,7 @@ use super::scene::sort_for_rendering;
 use super::swapchain::Swapchain;
 use super::surface;
 use super::syncobjects::create_sync_objects;
+use super::touch::{MouseCall, TouchAsMouse};
 use super::gpuimage::{create_texture_sampler, GpuImage, UploadContext};
 use super::gpumeshbuffer::GpuMeshBuffer;
 use super::shadowpass::{ShadowDraw, ShadowMap, ShadowPass, ShadowRenderer};
@@ -797,6 +798,7 @@ impl App {
             engine: None,
             minimized: false,
             cursor: (0.0, 0.0),
+            touch: TouchAsMouse::default(),
             error: None,
         };
         event_loop.run(|event, elwt| {
@@ -822,6 +824,8 @@ struct Runner {
     minimized: bool,
     /// Where the mouse pointer was last seen: button and wheel events don't say.
     cursor: (f32, f32),
+    /// Touches turned into mouse calls (Android).
+    touch: TouchAsMouse,
     /// The first error that ended the loop.
     error: Option<anyhow::Error>,
 }
@@ -920,6 +924,29 @@ impl Runner {
                 let (x, y) = self.cursor;
                 if let Err(e) = engine.data.app.on_mouse_wheel(dx, dy, x, y) {
                     log::error!("Handling the mouse wheel failed: {e:#}");
+                }
+            }
+            // Touches, on Android, as the mouse (`touch.rs`). Windows sends mouse events for
+            // touch screens itself.
+            WindowEvent::Touch(Touch { id, phase, location, .. })
+                if cfg!(target_os = "android") =>
+            {
+                let (x, y) = (location.x as f32, location.y as f32);
+                for call in self.touch.touch(id, phase, x, y) {
+                    let result = match call {
+                        MouseCall::Moved(x, y) => {
+                            self.cursor = (x, y);
+                            engine.data.app.on_mouse_moved(x, y)
+                        }
+                        MouseCall::Button { pressed, x, y } => engine
+                            .data
+                            .app
+                            .on_mouse_button(MouseButton::Left, pressed, x, y),
+                        MouseCall::Left => engine.data.app.on_mouse_left(),
+                    };
+                    if let Err(e) = result {
+                        log::error!("Handling a touch ({call:?}) failed: {e:#}");
+                    }
                 }
             }
             // F9 in debug builds: suspend and resume, as Android does (see `App::run`).

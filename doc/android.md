@@ -384,6 +384,33 @@ exactly what `build.rs` put in the `assets\` directory (how Gradle packs it: pla
 
 A missing asset fails with `asset <name> not found in the APK`.
 
+### Touch
+
+On Android, the engine passes touches to the app as the mouse with its left button, as
+GuitarPrompter does, so an app written for the mouse (and featherui's buttons and scrollbars)
+works with a finger without changes. One finger is followed at a time: the first one down,
+until it lifts; others are ignored meanwhile.
+
+| Finger    | `FeatherApp` calls                                             |
+|-----------|----------------------------------------------------------------|
+| down      | `on_mouse_moved(x, y)`, then `on_mouse_button(Left, true, x, y)` |
+| moves     | `on_mouse_moved(x, y)`                                         |
+| up        | `on_mouse_button(Left, false, x, y)`, then `on_mouse_left()`   |
+| cancelled (the system took the gesture over) | same as up          |
+
+The move before the press lets hover-based UI find what is under the finger; `on_mouse_left`
+after the release clears the hover, so a button doesn't stay highlighted. Positions are window
+pixels from the top left, as for the mouse.
+
+There is no hover without a press on a touch screen, no other buttons and no wheel. Multi-finger
+gestures (pinch, two-finger scroll) are not passed on yet.
+
+On Windows, touches are not mapped: Windows already turns touch-screen touches into mouse
+messages, and mapping them too could press a button twice. (The mapping is in
+`feather::touch`, with unit tests. That Windows doesn't also deliver touches as winit touch
+events alongside its mouse messages, or the other way round, hasn't been tried on a touch
+screen.)
+
 ## Troubleshooting
 
 ### `cargo check --target aarch64-linux-android` fails in `android-activity`'s build script

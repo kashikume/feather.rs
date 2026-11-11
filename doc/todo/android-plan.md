@@ -337,7 +337,9 @@ Every step ends with its part of `doc/android.md` (in brackets below), verified 
    resume, not on resizes. Windows unchanged (`B8G8R8A8_SRGB`, `MAILBOX`, `IDENTITY`,
    `OPAQUE`). [Doc: reading
    the surface capabilities log in *Logs and debugging*.]
-7. **Touch as the mouse** in `App::run`. Tests (no window needed if the mapping is a small
+7. **Touch as the mouse** in `App::run`. *Done, untested on a device until step 9.* The
+   mapping is `feather::touch::TouchAsMouse` (6 unit tests), used by `App::run` on Android only:
+   Windows sends mouse messages for touch screens itself. Tests (no window needed if the mapping is a small
    function from `(phase, id, x, y)` and the followed finger to `FeatherApp` calls): first finger
    followed, second ignored, `Cancelled` releases, `on_mouse_left` after `Ended`. [Doc: touch in
    *Making an app run on Android*.]
