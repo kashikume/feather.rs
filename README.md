@@ -69,6 +69,8 @@ What works today:
   - `VK_LAYER_KHRONOS_validation`, which debug builds **require**. Without it, start-up fails with
     `Validation layer requested but not supported.`
 - A GPU and driver that support Vulkan
+- For Android: the Android SDK and NDK, a JDK, the `aarch64-linux-android` Rust target and
+  `cargo-ndk`, and a phone with Vulkan; see [doc/android.md](doc/android.md#setup)
 
 ## Building
 
@@ -124,6 +126,20 @@ are named `demo_NNN_<name>_<kind>` (`scene`, `atlas`, `mesh`, `shader`, ...). De
 
 Everything the app loads comes from the `assets/` directory next to the executable, so it can be
 started from any directory.
+
+### Android
+
+The test app also runs on Android phones, with touch as the mouse and back to leave. Its Android
+project is in `apps/testapp/android`; with the phone connected for debugging:
+
+```powershell
+cd apps/testapp/android
+.\gradlew.bat installDebug
+adb shell am start -n com.kashikume.feather.testapp/.MainActivity
+```
+
+[doc/android.md](doc/android.md) covers the setup, building, logs and how an app is made to run
+on Android.
 
 ### Shaders
 

@@ -37,12 +37,18 @@ fn choose_surface_format(formats: &[vk::SurfaceFormatKHR]) -> vk::SurfaceFormatK
         .unwrap_or_else(|| formats[0])
 }
 
-fn choose_present_mode(present_modes: &[vk::PresentModeKHR]) -> vk::PresentModeKHR {
-    present_modes
-        .iter()
-        .cloned()
-        .find(|m| *m == vk::PresentModeKHR::MAILBOX)
-        .unwrap_or(vk::PresentModeKHR::FIFO)
+/// How frames are shown: `MAILBOX` (as many frames as the GPU can draw, the newest shown at
+/// each refresh) when `uncapped` and available, else `FIFO` (one frame per display refresh;
+/// always available).
+///
+/// Uncapped on desktops. Not on Android: drawing hundreds of frames a second that are never
+/// shown costs battery and heats the phone.
+fn choose_present_mode(present_modes: &[vk::PresentModeKHR], uncapped: bool) -> vk::PresentModeKHR {
+    if uncapped && present_modes.contains(&vk::PresentModeKHR::MAILBOX) {
+        vk::PresentModeKHR::MAILBOX
+    } else {
+        vk::PresentModeKHR::FIFO
+    }
 }
 
 /// How the image is combined with what is behind the window: `OPAQUE` (alpha ignored) if the
@@ -168,7 +174,8 @@ impl Swapchain {
 
         let window_size = (window.inner_size().width, window.inner_size().height);
         let surface_format = choose_surface_format(&support.formats);
-        let present_mode = choose_present_mode(&support.present_modes);
+        let present_mode =
+            choose_present_mode(&support.present_modes, !cfg!(target_os = "android"));
         let composite_alpha = choose_composite_alpha(support.capabilities.supported_composite_alpha);
         let pre_transform = choose_pre_transform(&support.capabilities);
         let extent = choose_extent(&support.capabilities, pre_transform, window_size);
@@ -318,6 +325,20 @@ mod tests {
     fn first_format_without_srgb() {
         let formats = [format(vk::Format::R8G8B8A8_UNORM)];
         assert_eq!(choose_surface_format(&formats).format, vk::Format::R8G8B8A8_UNORM);
+    }
+
+    #[test]
+    fn mailbox_when_uncapped_and_available() {
+        let modes = [vk::PresentModeKHR::FIFO, vk::PresentModeKHR::MAILBOX];
+        assert_eq!(choose_present_mode(&modes, true), vk::PresentModeKHR::MAILBOX);
+        assert_eq!(choose_present_mode(&modes[..1], true), vk::PresentModeKHR::FIFO);
+    }
+
+    #[test]
+    fn fifo_when_capped() {
+        // Android: one frame per display refresh even when the device offers MAILBOX.
+        let modes = [vk::PresentModeKHR::MAILBOX, vk::PresentModeKHR::FIFO];
+        assert_eq!(choose_present_mode(&modes, false), vk::PresentModeKHR::FIFO);
     }
 
     #[test]

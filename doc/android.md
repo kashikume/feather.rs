@@ -293,7 +293,49 @@ The engine needs 1.0 (`4194304`, `0x400000`) or more.
 
 ## Building and running
 
-*Building the APK and running it on a device: not written yet (plan step 9).*
+### Building the APK and running it
+
+The test app's Android project is in `apps\testapp\android`. Once, before the first build, write
+its `local.properties` (where the SDK is; not committed, as it differs per machine; Android
+Studio writes it too when it opens the project):
+
+```powershell
+cd apps\testapp\android
+Set-Content local.properties "sdk.dir=$($env:LOCALAPPDATA -replace '\\','\\' -replace ':','\:')\\Android\\Sdk" -Encoding ascii
+Get-Content local.properties    # sdk.dir=C\:\\Users\\<you>\\AppData\\Local\\Android\\Sdk
+```
+
+Then, with the phone connected (see *The device*):
+
+```powershell
+.\gradlew.bat installDebug
+adb shell am start -n com.kashikume.feather.testapp/.MainActivity
+```
+
+`installDebug` builds the APK and installs it on the phone (`assembleDebug` only builds it, into
+`app\build\outputs\apk\debug\app-debug.apk`). `am start` starts it; tapping *Feather test app* on
+the phone does the same.
+
+- The first build downloads Gradle 9.9.1 (the wrapper checks its SHA-256), the Android Gradle
+  plugin and the AndroidX libraries, and builds every Rust dependency for Android: about three
+  minutes here. Later builds take seconds when only a little changed.
+- Gradle runs `cargo ndk` itself (`cargoNdkDebug`; see *The Gradle project*). It builds Rust
+  **optimized** (`--release`) even for the debug APK: unoptimized Rust is too slow on a phone.
+  For a Rust debug build: `.\gradlew.bat installDebug -Pfeather.rustProfile=debug`.
+- The debug APK is signed with Android's debug key, created on first use in
+  `%USERPROFILE%\.android\debug.keystore`. A release APK needs a key of its own (not set up yet).
+
+The build ends with two notices that need no action:
+
+- `Deprecated Gradle features were used in this build, making it incompatible with Gradle 10.`
+  (`--warning-mode all` shows it is `Configuration.setVisible`, called by the Android Gradle
+  plugin itself, not by this project's scripts; the plugin's next versions are expected to
+  drop it.)
+- `Consider enabling configuration cache`: a speed-up not set up yet.
+
+The APK is about 28 MB: mostly assets (38 MB uncompressed, chiefly demo 16's meshes) and, in a
+debug APK, the AndroidX libraries' unshrunk Java code (`classes.dex`, 8.6 MB). The Rust library
+is 2.7 MB once Gradle strips its symbols.
 
 ### Checking that the code compiles for Android
 
@@ -349,7 +391,47 @@ Java side calls.
 
 ## Logs and debugging
 
-*Reading logs from the device: not written yet (plan step 9).*
+### Reading the log
+
+The app's log goes to the phone's log (logcat), which `adb` shows:
+
+```powershell
+adb logcat -c                       # clear what is there
+adb logcat -s feather:V GameActivity:V AndroidRuntime:E libc:F DEBUG:F
+```
+
+- `feather`: the engine's and the app's log (the tag set in `android_main`);
+- `GameActivity`: the activity loading the library and its lifecycle;
+- `AndroidRuntime`, `libc`, `DEBUG`: crashes (Java exceptions, native signals, and the native
+  crash report with its backtrace).
+
+`adb logcat -d` prints what is there and stops, instead of following. A start of the test app
+looks like this (on the Galaxy S25):
+
+```
+I GameActivity: Looking for library libfeather_testapp.so
+I GameActivity: Found library libfeather_testapp.so. Loading...
+I feather : feather_testapp::android: Starting the feather test app for Android.
+I feather : feather_testapp::testapp::testapp: Demo 0: Viking room
+I feather : feather::physicaldevice: Selected physical device (`Adreno (TM) 830`).
+I feather : feather::swapchain: Surface: current extent 2340x1080, image extent 1x1 to 4096x4096, window 2340x1080, current transform ROTATE_90, supported transforms IDENTITY | ROTATE_90 | ..., composite alpha INHERIT, 4 to 64 images
+I feather : feather::swapchain: Swapchain: R8G8B8A8_SRGB SRGB_NONLINEAR, 2340x1080, FIFO, transform IDENTITY, composite alpha INHERIT
+```
+
+and back, leaving the app:
+
+```
+I feather : feather::app: Exit requested.
+I feather : feather_testapp::android: The feather test app has ended.
+I Zygote  : Process 31310 exited cleanly (0)
+```
+
+A screenshot of the phone, into a file (from Git Bash: PowerShell's `>` would corrupt the
+image):
+
+```bash
+adb exec-out screencap -p > phone.png
+```
 
 ### Logging on Android
 
@@ -399,13 +481,17 @@ chooses, and what typically differs on Android:
 | Choice          | Rule                                                        | Typical on Android |
 |-----------------|-------------------------------------------------------------|--------------------|
 | Format          | `B8G8R8A8_SRGB`, else `R8G8B8A8_SRGB`, else the first one    | `R8G8B8A8_SRGB` |
-| Present mode    | `MAILBOX`, else `FIFO` (always there)                        | `FIFO` (vsync) |
+| Present mode    | Windows: `MAILBOX`, else `FIFO` (always there); Android: `FIFO` | `FIFO` (vsync) |
 | Composite alpha | `OPAQUE`, else `INHERIT`, ...                                | often only `INHERIT` |
 | Transform       | `IDENTITY` when supported, else the surface's current one    | `IDENTITY`, with current `ROTATE_90` or `ROTATE_270` on a phone in landscape |
 | Extent          | the surface's current extent; the window's size when the display is rotated and the image isn't | the window's (landscape) size |
 
 - **Format.** If the chosen format isn't an `_SRGB` one, colors come out too dark: the shaders
   write linear colors and expect the format to encode them.
+- **Present mode.** `MAILBOX` draws as many frames as the GPU can, showing the newest at each
+  display refresh; the Galaxy S25 offers it, and the test app ran at 650 frames a second, nearly
+  all of them never shown, costing battery and heat. On Android the engine takes `FIFO`: one
+  frame per display refresh.
 - **Transform.** A phone's natural orientation is portrait, and the test app is landscape, so
   the display is rotated. The engine draws the image unrotated and lets Android's compositor
   rotate it, which costs the compositor a little work (drawing pre-rotated is in the plan's
@@ -432,7 +518,6 @@ smooth:
 
 ## Making an app run on Android
 
-*The Gradle project, the manifest and the activity: not written yet (plan step 9).*
 
 ### How the engine runs on Android
 
@@ -506,7 +591,7 @@ fn android_main(app: AndroidApp) {
     if let Err(e) = run(app) {
         log::error!("{e:#}");
     }
-    std::process::exit(0);
+    unsafe { _exit(0) }   // see below
 }
 
 fn run(app: AndroidApp) -> Result<()> {
@@ -526,8 +611,116 @@ fn run(app: AndroidApp) -> Result<()> {
 - Assets come from the APK (`AndroidAssetsProvider`); `TestApp::new`, which reads them from
   next to the executable, exists on Windows only.
 - The app starts with demo 0: there is no command line on Android.
-- `std::process::exit(0)` at the end: Android may call `android_main` again in the same process
-  for a new activity, and winit can't make a second event loop in one process.
+- The process ends at the end: Android may call `android_main` again in the same process for a
+  new activity, and winit can't make a second event loop in one process. With C's `_exit`, not
+  `std::process::exit`: the latter runs C++ static destructors, and GameActivity's
+  (`GameTextInput`) then aborts the process on a stale JNI reference (see *Troubleshooting*).
+
+### Leaving the app
+
+Back (the button or the gesture) ends the app, as GuitarPrompter does. It takes the two sides:
+
+1. `MainActivity`'s back callback calls `nativeRequestExit()`, a native method that the Rust
+   library exports under its JNI name
+   (`Java_com_kashikume_feather_testapp_MainActivity_nativeRequestExit`, in `android.rs`). It
+   calls `feather::app::request_exit()`.
+2. The callback then finishes the activity (`finish()`).
+3. On the Rust side, `App::run`'s loop sees the request and ends: the engine and the app are
+   destroyed (`on_destroy`, the Vulkan objects), `android_main` returns and ends the process.
+
+Finishing the activity alone isn't enough: winit 0.30 doesn't end its loop when the activity is
+destroyed on Android (it logs a *TODO* and carries on), so `android_main` would never return,
+and the process would stay, frozen, until Android killed it; opening the app again in that
+process would fail. The JNI name depends on the activity's package and class: an app with
+another package exports its own `Java_<package>_<class>_nativeRequestExit`.
+
+Leaving by the *recent apps* screen (swiping the app away) kills the process without any of
+this, which is fine: nothing needs saving.
+
+### The Gradle project
+
+`apps\testapp\android` is a standard Android project, written for current versions (checked in
+November 2026; GuitarPrompter's project is older and was not copied):
+
+```
+apps/testapp/android/
+  settings.gradle.kts           repositories, the project's name, its one module (app)
+  build.gradle.kts              the plugin, declared for the module
+  gradle.properties             memory for Gradle
+  gradle/libs.versions.toml     every version, in one place
+  gradlew, gradlew.bat, gradle/wrapper/   the Gradle wrapper (downloads Gradle 9.9.1)
+  local.properties              where the SDK is (per machine, not committed)
+  .gitignore, .gitattributes
+  app/
+    build.gradle.kts            the app: SDK levels, dependencies, the cargo task
+    src/main/AndroidManifest.xml
+    src/main/kotlin/com/kashikume/feather/testapp/MainActivity.kt
+    src/main/res/values/strings.xml, themes.xml
+```
+
+| What                       | Version          | Why                                                     |
+|----------------------------|------------------|---------------------------------------------------------|
+| Gradle                     | 9.9.1            | latest; runs on Android Studio's JDK 25 (9.1 or newer)  |
+| Android Gradle plugin      | 9.5.1            | latest; needs Gradle 9.6.0 or newer; Kotlin built in    |
+| `compileSdk` / `targetSdk` | 37 (Android 17)  | latest                                                  |
+| `minSdk`                   | 30 (Android 11)  | a recent floor; the engine needs only Vulkan 1.0        |
+| NDK (`ndkVersion`)         | 30.0.16248370    | Gradle strips the Rust library's symbols with its tools |
+| GameActivity               | 4.4.0            | must match the Rust side (see *How the engine runs on Android*); 4.4.2 is newer but not what `android-activity` 0.6.1 was built with |
+| AppCompat                  | 1.8.0            | latest; GameActivity is an `AppCompatActivity`          |
+| AndroidX Core              | 1.19.1           | latest; full screen (`WindowInsetsControllerCompat`)    |
+
+The Android Gradle plugin 9 compiles Kotlin itself: there is no Kotlin plugin, and the Kotlin
+sources are in `src/main/kotlin`.
+
+**The cargo task.** `app\build.gradle.kts` defines `CargoNdkTask`, registered once per build
+variant (`cargoNdkDebug`, `cargoNdkRelease`). It runs, from the workspace's root:
+
+```powershell
+cargo ndk -t arm64-v8a -P 30 -o <task output>\jniLibs build -p testapp --lib --release
+```
+
+and then copies `target\aarch64-linux-android\release\assets` into `<task output>\assets`.
+Through the Android Gradle plugin's variant API (`androidComponents.onVariants`, with
+`addGeneratedSourceDirectory`), its two output directories become the APK's native libraries
+and assets: Gradle runs the task before packing, and nothing is written into `src\`. The assets
+are copied afresh each time, so assets deleted from the sources don't linger in the APK (they do
+in `target\...\assets`, which `build.rs` never empties). The task runs on every build; Cargo
+decides what to rebuild.
+
+**`AndroidManifest.xml`:**
+
+- `<uses-feature android:name="android.hardware.vulkan.version" android:version="0x400000"
+  android:required="true"/>`: the app needs Vulkan 1.0 (Google Play hides it from devices
+  without).
+- One activity, `.MainActivity`, the launcher's entry (`MAIN` / `LAUNCHER`).
+- `android:screenOrientation="sensorLandscape"`: landscape, either way up. (On large screens,
+  Android 16 and later ignore orientation locks of apps targeting 36 or more; on phones it
+  holds.)
+- `android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|density|uiMode"`:
+  the activity is never recreated for these changes; it is told and goes on (the window's new
+  size reaches the engine as a resize). Recreating it would start a second `android_main` in the
+  process, which winit refuses.
+- `<meta-data android:name="android.app.lib_name" android:value="feather_testapp"/>`: the
+  library GameActivity loads (`libfeather_testapp.so`) and whose `android_main` it calls.
+
+**`MainActivity.kt`** is a `GameActivity` that only sets up the window:
+
+- edge to edge (`enableEdgeToEdge()`), and the status and navigation bars hidden with
+  `WindowInsetsControllerCompat` (a swipe from the edge shows them for a moment); hidden again
+  whenever the activity gets the focus back, as dialogs and notifications bring them back;
+- the screen kept on (`FLAG_KEEP_SCREEN_ON`);
+- back, through `onBackPressedDispatcher` (see *Leaving the app*). Apps targeting Android 16 or
+  later get back only through these callbacks (predictive back), not as `KEYCODE_BACK` or
+  `onBackPressed()`; without a callback, Android would move the app to the background.
+
+**The theme** (`themes.xml`) is `Theme.AppCompat.NoActionBar` (GameActivity needs an AppCompat
+theme), with a black window background (before the first frame) and
+`windowLayoutInDisplayCutoutMode` `always`, so the image goes under the camera cut-out too.
+
+To make another app's Android project from this one, change: the package and application id
+(`namespace`, `applicationId`, the Kotlin file's package and folder), the library's name (in the
+manifest's `lib_name`, and `-p testapp` in the cargo task), the JNI name of
+`nativeRequestExit` on the Rust side, and the app's name in `strings.xml`.
 
 ### Assets
 
@@ -603,3 +796,44 @@ error[E0583]: file not found for module `activity_impl`
 
 winit is used without an Android backend. The workspace's `Cargo.toml` must have
 `winit = { version = "0.30", features = ["android-game-activity"] }`.
+
+### `adb devices` lists nothing, or the install waits forever
+
+```
+- waiting for device -
+```
+
+The phone isn't connected for debugging: USB debugging is off (it can turn itself off, e.g.
+after a system update), or the *Allow USB debugging?* prompt wasn't accepted, or the phone was
+locked when it was connected. Check *Developer options → USB debugging* (see *The device*),
+reconnect the cable, and unlock the phone. A Gradle install stuck at *waiting for device* can be
+stopped with Ctrl+C.
+
+### `Unable to strip the following libraries, packaging them as they are: libfeather_testapp.so`
+
+The Android Gradle plugin strips native libraries with the NDK's `llvm-strip`, and doesn't know
+which NDK to use. `ndkVersion` in `app\build.gradle.kts` must name an installed NDK (see
+*Setup*). Without stripping the library is 4.3 MB instead of 2.7 MB in the APK; nothing else
+changes.
+
+### After back, the app's process stays (frozen) and the app fails to open again
+
+The activity was finished but `android_main` never returned: winit 0.30 doesn't end its event
+loop when the activity is destroyed on Android. The activity must ask for it before finishing,
+through `nativeRequestExit()` (see *Leaving the app*). With it, the log shows
+`Exit requested.` and `The feather test app has ended.` after back.
+
+### `Fatal signal 6 (SIGABRT)` in `android_main` right after `The feather test app has ended.`
+
+```
+F libc    : Fatal signal 6 (SIGABRT), code -1 (SI_QUEUE) in tid ... (android_main), pid ... (feather.testapp)
+F DEBUG   :       #04 pc ...  /apex/com.android.art/lib64/libart.so (art::JavaVMExt::JniAbort(char const*, char const*)+1752)
+F DEBUG   :       #09 pc ...  base.apk (GameTextInput::~GameTextInput()+36)
+F DEBUG   :       #11 pc ...  libc.so (__cxa_finalize+220)
+F DEBUG   :       #14 pc ...  base.apk (std::process::exit+24)
+```
+
+The process was ended with `std::process::exit`, which runs C++ static destructors;
+GameActivity's `GameTextInput` destructor then uses a JNI reference that is no longer valid, and
+Android aborts. End the process with `_exit` instead (as `android.rs` does): everything that
+matters was destroyed already.

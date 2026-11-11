@@ -368,8 +368,14 @@ Every step ends with its part of `doc/android.md` (in brackets below), verified 
    `ApplicationHandler`, and the window is made on the first `resumed` (winit 0.30 makes windows
    only from a running loop). Windows checked as in step 5 (demos 20 to 22, F9 twice, clean
    exit).
-9. **Gradle project** in `apps/testapp/android`, as above, with a `.gitignore` for `build/`,
-   `.gradle/`, `local.properties` and `app/src/main/jniLibs/`. First milestone: the APK installs,
+9. **Gradle project** *Done.* In `apps/testapp/android`, as above (current versions, not
+   GuitarPrompter's). Found on the device: winit 0.30 doesn't end its loop when the activity is
+   destroyed, so back calls `feather::app::request_exit()` through a JNI method before
+   finishing; `std::process::exit` aborts in GameActivity's C++ static destructors, so the
+   process ends with `_exit`; `MAILBOX` ran demo 1 at 650 fps, so Android uses `FIFO`; the
+   Android Gradle plugin needs `ndkVersion` to strip the library. Checked on a Galaxy S25:
+   demos 0 to 2 draw, touch switches demos, home and return keep the demo, back exits cleanly
+   twice in a row. First milestone: the APK installs,
    starts, logs to logcat and shows demo 0; back (button and gesture) returns to the launcher,
    logcat shows the engine destroyed, and launching again starts cleanly. [Doc: *Setup*'s
    device subsection; *Building and running* complete; the Gradle project, manifest and

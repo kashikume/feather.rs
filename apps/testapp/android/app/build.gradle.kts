@@ -7,6 +7,9 @@ plugins {
 android {
     namespace = "com.kashikume.feather.testapp"
     compileSdk = 37
+    // The NDK whose `llvm-strip` removes debug information from the Rust library in the APK
+    // (cargo ndk finds its NDK on its own). See doc/android.md, Setup.
+    ndkVersion = "30.0.16248370"
 
     defaultConfig {
         applicationId = "com.kashikume.feather.testapp"
