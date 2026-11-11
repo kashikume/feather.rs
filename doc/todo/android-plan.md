@@ -403,7 +403,7 @@ Every step ends with its part of `doc/android.md` (in brackets below), verified 
       background and back.
     [Doc: *Troubleshooting*, from what was met here and in the earlier steps; the device the
     demos were checked on.]
-11. **Notes**: README (Android in *Requirements* and *Building* as a short version linking to
+11. **Notes**: *Done, but for following the setup on a second machine.* README (Android in *Requirements* and *Building* as a short version linking to
     `doc/android.md`, touch in *Features*); in the missing features note, items 21 and 35 move to
     covered features, and item 16 notes that on Vulkan only the surface and swapchain are lost.
     Read `doc/android.md` through from the top as a newcomer would, and follow its *Setup* on
@@ -438,4 +438,4 @@ Every step ends with its part of `doc/android.md` (in brackets below), verified 
 - **Stale assets**: `build.rs` copies into `assets/` but never removes, so assets deleted or
   renamed in the sources stay there (19 such files in `target/debug/assets` today) and would
   be packed into the APK. Clear the directory first, or copy to a fresh one.
-- **Asset enumeration** on Android (`AAssetManager_openDir`, item 20), once the desktop has it.
+- **Asset enumeration** on Android (`AAssetManager_openDir`; *Asset enumeration* in the missing features note), once the desktop has it.

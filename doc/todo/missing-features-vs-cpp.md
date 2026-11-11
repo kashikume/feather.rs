@@ -10,8 +10,11 @@ textures as atlas regions, cuboid / plane / OBJ mesh builders, text in the XY an
 (one mesh or one node per glyph), transparency sorting back to front, directional shadow maps,
 named lookup of resources, animations (animator, slide and perpetual animations, easing
 functions), mouse input, the `featherui` UI library (`feather-ui`: hud, NSWE layout, spacer,
-scrollbars; plus labels and buttons, which C++ didn't have), the atlas creator and font creator
-tools.
+scrollbars; plus labels and buttons, which C++ didn't have), Android (assets read from the APK,
+logging to logcat, the app's lifecycle: with Vulkan only the window's surface and swapchain are
+lost when the app goes to the background, not every GPU resource as with the C++ engine's
+OpenGL context; touch as the mouse; see [../android.md](../android.md)), the atlas creator and
+font creator tools.
 feather.rs also has things C++ never had (Vulkan, SPIR-V reflection, sphere builder, skeletons
 and animation clips, JSON scene files, cameras as scene objects (perspective or orthographic,
 several per scene with an active one, defined in scene files), several scenes per frame).
@@ -55,64 +58,57 @@ several per scene with an active one, defined in scene files), several scenes pe
 15. **Multiple textures per material** (`Material::get_textures`, `texture` lines in the material
     file): several sampler slots, each with its own atlas region (`texUmin0`, ...). Rust has one
     texture per material and binds every sampler to its atlas.
-16. **Graphics context loss recovery** (`Cache::onSurfaceCreated`, `reset()` on atlases, meshes,
-    shaders, materials and roots): rebuild every GPU resource after the surface is destroyed
-    (needed on Android).
 
 ## Resources and assets
 
-17. **Global resource cache shared between scenes** (`feather-Cache`): atlases, meshes, shaders
+16. **Global resource cache shared between scenes** (`feather-Cache`): atlases, meshes, shaders
     and materials stored once by name and reused by every root/scene, with garbage collection of
     unused entries and `getStats()`. In Rust each `Scene` owns its own resources.
-18. **Material description file** (`feather-Material`, `assets/materials.mdb`): text format with
+17. **Material description file** (`feather-Material`, `assets/materials.mdb`): text format with
     `@material` sections, `shader`, `texture` (atlas / single), `uniform` (float, int, vec3, vec4,
     RGB, RGBA), `font`, `version` and `define` / `%name` macros. Rust has JSON scene files instead;
     loading `.mdb` would let GuitarPrompter's assets be reused unchanged.
-19. **Font atlas attached to a material** (`Material::font_atlas`, `TextBuilder(material)`): build
+18. **Font atlas attached to a material** (`Material::font_atlas`, `TextBuilder(material)`): build
     text directly from a material that names its font.
-20. **Asset enumeration** (`AssetManager::enumerate_files`): list the files of an asset directory.
-21. **Android asset provider** (`AssetManager(AAssetManager*)`): read assets from the APK.
-22. **Typed loading errors** (`feather-Exceptions.h`: `FileNotFound`, `FileReadError`,
+19. **Asset enumeration** (`AssetManager::enumerate_files`): list the files of an asset directory.
+20. **Typed loading errors** (`feather-Exceptions.h`: `FileNotFound`, `FileReadError`,
     `IncorrectFileFormat`, `UnsupportedFileVersion`, `MaterialNotFound`): callers can tell failure
     kinds apart; Rust returns opaque `anyhow` errors.
 
 ## Images and textures
 
-23. **JPEG loading** (`feather-jpeg`): decode JPEG images into atlases/textures.
-24. **Mutable atlases** (`Atlas::setTexel`, `m_isMutable`, `buildTexBuffer`): change pixels at
+21. **JPEG loading** (`feather-jpeg`): decode JPEG images into atlases/textures.
+22. **Mutable atlases** (`Atlas::setTexel`, `m_isMutable`, `buildTexBuffer`): change pixels at
     runtime and re-upload the texture.
-25. **Texture from a raw buffer** (`Texture::CreateFromBuffer(w, h, format, buffer)`), including
+23. **Texture from a raw buffer** (`Texture::CreateFromBuffer(w, h, format, buffer)`), including
     **RGB (3-byte) pixel format** (`PixelFormat::RGB`); Rust atlases are RGBA only.
-26. **Texture size in pixels** (`Texture::getWidth`, `getHeight`, `getSize`).
+24. **Texture size in pixels** (`Texture::getWidth`, `getHeight`, `getSize`).
 
 ## Meshes
 
-27. **Ribbon mesh builder** (`feather-MeshBuilderRibbon`): a strip built from pairs of points with
+25. **Ribbon mesh builder** (`feather-MeshBuilderRibbon`): a strip built from pairs of points with
     UVs, with normals generated automatically.
-28. **Custom mesh builder** (`feather-MeshBuilderCustom`): add points (position, normal, UV) and
+26. **Custom mesh builder** (`feather-MeshBuilderCustom`): add points (position, normal, UV) and
     faces (polygons, optionally inverted) one by one.
-29. **Mesh merger** (`feather-MeshMerger`): combine two meshes into one.
-30. **Plane builder variants** (`feather-MeshBuilderPlane`): planes in the XZ plane, centered unit
+27. **Mesh merger** (`feather-MeshMerger`): combine two meshes into one.
+28. **Plane builder variants** (`feather-MeshBuilderPlane`): planes in the XZ plane, centered unit
     planes (`unitCXY`, `unitCXZ`), planes with custom UV ranges, and the **9-patch plane**
     (`build9pInXY`) for scalable UI panels.
-31. **Binary `.mesh` file loader** (`feather-MeshLoaderMeshFile`) and the generic
+29. **Binary `.mesh` file loader** (`feather-MeshLoaderMeshFile`) and the generic
     **`MeshLoader`** that picks the loader by file extension.
-32. **Coordinate system preview** (`CreateCoordinateSystemPreview`): a helper that adds X/Y/Z axes
+30. **Coordinate system preview** (`CreateCoordinateSystemPreview`): a helper that adds X/Y/Z axes
     gizmo nodes under a parent, for debugging.
 
 ## Input and application
 
-33. **Thread-safe scene objects** (`ThreadsafeObject`, `FEATHER_THREADSAFE`): optional locking so
+31. **Thread-safe scene objects** (`ThreadsafeObject`, `FEATHER_THREADSAFE`): optional locking so
     the scene can be modified from a thread other than the render thread, and a debug check that
     catches access from the wrong thread.
-34. **Profiler integration** (Tracy `ZoneScoped` in `types.h`).
-35. **Android platform support** (`feather-Logs-android`, `feather-png-android`,
-    `feather-image-android`, `feather-jpeg-android`): logging, image decoding and app lifecycle on
-    Android.
+32. **Profiler integration** (Tracy `ZoneScoped` in `types.h`).
 
 ## Tools
 
-36. **ObjMeshConverter** (`tools/ObjMeshConverter`): converts OBJ files (with axis order and
+33. **ObjMeshConverter** (`tools/ObjMeshConverter`): converts OBJ files (with axis order and
     fixed-point factor options) into the binary `.mesh` format, one file per object.
 
 ## Animation ideas (not in C++ either)

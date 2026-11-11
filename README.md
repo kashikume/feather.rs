@@ -50,7 +50,11 @@ What works today:
   `Easing`), including the scene's cameras, or by a standalone `Animator` for anything else
 - Shadows: a directional light per scene draws the shadow casters into a shadow map before each
   frame, and shaders sample it (`ShadowLight`, `Node::set_casts_shadow`)
-- Mouse input (moves, buttons, wheel) and the window's size passed to the app
+- Mouse input (moves, buttons, wheel) and the window's size passed to the app; on Android,
+  touches as the mouse (one finger at a time)
+- Android: the same apps run on phones (GameActivity, through winit), with assets read from the
+  APK, logs in logcat, the window's surface released and recreated as the app goes to the
+  background and back, and back to leave; see [doc/android.md](doc/android.md)
 - A UI library, `feather-ui` (after the C++ engine's `featherui`): a hud drawn in a scene of its
   own, with layouts, labels, buttons and scrollbars, laid out in the window and fed the mouse
 - MSAA

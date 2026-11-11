@@ -3,9 +3,9 @@
 How to set up a Windows machine to build feather apps for Android, and how the test app is built
 and run on a device.
 
-> **Status: in progress.** Android support is being added following
-> [the Android plan](todo/android-plan.md). This page grows with each step of it, and holds only
-> what has been done and checked. Sections not written yet are marked as such.
+> Everything here was done and checked on one machine (Windows 11 on ARM64) and one phone (a
+> Galaxy S25), following [the Android plan](todo/android-plan.md), which also lists what is left
+> for later.
 
 ## Overview
 
@@ -48,7 +48,7 @@ start ──▶ Resumed (first) ──▶ engine created: Vulkan device, surface
           Resumed ────▶ surface and swapchain made      │
                         again; app.on_resized() ────────┘
 
-window closed / activity finished ──▶ exiting ──▶ engine and app destroyed
+window closed (Windows) / back (Android: request_exit) ──▶ exiting ──▶ engine and app destroyed
 ```
 
 What an app can count on across `Suspended` / `Resumed`:
@@ -86,11 +86,11 @@ What the build needs, at a glance:
 
 | Tool                     | Version here           | Used for                                   |
 |--------------------------|------------------------|--------------------------------------------|
-| Android SDK Platform     | 33 (Android 13)        | compiling the activity against Android 13  |
+| Android SDK Platform     | 37 (Android 17)        | compiling the activity against Android 17  |
 | Android SDK Build-Tools  | 36.0.0 or newer        | packing the APK (AGP 9.5 needs 36.0.0)     |
 | Android SDK Platform-Tools | `adb` 1.0.41 (37.0.1) | installing on the device, logs           |
 | Android NDK              | 30.0.16248370 (r30)    | linking the Rust library for Android       |
-| JDK                      | 25 (Android Studio's `jbr`) | running Gradle (9.6.0)                |
+| JDK                      | 25 (Android Studio's `jbr`) | running Gradle (9.9.1)                |
 | Rust target              | `aarch64-linux-android` | compiling Rust for the device             |
 | `cargo-ndk`              | 4.1.2                  | driving `cargo` with the NDK               |
 | Vulkan SDK               | 1.4.304.0              | `glslc` (shaders), on the host only        |
@@ -100,7 +100,9 @@ What the build needs, at a glance:
 **Install.** The SDK comes with Android Studio. In Android Studio, open the SDK Manager
 (*Settings → Languages & Frameworks → Android SDK*) and install:
 
-- *SDK Platforms*: **Android 13 (API level 33)**;
+- *SDK Platforms*: **Android 17 (API level 37)** (the project's `compileSdk`; if it is missing,
+  the first Gradle build downloads it, as it did here, provided the SDK's licenses were accepted
+  in the SDK Manager);
 - *SDK Tools*: **Android SDK Build-Tools**, **Android SDK Platform-Tools**,
   **Android SDK Command-line Tools**.
 
@@ -116,7 +118,7 @@ add `%LOCALAPPDATA%\Android\Sdk\platform-tools` to the `PATH`, or call it by its
 **Check.**
 
 ```powershell
-ls $env:LOCALAPPDATA\Android\Sdk\platforms     # android-33
+ls $env:LOCALAPPDATA\Android\Sdk\platforms     # android-37.0 (or another android-37.x)
 ls $env:LOCALAPPDATA\Android\Sdk\build-tools   # 36.0.0 or newer
 & $env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe version
 ```
@@ -154,7 +156,8 @@ Gradle runs on a JDK. The one bundled with Android Studio (its `jbr` directory, 
 Runtime) is enough; there is nothing else to install.
 
 Its version decides which Gradle can run: here it is **JDK 25**, which needs Gradle 9.1 or newer.
-The Android project therefore uses Gradle 9.6.0 with Android Gradle plugin (AGP) 9.5.1.
+The Android project therefore uses Gradle 9.9.1 with Android Gradle plugin (AGP) 9.5.1 (which
+needs Gradle 9.6.0 or newer).
 GuitarPrompter's older Gradle 8.10.2 and AGP 8.8 run only on JDK 17 to 23. A newer Android Studio
 may bundle a newer JDK: check Gradle's
 [compatibility table](https://docs.gradle.org/current/userguide/compatibility.html) ("Support
@@ -754,7 +757,8 @@ let assets: Box<dyn AssetsProvider> = Box::new(AndroidAssetsProvider::new(&app))
 
 Asset names are the same on both: paths relative to the assets root with `/` separators, e.g.
 `"demo_000_viking_room_shader.vert.spv"`. Inside the APK they are read-only, and the APK holds
-exactly what `build.rs` put in the `assets\` directory (how Gradle packs it: plan step 9).
+exactly what `build.rs` put in the `assets\` directory (copied afresh by the cargo task: see
+*The Gradle project*).
 
 A missing asset fails with `asset <name> not found in the APK`.
 
