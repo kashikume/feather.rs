@@ -1,0 +1,5 @@
+# The test app HUD's font (demo name, frame rate and the demo buttons, see `testapp_hud.rs`):
+# Segoe UI Semibold, 48 pixels high, with the font creator's default characters. Rendered into
+# an atlas during the build.
+font = Segoe UI Semibold
+height = 48

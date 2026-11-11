@@ -50,6 +50,9 @@ What works today:
   `Easing`), including the scene's cameras, or by a standalone `Animator` for anything else
 - Shadows: a directional light per scene draws the shadow casters into a shadow map before each
   frame, and shaders sample it (`ShadowLight`, `Node::set_casts_shadow`)
+- Mouse input (moves, buttons, wheel) and the window's size passed to the app
+- A UI library, `feather-ui` (after the C++ engine's `featherui`): a hud drawn in a scene of its
+  own, with layouts, labels, buttons and scrollbars, laid out in the window and fed the mouse
 - MSAA
 - Vulkan validation layers turned on automatically in debug builds
 
@@ -81,11 +84,13 @@ The repository is a Cargo workspace. `cargo run` and `cargo build` at the root w
 app (`default-members`); use `-p <package>` or `--workspace` for the others.
 
 The development app (`apps/testapp`) opens a 1024×768 window and shows one demo at a time. The
-only command line argument is the number of the demo to start with (default 0). **Left** and
-**right** arrows switch to the previous and next demo; after the last demo comes the first.
-Over every demo, the bottom left corner shows the demo's number and name and the frame rate: the
-app's own overlay scene (`apps/testapp/src/testapp/info_overlay.rs`), drawn after the demo's
-scenes, so it shows in full screen too. Its frame rate is a scene animation.
+only command line argument is the number of the demo to start with (default 0). The **left** and
+**right** arrow keys, or the **<** and **>** buttons on the window's left and right edges, switch
+to the previous and next demo; after the last demo comes the first. Over every demo, the bottom
+left corner shows the demo's number and name and the frame rate. Both are the app's own HUD
+(`apps/testapp/src/testapp/testapp_hud.rs`), made with [`feather-ui`](#ui) and drawn after the
+demo's scenes, so it shows in full screen too. It takes the mouse first; demos get what it
+doesn't take.
 
 | Demo | Name        | What it shows                                                        |
 | ---- | ----------- | -------------------------------------------------------------------- |
@@ -111,6 +116,7 @@ scenes, so it shows in full screen too. Its frame rate is a scene animation.
 | 19   | Walker (shadows) | Demo 8 again, with real shadows: the walking person's body casts onto the floor, with no shadow disc |
 | 20   | Spider (shadows) | Demo 9 again, with real shadows: the spider's body and legs cast onto the floor, with no shadow disc |
 | 21   | Animation   | A lane per kind of easing with a cube sliding across, round after round (in, out, in-out); a cube spinning forever; a cube fading in and out, then removed and replaced; the scene's camera dollying in and swaying |
+| 22   | Scrolling   | A list of 80 lines of text with a vertical and a horizontal scrollbar, made with `feather-ui`: drag the knobs, click the tracks to page, turn the wheel; the scrollbars hide when everything fits. Lines and letters outside the view are hidden (there is no clipping) |
 
 Each demo is in its own file, `apps/testapp/src/testapp/demo_NNN_<name>.rs`, and its resources
 are named `demo_NNN_<name>_<kind>` (`scene`, `atlas`, `mesh`, `shader`, ...). Demos are listed in
@@ -286,12 +292,15 @@ crates/
                      shadow lights, and the shadow pass drawing casters into shadow maps
     instance.rs, physicaldevice.rs, logicaldevice.rs, swapchain.rs, pipeline.rs, ...
                      Vulkan object wrappers
+  feather-ui/        the UI library (crate `feather_ui`): Hud, widgets (layouts, labels, buttons,
+                     scrollbars); testdata/ holds the shaders its unit tests use
   feather-build/     build script helpers: compiling shaders with glslc, creating atlases,
                      copying assets
 apps/
   testapp/           development application (binary `testapp`)
     src/main.rs      entry point: creates the window and starts the engine with TestApp
-    src/testapp/     one file per demo, testapp.rs switches them
+    src/testapp/     one file per demo, testapp.rs switches them, testapp_hud.rs is the HUD
+                     over them
     shaders/         GLSL sources, compiled by build.rs
     atlases/         .atlist image lists and their images, and .font font descriptions, made
                      into atlases by build.rs
@@ -326,6 +335,15 @@ pub trait FeatherApp {
 
     /// Optional: called when a key is pressed.
     fn on_key_pressed(&mut self, key: KeyCode) -> Result<()> { Ok(()) }
+
+    /// Optional: the window's size in pixels, at startup and when it changes.
+    fn on_resized(&mut self, width: u32, height: u32) -> Result<()> { Ok(()) }
+
+    /// Optional: the mouse, in window pixels from the top left corner, Y down.
+    fn on_mouse_moved(&mut self, x: f32, y: f32) -> Result<()> { Ok(()) }
+    fn on_mouse_left(&mut self) -> Result<()> { Ok(()) }
+    fn on_mouse_button(&mut self, button: MouseButton, pressed: bool, x: f32, y: f32) -> Result<()> { Ok(()) }
+    fn on_mouse_wheel(&mut self, delta_x: f32, delta_y: f32, x: f32, y: f32) -> Result<()> { Ok(()) }
 
     /// Optional: the window title. `None` leaves the title the window was created with.
     fn window_title(&self) -> Option<String> { None }
@@ -522,6 +540,50 @@ broken by wrapping to the wrap width, widening their spaces. `Text::remove` remo
 its node and mesh. Demo 11's crawl uses wrapped, justified text. Demo 10 shows both methods with one shader (`demo_010_text_shader.frag`, coloured
 with a `color` uniform): the wave is a node per glyph, everything else one mesh per text.
 [doc/text-performance.md](doc/text-performance.md) compares the two methods' performance.
+
+### UI
+
+`feather-ui` (crate `feather_ui`) is a small UI library on top of the engine, after the C++
+engine's `featherui`. A `Hud` owns a scene (give it one with the shaders, fonts and materials the
+widgets draw with, e.g. loaded from a scene file), adds to it a camera showing the window with
+the origin at the top left, and holds widgets. The app keeps typed handles to them:
+
+```rust
+let mut hud = Hud::new(Scene::load(assets, "ui_scene.json")?)?;
+let next = hud.add(
+    Button::new()
+        .material(button).hover_material(hover).pressed_material(pressed)
+        .label(Label::new(TextBuilder::new(font).height(40.0), text_material, ">"))
+        .with_size(48.0, 96.0)
+        .with_align(Align::End, Align::Center)
+        .with_margin(12.0),
+)?;
+let root = hud.add(LayoutNswe::new().with(Slot::East, next))?;
+hud.set_root(Some(root.into()));
+
+// on_resized: hud.set_window_size(width, height); hud.set_scale(height as f32 / 768.0);
+// on_update: hud.update()?;  (lays the widgets out when something changed)
+// on_mouse_*: if !hud.mouse_down(x, y)? { /* the app's own handling */ }
+for event in hud.take_events() {
+    if event == (UiEvent::Clicked { widget: next.into() }) { /* ... */ }
+}
+```
+
+- **Widgets**: `LayoutNswe` (north, south, east, west and center slots; nest layouts to use the
+  corners), `Spacer`, `Label` (a `Text` as big as it is), `Button` (a material per state, a
+  `Clicked` event when released over it), `Scrollbar` (vertical or horizontal: range, page,
+  value, knob dragging, paging clicks, wheel, `ValueChanged` events, hiding itself when there is
+  nothing to scroll). Apps can write their own by implementing `Widget`, like the test app's
+  info panel and demo 22's list.
+- **Layout**: each widget has a preferred size, an alignment per axis (`Fill`, `Start`,
+  `Center`, `End`), a margin and a visibility (`Automatic`, `Gone`, `Invisible`, `Visible`). The
+  hud measures the tree (children first), then arranges it (parents first).
+- **Units**: window pixels divided by the scale (`Hud::set_scale`); Y goes down, as for the
+  mouse. Every widget has a node at its top left corner; its own nodes go under it.
+- **Mouse**: a press goes to the innermost visible widget under the pointer that takes it, which
+  then gets the drag and the release wherever the pointer goes. The hud's methods return whether
+  the UI took the event.
+- There is no clipping yet: widgets must stay in their rectangle themselves.
 
 ### Uniforms
 

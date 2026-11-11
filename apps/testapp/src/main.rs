@@ -9,7 +9,7 @@ mod testapp;
 use testapp::testapp::{demo_window_title, TestApp, DEMOS};
 
 /// Usage: `testapp [demo]`, where `demo` is the number of the demo to show first
-/// (default 0). Left and right arrows switch demos.
+/// (default 0). The left and right arrow keys, or the buttons on the window's sides, switch demos.
 #[rustfmt::skip]
 fn main() -> Result<()> {
     pretty_env_logger::init();

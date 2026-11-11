@@ -1,9 +1,9 @@
 #version 450
 
-// A flat, possibly see-through colour behind text and images.
+// A flat, possibly see-through colour: the panel behind the text, and the buttons.
 
 layout(binding = 1) uniform Panel {
-    // Colour and opacity, set on the panel's node.
+    // Colour and opacity, set on the material.
     vec4 color;
 } panel;
 

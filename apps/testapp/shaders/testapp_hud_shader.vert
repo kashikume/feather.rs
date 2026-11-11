@@ -1,7 +1,7 @@
 #version 450
 
-// The overlay's flat things (text, images, panels), drawn where their nodes put them on the
-// XY plane, seen by the overlay's orthographic camera.
+// The test app HUD's flat things (text, panels, buttons), drawn where their nodes put them on the
+// XY plane, seen by the HUD's orthographic camera.
 
 layout(binding = 0) uniform Camera {
     mat4 view;

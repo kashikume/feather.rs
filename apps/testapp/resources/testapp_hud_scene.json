@@ -1,0 +1,50 @@
+{
+  "atlases": [
+    {
+      "name": "Font",
+      "bitmap": "testapp_hud_atlas.png",
+      "metadata": "testapp_hud_atlas.atlas"
+    }
+  ],
+  "shaders": [
+    {
+      "name": "Text",
+      "vertex": "testapp_hud_shader.vert.spv",
+      "fragment": "testapp_hud_text_shader.frag.spv",
+      "model_uniform": "model",
+      "view_uniform": "view",
+      "projection_uniform": "proj"
+    },
+    {
+      "name": "Panel",
+      "vertex": "testapp_hud_shader.vert.spv",
+      "fragment": "testapp_hud_panel_shader.frag.spv",
+      "model_uniform": "model",
+      "view_uniform": "view",
+      "projection_uniform": "proj"
+    }
+  ],
+  "materials": [
+    {
+      "name": "Panel",
+      "shader": "Panel",
+      "uniforms": { "color": { "vec4": [0.03, 0.04, 0.08, 0.68] } }
+    },
+    {
+      "name": "Button",
+      "shader": "Panel",
+      "uniforms": { "color": { "vec4": [0.03, 0.04, 0.08, 0.35] } }
+    },
+    {
+      "name": "Button hover",
+      "shader": "Panel",
+      "uniforms": { "color": { "vec4": [0.1, 0.12, 0.2, 0.75] } }
+    },
+    {
+      "name": "Button pressed",
+      "shader": "Panel",
+      "uniforms": { "color": { "vec4": [0.25, 0.3, 0.45, 0.9] } }
+    }
+  ],
+  "root": { "name": "HUD file root" }
+}

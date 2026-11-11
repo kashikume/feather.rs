@@ -7,6 +7,7 @@ publish = false
 
 [dependencies]
 feather.workspace = true
+feather-ui.workspace = true
 anyhow.workspace = true
 cgmath.workspace = true
 log.workspace = true

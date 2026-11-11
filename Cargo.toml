@@ -10,6 +10,7 @@ edition = "2021"
 [workspace.dependencies]
 feather = { path = "crates/feather" }
 feather-build = { path = "crates/feather-build" }
+feather-ui = { path = "crates/feather-ui" }
 atlas-creator = { path = "tools/atlas-creator" }
 font-creator = { path = "tools/font-creator" }
 

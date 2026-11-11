@@ -9,7 +9,9 @@ materials with uniforms, uniform inheritance down the hierarchy, PNG atlases wit
 textures as atlas regions, cuboid / plane / OBJ mesh builders, text in the XY and XZ planes
 (one mesh or one node per glyph), transparency sorting back to front, directional shadow maps,
 named lookup of resources, animations (animator, slide and perpetual animations, easing
-functions), the atlas creator and font creator tools.
+functions), mouse input, the `featherui` UI library (`feather-ui`: hud, NSWE layout, spacer,
+scrollbars; plus labels and buttons, which C++ didn't have), the atlas creator and font creator
+tools.
 feather.rs also has things C++ never had (Vulkan, SPIR-V reflection, sphere builder, skeletons
 and animation clips, JSON scene files, cameras as scene objects (perspective or orthographic,
 several per scene with an active one, defined in scene files), several scenes per frame).
@@ -100,35 +102,17 @@ several per scene with an active one, defined in scene files), several scenes pe
 
 ## Input and application
 
-33. **Mouse input** (needed by `featherui::ui_hud::mouse_move` / `mouse_button_down` /
-    `mouse_button_up`): `FeatherApp` only receives key presses.
-34. **Thread-safe scene objects** (`ThreadsafeObject`, `FEATHER_THREADSAFE`): optional locking so
+33. **Thread-safe scene objects** (`ThreadsafeObject`, `FEATHER_THREADSAFE`): optional locking so
     the scene can be modified from a thread other than the render thread, and a debug check that
     catches access from the wrong thread.
-35. **Profiler integration** (Tracy `ZoneScoped` in `types.h`).
-36. **Android platform support** (`feather-Logs-android`, `feather-png-android`,
+34. **Profiler integration** (Tracy `ZoneScoped` in `types.h`).
+35. **Android platform support** (`feather-Logs-android`, `feather-png-android`,
     `feather-image-android`, `feather-jpeg-android`): logging, image decoding and app lifecycle on
     Android.
 
-## UI library (`featherui`)
-
-37. **UI object base** (`featherui::object`): rectangle, width/height, left/right/top/bottom,
-    visibility (`automatic`, `gone`, `invisible`, `visible`), `update(anchor, rect)` layout pass,
-    mouse event hooks.
-38. **Layouts** (`featherui::layout`, `layout_nswe`): a container with north / south / east /
-    west / center slots.
-39. **Controls with dragging** (`featherui::control`): mouse down/up/drag handling.
-40. **Scrollbars** (`featherui::scrollbar`, `vertical_scrollbar`, `horisontal_scrollbar`): min /
-    max / value / page, minimum knob size, knob and track meshes and materials (normal and
-    highlighted), value-changed observers, auto-hide when not needed.
-41. **Spacer control** (`featherui::distance`).
-42. **UI HUD** (`featherui::ui_hud`): owns a UI root with its own batcher and rendering state,
-    lays out the root layout in a rectangle, renders it and routes mouse events (including drag
-    capture) to the hit object.
-
 ## Tools
 
-43. **ObjMeshConverter** (`tools/ObjMeshConverter`): converts OBJ files (with axis order and
+36. **ObjMeshConverter** (`tools/ObjMeshConverter`): converts OBJ files (with axis order and
     fixed-point factor options) into the binary `.mesh` format, one file per object.
 
 ## Animation ideas (not in C++ either)
@@ -142,6 +126,23 @@ several per scene with an active one, defined in scene files), several scenes pe
   standalone `Animator` with its own context. Demo 11's episode spawning stays in `update`
   because it needs the demo's random generator and counter. If this comes up often, consider
   storing `Text`s in the scene, or letting scenes hold user data.
+
+## UI ideas (not in C++ either)
+
+- **9-patch track and knob** (item 30): rounded knobs and buttons that don't stretch their
+  corners.
+- **Clipping**: a scissor rectangle per scene or per node, so a scrolled list is cut at the
+  view's edges. Today widgets must stay in their rectangle themselves (demo 22's list hides the
+  lines and letters outside its view).
+- **Buttons that fade in**: the test app's side buttons could show only while the pointer is
+  near their edge, with a scene animation on their `alpha`.
+- **A vertical stack layout**, so panels like the test app's `InfoPanel` can be built from
+  labels instead of being a widget of their own.
+- **Widgets in scene files**: a `"ui"` section describing the layout, like cameras and nodes.
+- **Keyboard focus** and **touch** (drag to scroll, as GuitarPrompter's `LibraryView` does by
+  hand).
+- **Removing a `Label`** leaves its one-mesh text's mesh in the scene (widgets are dropped
+  without the scene); a widget teardown hook with the scene would fix it.
 
 ## Camera ideas (not in C++ either)
 

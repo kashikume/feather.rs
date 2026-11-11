@@ -5,7 +5,7 @@ use anyhow::{anyhow, Result};
 use vulkanalia::loader::{LibloadingLoader, LIBRARY};
 use vulkanalia::prelude::v1_0::*;
 use vulkanalia::window as vk_window;
-use winit::event::{ElementState, Event, KeyEvent, WindowEvent};
+use winit::event::{ElementState, Event, KeyEvent, MouseScrollDelta, WindowEvent};
 use winit::keyboard::PhysicalKey;
 use winit::event_loop::EventLoop;
 use winit::window::Window;
@@ -26,7 +26,7 @@ use super::colorobjects::create_color_objects;
 use super::commandbuffers::{create_command_buffers, record_command_buffer, GpuDraw};
 use super::commandpool::create_command_pool;
 use super::dephobjects::create_depth_objects;
-use super::featherapp::FeatherApp;
+use super::featherapp::{FeatherApp, PIXELS_PER_WHEEL_LINE};
 use super::object::Object;
 use super::framebuffers::create_framebuffers;
 use super::instance::create_instance;
@@ -703,7 +703,13 @@ impl App {
 
     pub fn run(&mut self, window: &Window, event_loop: EventLoop<()>) -> Result<()> {
         let mut minimized = false;
+        // Where the mouse pointer was last seen: button and wheel events don't say.
+        let mut cursor = (0.0f32, 0.0f32);
         self.apply_window_title(window);
+        let size = window.inner_size();
+        if size.width > 0 && size.height > 0 {
+            self.data.app.on_resized(size.width, size.height)?;
+        }
         event_loop.run(move |event, elwt| {
             match event {
                 // Request a redraw when all events were processed.
@@ -720,6 +726,42 @@ impl App {
                         } else {
                             minimized = false;
                             self.resized = true;
+                            if let Err(e) = self.data.app.on_resized(size.width, size.height) {
+                                log::error!("Handling the window resize failed: {e:#}");
+                            }
+                        }
+                    }
+                    // Pass the mouse to the app.
+                    WindowEvent::CursorMoved { position, .. } => {
+                        cursor = (position.x as f32, position.y as f32);
+                        if let Err(e) = self.data.app.on_mouse_moved(cursor.0, cursor.1) {
+                            log::error!("Handling a mouse move failed: {e:#}");
+                        }
+                    }
+                    WindowEvent::CursorLeft { .. } => {
+                        if let Err(e) = self.data.app.on_mouse_left() {
+                            log::error!("Handling the mouse leaving failed: {e:#}");
+                        }
+                    }
+                    WindowEvent::MouseInput { state, button, .. } => {
+                        let pressed = state == ElementState::Pressed;
+                        if let Err(e) =
+                            self.data.app.on_mouse_button(button, pressed, cursor.0, cursor.1)
+                        {
+                            log::error!("Handling mouse button {button:?} failed: {e:#}");
+                        }
+                        self.apply_window_title(window);
+                    }
+                    WindowEvent::MouseWheel { delta, .. } => {
+                        let (x, y) = match delta {
+                            MouseScrollDelta::LineDelta(x, y) => (x, y),
+                            MouseScrollDelta::PixelDelta(p) => (
+                                p.x as f32 / PIXELS_PER_WHEEL_LINE,
+                                p.y as f32 / PIXELS_PER_WHEEL_LINE,
+                            ),
+                        };
+                        if let Err(e) = self.data.app.on_mouse_wheel(x, y, cursor.0, cursor.1) {
+                            log::error!("Handling the mouse wheel failed: {e:#}");
                         }
                     }
                     // Pass key presses to the app.

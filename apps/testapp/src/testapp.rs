@@ -20,6 +20,7 @@ pub mod demo_018_vases;
 pub mod demo_019_walker;
 pub mod demo_020_spider;
 pub mod demo_021_animation;
-pub mod info_overlay;
+pub mod demo_022_scrolling;
+pub mod testapp_hud;
 pub mod random;
 pub mod testapp;

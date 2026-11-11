@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Result};
+use winit::event::MouseButton;
 use winit::keyboard::KeyCode;
 
 use feather::assetsprovider::{create_assets_provider, AssetsProvider};
@@ -27,7 +28,8 @@ use super::demo_018_vases::VasesShadowDemo;
 use super::demo_019_walker::WalkerShadowDemo;
 use super::demo_020_spider::SpiderShadowDemo;
 use super::demo_021_animation::AnimationDemo;
-use super::info_overlay::InfoOverlay;
+use super::demo_022_scrolling::ScrollingDemo;
+use super::testapp_hud::{HudAction, TestHud};
 
 /// One demo of the test app: a scene, seen through its active camera, and its animation. A
 /// demo may have more scenes, each with its own cameras, drawn one over the other
@@ -45,6 +47,27 @@ pub trait Demo {
     }
     /// Called every frame; `time` is in seconds since the demo started.
     fn update(&mut self, time: f32) -> Result<()>;
+
+    /// The size of the window's drawing area in pixels: when the demo starts (once the window
+    /// exists) and whenever it changes.
+    fn on_resized(&mut self, _width: u32, _height: u32) -> Result<()> {
+        Ok(())
+    }
+
+    /// The mouse, when the app's HUD doesn't take it (see `FeatherApp::on_mouse_moved` and
+    /// the others for the arguments).
+    fn on_mouse_moved(&mut self, _x: f32, _y: f32) -> Result<()> {
+        Ok(())
+    }
+    fn on_mouse_left(&mut self) -> Result<()> {
+        Ok(())
+    }
+    fn on_mouse_button(&mut self, _button: MouseButton, _pressed: bool, _x: f32, _y: f32) -> Result<()> {
+        Ok(())
+    }
+    fn on_mouse_wheel(&mut self, _delta_x: f32, _delta_y: f32, _x: f32, _y: f32) -> Result<()> {
+        Ok(())
+    }
 }
 
 /// An entry of the demo list.
@@ -143,16 +166,24 @@ pub const DEMOS: &[DemoInfo] = &[
         name: "Animation",
         create: |assets| Ok(Box::new(AnimationDemo::new(assets)?)),
     },
+    DemoInfo {
+        name: "Scrolling",
+        create: |assets| Ok(Box::new(ScrollingDemo::new(assets)?)),
+    },
 ];
 
-/// The development app: shows one demo at a time. Left and right arrows switch to the
-/// previous and next demo, wrapping around. Over every demo, an overlay shows the demo's number
-/// and name and the frame rate (`InfoOverlay`).
+/// The development app: shows one demo at a time. The left and right arrow keys, and the
+/// buttons on the left and right edges of the window, switch to the previous and next demo,
+/// wrapping around. Over every demo, a HUD (`TestHud`) shows the demo's number and name, the
+/// frame rate and those buttons. The mouse goes to the HUD first, and to the demo when the HUD
+/// doesn't take it.
 pub struct TestApp {
     assets: Box<dyn AssetsProvider>,
     demo_index: usize,
     demo: Box<dyn Demo>,
-    overlay: InfoOverlay,
+    hud: TestHud,
+    /// The size of the window's drawing area, once known (`on_resized`).
+    window: Option<(u32, u32)>,
     /// App time (as passed to `on_update`) when the current demo started; `None` until its
     /// first update.
     demo_start: Option<f32>,
@@ -172,14 +203,15 @@ impl FeatherApp for TestApp {
     fn on_update(&mut self, time: f32) -> Result<()> {
         log::trace!("on_update called with time: {}", time);
         let start = *self.demo_start.get_or_insert(time);
-        self.demo.update(time - start)
+        self.demo.update(time - start)?;
+        self.hud.update(time)
     }
 
     fn on_destroy(&mut self) {
         log::trace!("on_destroy called");
     }
 
-    /// The demo's scenes, then the overlay.
+    /// The demo's scenes, then the HUD.
     fn get_num_scenes_to_render(&self) -> usize {
         self.demo.scene_count() + 1
     }
@@ -188,17 +220,57 @@ impl FeatherApp for TestApp {
         if scene_index < self.demo.scene_count() {
             self.demo.scene_at(scene_index)
         } else {
-            self.overlay.scene()
+            self.hud.scene()
         }
     }
 
     fn on_key_pressed(&mut self, key: KeyCode) -> Result<()> {
-        let count = DEMOS.len();
         match key {
-            KeyCode::ArrowRight => self.show_demo((self.demo_index + 1) % count),
-            KeyCode::ArrowLeft => self.show_demo((self.demo_index + count - 1) % count),
+            KeyCode::ArrowRight => self.show_next_demo(),
+            KeyCode::ArrowLeft => self.show_previous_demo(),
             _ => Ok(()),
         }
+    }
+
+    fn on_resized(&mut self, width: u32, height: u32) -> Result<()> {
+        self.window = Some((width, height));
+        self.hud.set_window_size(width, height);
+        self.demo.on_resized(width, height)
+    }
+
+    fn on_mouse_moved(&mut self, x: f32, y: f32) -> Result<()> {
+        if self.hud.mouse_move(x, y)? {
+            return Ok(());
+        }
+        self.demo.on_mouse_moved(x, y)
+    }
+
+    fn on_mouse_left(&mut self) -> Result<()> {
+        self.hud.mouse_left()?;
+        self.demo.on_mouse_left()
+    }
+
+    /// The left button goes to the HUD first; the others, and what the HUD doesn't take, to
+    /// the demo. Then the HUD's buttons switch demos.
+    fn on_mouse_button(&mut self, button: MouseButton, pressed: bool, x: f32, y: f32) -> Result<()> {
+        let taken = button == MouseButton::Left && self.hud.mouse_button(pressed, x, y)?;
+        if !taken {
+            self.demo.on_mouse_button(button, pressed, x, y)?;
+        }
+        for action in self.hud.take_actions() {
+            match action {
+                HudAction::PreviousDemo => self.show_previous_demo()?,
+                HudAction::NextDemo => self.show_next_demo()?,
+            }
+        }
+        Ok(())
+    }
+
+    fn on_mouse_wheel(&mut self, delta_x: f32, delta_y: f32, x: f32, y: f32) -> Result<()> {
+        if self.hud.mouse_wheel(delta_x, delta_y, x, y)? {
+            return Ok(());
+        }
+        self.demo.on_mouse_wheel(delta_x, delta_y, x, y)
     }
 
     fn window_title(&self) -> Option<String> {
@@ -226,13 +298,14 @@ impl TestApp {
     /// `new`, with the assets from `assets`.
     pub fn with_assets(assets: Box<dyn AssetsProvider>, demo_index: usize) -> Result<Self> {
         let demo = create_demo(&*assets, demo_index)?;
-        let mut overlay = InfoOverlay::new(&*assets)?;
-        overlay.set_title(&demo_label(demo_index))?;
+        let mut hud = TestHud::new(&*assets)?;
+        hud.set_title(&demo_label(demo_index));
         Ok(Self {
             assets,
             demo_index,
             demo,
-            overlay,
+            hud,
+            window: None,
             demo_start: None,
         })
     }
@@ -240,10 +313,25 @@ impl TestApp {
     /// Replaces the current demo with demo `index`. If it can't be created, the current demo
     /// stays and the error is returned.
     fn show_demo(&mut self, index: usize) -> Result<()> {
-        self.demo = create_demo(&*self.assets, index)?;
+        let mut demo = create_demo(&*self.assets, index)?;
+        if let Some((width, height)) = self.window {
+            demo.on_resized(width, height)?;
+        }
+        self.demo = demo;
         self.demo_index = index;
         self.demo_start = None;
-        self.overlay.set_title(&demo_label(index))
+        self.hud.set_title(&demo_label(index));
+        Ok(())
+    }
+
+    /// Shows the next demo; after the last comes the first.
+    fn show_next_demo(&mut self) -> Result<()> {
+        self.show_demo((self.demo_index + 1) % DEMOS.len())
+    }
+
+    /// Shows the previous demo; before the first comes the last.
+    fn show_previous_demo(&mut self) -> Result<()> {
+        self.show_demo((self.demo_index + DEMOS.len() - 1) % DEMOS.len())
     }
 }
 
@@ -309,8 +397,8 @@ mod tests {
                 );
             }
         }
-        let mut overlay = InfoOverlay::new(&SourceAssets).unwrap();
-        assert!(overlay.scene().active_camera().is_some());
+        let mut hud = TestHud::new(&SourceAssets).unwrap();
+        assert!(hud.scene().active_camera().is_some());
     }
 
     #[test]
@@ -1002,7 +1090,7 @@ mod tests {
         assert!(moved(&cars, &cars_after) > cars.len() / 2, "cars don't move");
         assert_eq!(moved(&people, &positions(&mut demo, "People")), people.len());
         assert_ne!(demo.scene().active_camera().unwrap().get_view(), view);
-        // The frame rate is the test app's overlay, not a scene of the demo.
+        // The frame rate is the test app's HUD, not a scene of the demo.
         assert_eq!(demo.scene_count(), 1);
     }
 
@@ -1204,54 +1292,174 @@ mod tests {
     }
 
     #[test]
-    fn info_overlay_shows_the_title_and_the_frame_rate() {
-        let mut overlay = InfoOverlay::new(&SourceAssets).unwrap();
-        overlay.set_title("21 Animation").unwrap();
-        assert_eq!(overlay.get_title(), "21 Animation");
-
-        let scene = overlay.scene();
-        let anchor = scene.find_node("Frame rate").unwrap();
-        // The frame rate text is a node under the anchor, with a node per glyph.
-        let glyphs = |scene: &Scene| -> usize {
-            let text = *scene.get_node(anchor).unwrap().get_children().iter().next().unwrap();
-            scene.get_node(text).unwrap().get_children().len()
-        };
-        assert_eq!(glyphs(scene), "--fps".len());
+    fn hud_shows_the_title_and_the_frame_rate() {
+        let mut hud = TestHud::new(&SourceAssets).unwrap();
+        hud.set_window_size(1024, 768);
+        hud.set_title("21 Animation");
+        assert_eq!(hud.get_title(), "21 Animation");
+        assert_eq!(hud.get_frame_rate_text(), "-- fps");
 
         // 60 frames a second for one second: the text changes to "60 fps".
         for frame in 0..=60 {
-            scene.advance_animations_to(frame as f32 / 60.0);
+            hud.update(frame as f32 / 60.0).unwrap();
         }
-        assert_eq!(glyphs(scene), "60fps".len());
-        assert!(scene.find_animation("Frame rate").is_some());
+        assert_eq!(hud.get_frame_rate_text(), "60 fps");
 
         // The panel grows with a longer title.
-        let panel = scene.find_node("Panel").unwrap();
-        let width = |overlay: &mut InfoOverlay| {
-            overlay.scene().get_node(panel).unwrap().get_transform().x.x
-        };
-        let short = width(&mut overlay);
-        overlay
-            .set_title("16 A much longer demo name than any of the real ones")
-            .unwrap();
-        assert!(width(&mut overlay) > short);
+        let panel = hud.panel();
+        let width = |hud: &TestHud| hud.hud().widget(panel).unwrap().base().rect().width();
+        let short = width(&hud);
+        hud.set_title("16 A much longer demo name than any of the real ones");
+        hud.update(1.1).unwrap();
+        assert!(width(&hud) > short);
     }
 
     #[test]
-    fn the_overlay_is_drawn_after_the_demo_scenes() {
-        let mut app = TestApp::with_assets(Box::new(SourceAssets), 12).unwrap();
-        // Demo 12 has two scenes; the overlay is the third, with its own camera.
-        assert_eq!(app.get_num_scenes_to_render(), 3);
-        let overlay = app.get_scene_to_render(2).get_id();
-        assert_ne!(overlay, app.get_scene_to_render(0).get_id());
-        assert_ne!(overlay, app.get_scene_to_render(1).get_id());
-        assert!(app.get_scene_to_render(2).find_node("Frame rate").is_some());
-        assert_eq!(app.overlay.get_title(), "12 Overlay");
+    fn hud_buttons_sit_halfway_up_the_sides_and_the_panel_in_the_corner() {
+        let mut hud = TestHud::new(&SourceAssets).unwrap();
+        // Twice the size the HUD is laid out for: everything is twice as big, in the same
+        // place.
+        hud.set_window_size(2048, 1536);
+        hud.set_title("0 Viking room");
+        hud.update(0.0).unwrap();
+        assert_eq!(hud.hud().size(), (1024.0, 768.0));
+        let rect = |hud: &TestHud, id: feather_ui::WidgetId| hud.hud().widget(id).unwrap().base().rect();
+        let (previous, next) = hud.buttons();
+        let (previous, next) = (rect(&hud, previous.into()), rect(&hud, next.into()));
+        let panel = rect(&hud, hud.panel().into());
 
-        // Switching demos keeps the overlay and changes its title.
+        assert_eq!(previous.left, 12.0);
+        assert_eq!(next.right, 1024.0 - 12.0);
+        assert_eq!((previous.width(), previous.height()), (48.0, 96.0));
+        // Halfway up the space above the panel.
+        let middle = (panel.top - 12.0) / 2.0;
+        assert_eq!((previous.top + previous.bottom) / 2.0, middle);
+        assert_eq!(previous.top, next.top);
+        assert_eq!((panel.left, panel.bottom), (12.0, 768.0 - 12.0));
+        assert!(panel.width() > 100.0);
+    }
+
+    /// Clicks the left button at `(x, y)`, in UI units (the window is 1024 × 768, so pixels).
+    fn click(app: &mut TestApp, x: f32, y: f32) {
+        app.on_mouse_button(MouseButton::Left, true, x, y).unwrap();
+        app.on_mouse_button(MouseButton::Left, false, x, y).unwrap();
+    }
+
+    fn button_center(app: &TestApp, button: feather_ui::WidgetId<feather_ui::Button>) -> (f32, f32) {
+        let rect = app.hud.hud().widget(button).unwrap().base().rect();
+        ((rect.left + rect.right) / 2.0, (rect.top + rect.bottom) / 2.0)
+    }
+
+    #[test]
+    fn hud_buttons_switch_demos() {
+        let mut app = TestApp::with_assets(Box::new(SourceAssets), 0).unwrap();
+        app.on_resized(1024, 768).unwrap();
+        app.on_update(0.0).unwrap();
+        let (previous, next) = app.hud.buttons();
+        let (previous, next) = (button_center(&app, previous), button_center(&app, next));
+
+        click(&mut app, next.0, next.1);
+        assert_eq!(app.demo_index, 1);
+        assert_eq!(app.hud.get_title(), "1 Cuboid");
+        assert_eq!(app.window_title().unwrap(), demo_window_title(1));
+        click(&mut app, previous.0, previous.1);
+        click(&mut app, previous.0, previous.1);
+        assert_eq!(app.demo_index, DEMOS.len() - 1);
+        click(&mut app, next.0, next.1);
+        assert_eq!(app.demo_index, 0);
+
+        // A click in the middle is the demo's, not the HUD's.
+        click(&mut app, 512.0, 300.0);
+        assert_eq!(app.demo_index, 0);
+        // Pressed, then released away from the button: taken back.
+        app.on_mouse_button(MouseButton::Left, true, next.0, next.1).unwrap();
+        app.on_mouse_moved(512.0, 300.0).unwrap();
+        app.on_mouse_button(MouseButton::Left, false, 512.0, 300.0).unwrap();
+        assert_eq!(app.demo_index, 0);
+        // Other buttons don't click.
+        app.on_mouse_button(MouseButton::Right, true, next.0, next.1).unwrap();
+        app.on_mouse_button(MouseButton::Right, false, next.0, next.1).unwrap();
+        assert_eq!(app.demo_index, 0);
+    }
+
+    #[test]
+    fn the_hud_is_drawn_after_the_demo_scenes() {
+        let mut app = TestApp::with_assets(Box::new(SourceAssets), 12).unwrap();
+        // Demo 12 has two scenes; the HUD is the third, with its own camera.
+        assert_eq!(app.get_num_scenes_to_render(), 3);
+        let hud = app.get_scene_to_render(2).get_id();
+        assert_ne!(hud, app.get_scene_to_render(0).get_id());
+        assert_ne!(hud, app.get_scene_to_render(1).get_id());
+        assert!(app.get_scene_to_render(2).find_camera("UI camera").is_some());
+        assert_eq!(app.hud.get_title(), "12 Overlay");
+
+        // Switching demos keeps the HUD and changes its title.
         app.on_key_pressed(KeyCode::ArrowRight).unwrap();
         assert_eq!(app.get_num_scenes_to_render(), 2);
-        assert_eq!(app.get_scene_to_render(1).get_id(), overlay);
-        assert_eq!(app.overlay.get_title(), "13 Simple shadow");
+        assert_eq!(app.get_scene_to_render(1).get_id(), hud);
+        assert_eq!(app.hud.get_title(), "13 Simple shadow");
+    }
+
+    #[test]
+    fn scrolling_demo_scrolls_its_list_with_scrollbars_and_the_wheel() {
+        use super::super::demo_022_scrolling::ScrollingDemo;
+        use feather_ui::Widget;
+        let mut demo = ScrollingDemo::new(&SourceAssets).unwrap();
+        demo.on_resized(1024, 768).unwrap();
+        demo.update(0.0).unwrap();
+        let (list, vertical, horizontal) = demo.parts();
+
+        // Which lines are shown, by index.
+        let shown = |demo: &mut ScrollingDemo| -> Vec<usize> {
+            let hud = demo.hud();
+            let texts = hud.get(list).unwrap().texts();
+            (0..texts.len())
+                .filter(|&i| hud.scene().get_node(texts[i].get_node()).unwrap().is_visible())
+                .collect()
+        };
+
+        // 80 lines don't fit, and line 8 is too wide: both scrollbars are needed.
+        let hud = demo.hud();
+        let view = hud.get(list).unwrap().base().rect();
+        let v = hud.get(vertical).unwrap();
+        assert!(v.can_scroll() && hud.get(horizontal).unwrap().can_scroll());
+        assert_eq!(v.page(), view.height() as f64);
+        let first = shown(&mut demo);
+        assert_eq!(first[0], 0);
+        assert!(first.len() > 10 && first.len() < 40, "{first:?}");
+
+        // The wheel over the list scrolls three lines down.
+        let x = (view.left + view.right) / 2.0;
+        let y = (view.top + view.bottom) / 2.0;
+        demo.on_mouse_wheel(0.0, -1.0, x, y).unwrap();
+        demo.update(0.1).unwrap();
+        assert_eq!(demo.hud().get(vertical).unwrap().value(), 66.0);
+        assert_eq!(shown(&mut demo)[0], 3);
+
+        // Dragging the vertical knob to the bottom shows the last line.
+        let bar = demo.hud().get(vertical).unwrap().base().rect();
+        let knob = demo.hud().get(vertical).unwrap().knob_rect();
+        let (kx, ky) = ((bar.left + bar.right) / 2.0, bar.top + knob.top + 1.0);
+        demo.on_mouse_button(MouseButton::Left, true, kx, ky).unwrap();
+        demo.on_mouse_moved(kx, ky + 5000.0).unwrap();
+        demo.on_mouse_button(MouseButton::Left, false, kx, ky + 5000.0).unwrap();
+        demo.update(0.2).unwrap();
+        assert_eq!(*shown(&mut demo).last().unwrap(), 79);
+
+        // Scrolled sideways, line 8's first letters are hidden, its last ones shown.
+        let max = demo.hud().get(horizontal).unwrap().max();
+        demo.hud().get_mut(horizontal).unwrap().set_value(max);
+        demo.hud().get_mut(vertical).unwrap().set_value(0.0);
+        demo.update(0.3).unwrap();
+        let hud = demo.hud();
+        let glyphs = hud.get(list).unwrap().texts()[7].get_glyph_nodes().to_vec();
+        let visible = |n: usize| hud.scene().get_node(n).unwrap().is_visible();
+        assert!(!visible(glyphs[0]));
+        assert!(visible(*glyphs.last().unwrap()));
+
+        // A very wide window fits every line: the horizontal scrollbar goes.
+        demo.on_resized(8000, 768).unwrap();
+        assert!(!demo.hud().get(horizontal).unwrap().can_scroll());
+        assert!(demo.hud().get(vertical).unwrap().can_scroll());
     }
 }
