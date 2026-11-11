@@ -5,8 +5,7 @@ use winit::window::WindowBuilder;
 
 use feather::app::App;
 
-mod testapp;
-use testapp::testapp::{demo_window_title, TestApp, DEMOS};
+use feather_testapp::testapp::testapp::{demo_window_title, TestApp, DEMOS};
 
 /// Usage: `testapp [demo]`, where `demo` is the number of the demo to show first
 /// (default 0). The left and right arrow keys, or the buttons on the window's sides, switch demos.

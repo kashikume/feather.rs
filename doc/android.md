@@ -243,7 +243,7 @@ Vulkan support.*
 
 ## Building and running
 
-*Building the APK and running it on a device: not written yet (plan steps 8 and 9).*
+*Building the APK and running it on a device: not written yet (plan step 9).*
 
 ### Checking that the code compiles for Android
 
@@ -263,9 +263,53 @@ inside the `android-activity` crate) with the NDK's compiler, which only `cargo 
 Android builds go to `target\aarch64-linux-android\`, next to the Windows ones in
 `target\debug\` and `target\release\`, so switching between the two doesn't rebuild everything.
 
+### Building the app's library alone
+
+The APK build (Gradle) runs this itself; on its own it is a quicker way to see that the whole app
+builds for Android:
+
+```powershell
+cargo ndk -t arm64-v8a build -p testapp --lib
+```
+
+`--lib` builds only the library (the `testapp` binary is for Windows). The first build takes a
+few minutes (every dependency is built for Android); later ones only rebuild what changed. It
+produces, under `target\aarch64-linux-android\debug\`:
+
+- `libfeather_testapp.so`: the app, about 65 MB in a debug build (debug information; release
+  builds are much smaller);
+- `assets\`: the assets, built by `build.rs` exactly as for Windows (149 files for the test app
+  here).
+
+Add `--release` for a release build (in `...\release\`).
+
+To look inside the library, the NDK has LLVM's tools (in
+`%LOCALAPPDATA%\Android\Sdk\ndk\<version>\toolchains\llvm\prebuilt\windows-x86_64\bin`):
+
+```powershell
+llvm-readelf -d target\aarch64-linux-android\debug\libfeather_testapp.so          # NEEDED: the libraries it needs
+llvm-nm -D --defined-only target\aarch64-linux-android\debug\libfeather_testapp.so # its exported symbols
+```
+
+It needs only Android's system libraries (`liblog.so`, `libandroid.so`, `libdl.so`, `libm.so`,
+`libc.so`): GameActivity's C++ code is linked with the C++ runtime statically, so no
+`libc++_shared.so` has to go into the APK. It exports `android_main` and GameActivity's entry
+points (`GameActivity_onCreate`, `Java_com_google_androidgamesdk_GameActivity_...`), which the
+Java side calls.
+
 ## Logs and debugging
 
-*Reading logs from the device: not written yet (plan steps 8 and 9).*
+*Reading logs from the device: not written yet (plan step 9).*
+
+### Logging on Android
+
+On Windows the test app logs to the terminal through `pretty_env_logger` (`RUST_LOG` sets the
+level). On Android, `android_main` sends the `log` crate's output to Android's log (logcat)
+through `android_logger`, at level `info` and above, with the tag `feather` (as the C++ engine's
+`feather-Logs-android`).
+
+A panic is logged too, at `error` level, with its message and source location: `android_main`
+sets a panic hook, since Android would otherwise show only that the process aborted.
 
 ### Validation layers
 
@@ -338,7 +382,7 @@ smooth:
 
 ## Making an app run on Android
 
-*Mostly not written yet (plan steps 3, 7, 8 and 9).*
+*The Gradle project, the manifest and the activity: not written yet (plan step 9).*
 
 ### How the engine runs on Android
 
@@ -360,6 +404,70 @@ The Vulkan surface (what the engine draws into) is made from the window by `feat
 `vulkanalia`, the Vulkan bindings, makes surfaces for Windows, Linux and macOS windows but not
 Android ones, so on Android the engine makes it itself from the window's `ANativeWindow`, with
 the `VK_KHR_android_surface` extension.
+
+### The app as a library, and `android_main`
+
+On Windows an app is an executable with a `main`. On Android the system starts a Java activity,
+which loads the app as a shared library (`.so`) and calls its entry point, `android_main`, on a
+thread of its own. So an app that runs on both is a **library** with the app's code, plus a
+small `main.rs` for Windows and an `android_main` for Android. The test app is laid out so:
+
+| File             | What                                                                |
+|------------------|---------------------------------------------------------------------|
+| `src/lib.rs`     | the library: the demos (`testapp` module), and `android` on Android |
+| `src/main.rs`    | Windows: command line, logging, window, `App::run`                  |
+| `src/android.rs` | Android: `android_main`                                             |
+
+In its `Cargo.toml`:
+
+```toml
+[lib]
+name = "feather_testapp"
+crate-type = ["rlib", "cdylib"]
+
+[target.'cfg(target_os = "android")'.dependencies]
+android_logger = "0.15"
+```
+
+- `cdylib` makes the shared library (`libfeather_testapp.so`; on Windows a
+  `feather_testapp.dll`, unused); `rlib` lets `main.rs` use the library.
+- The library has its own name, not the package's (`testapp`): on Windows, a library and a
+  binary of the same name would write clashing `.pdb` files. The Android side loads it by this
+  name (`feather_testapp`).
+- Log lines from the app's code now name the library (`feather_testapp::testapp::...`), on
+  Windows too.
+
+`android_main` (in `src/android.rs`) does what `main` does on Windows, with Android's pieces:
+
+```rust
+#[no_mangle]
+fn android_main(app: AndroidApp) {
+    android_logger::init_once(/* level info, tag "feather" */);
+    std::panic::set_hook(Box::new(|info| log::error!("{info}")));
+    if let Err(e) = run(app) {
+        log::error!("{e:#}");
+    }
+    std::process::exit(0);
+}
+
+fn run(app: AndroidApp) -> Result<()> {
+    let event_loop = EventLoopBuilder::new().with_android_app(app.clone()).build()?;
+    let window = WindowBuilder::new().build(&event_loop)?;
+    let assets = Box::new(AndroidAssetsProvider::new(&app));
+    App::run(window, event_loop, Box::new(TestApp::with_assets(assets, 0)?))
+}
+```
+
+- `#[no_mangle]`: `android-activity` calls the function by its plain name.
+- The event loop is built **with the `AndroidApp`** (`EventLoopBuilderExtAndroid`), so winit
+  gets the activity's events.
+- The window is built at once: on Android it stands for the activity's window, whose native
+  window (and so the Vulkan surface) arrives later, with `Resumed` (see *Lifecycle*).
+- Assets come from the APK (`AndroidAssetsProvider`); `TestApp::new`, which reads them from
+  next to the executable, exists on Windows only.
+- The app starts with demo 0: there is no command line on Android.
+- `std::process::exit(0)` at the end: Android may call `android_main` again in the same process
+  for a new activity, and winit can't make a second event loop in one process.
 
 ### Assets
 

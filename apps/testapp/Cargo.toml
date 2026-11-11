@@ -5,6 +5,13 @@ edition.workspace = true
 description = "Development app showing the feather demos."
 publish = false
 
+# A library too: Android loads the app as a shared library (`libfeather_testapp.so`), with
+# `android_main` as its entry point. Named apart from the `testapp` binary, whose output files
+# (`.pdb`) would clash with the library's on Windows.
+[lib]
+name = "feather_testapp"
+crate-type = ["rlib", "cdylib"]
+
 [dependencies]
 feather.workspace = true
 feather-ui.workspace = true
@@ -16,3 +23,6 @@ winit.workspace = true
 
 [build-dependencies]
 feather-build.workspace = true
+
+[target.'cfg(target_os = "android")'.dependencies]
+android_logger = "0.15"

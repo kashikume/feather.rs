@@ -343,8 +343,10 @@ Every step ends with its part of `doc/android.md` (in brackets below), verified 
    function from `(phase, id, x, y)` and the followed finger to `FeatherApp` calls): first finger
    followed, second ignored, `Cancelled` releases, `on_mouse_left` after `Ended`. [Doc: touch in
    *Making an app run on Android*.]
-8. **Test app library**: `lib.rs`, `android_main`, `android_logger` and the panic hook,
-   `main.rs` using the library. `cargo run` and `cargo test --workspace` unchanged;
+8. **Test app library**: *Done, untested on a device until step 9.* `lib.rs`, `android.rs`
+   with `android_main`, `android_logger` and the panic hook, `main.rs` using the library;
+   `TestApp::new` (assets next to the executable) is Windows only. The `.so` needs only system
+   libraries (no `libc++_shared.so`) and exports `android_main`. `cargo run` and `cargo test --workspace` unchanged;
    `cargo ndk -t arm64-v8a build -p testapp --lib` produces `libfeather_testapp.so`. [Doc: the
    library target and `android_main`; building the Rust library alone; the panic hook.]
 9. **Gradle project** in `apps/testapp/android`, as above, with a `.gitignore` for `build/`,
@@ -386,4 +388,7 @@ Every step ends with its part of `doc/android.md` (in brackets below), verified 
 - **Density-aware HUD scale**: size the HUD from the screen's DPI (`AConfiguration_getDensity`)
   instead of its height, so buttons are finger-sized on small screens.
 - **Release signing**, launcher icon, app name per demo.
+- **Stale assets**: `build.rs` copies into `assets/` but never removes, so assets deleted or
+  renamed in the sources stay there (19 such files in `target/debug/assets` today) and would
+  be packed into the APK. Clear the directory first, or copy to a fresh one.
 - **Asset enumeration** on Android (`AAssetManager_openDir`, item 20), once the desktop has it.

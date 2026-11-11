@@ -2,7 +2,9 @@ use anyhow::{anyhow, Result};
 use winit::event::MouseButton;
 use winit::keyboard::KeyCode;
 
-use feather::assetsprovider::{create_assets_provider, AssetsProvider};
+#[cfg(windows)]
+use feather::assetsprovider::create_assets_provider;
+use feather::assetsprovider::AssetsProvider;
 use feather::featherapp::FeatherApp;
 use feather::scene::Scene;
 
@@ -290,6 +292,7 @@ pub fn demo_label(index: usize) -> String {
 
 impl TestApp {
     /// Creates the app showing demo `demo_index` (see `DEMOS`).
+    #[cfg(windows)]
     pub fn new(demo_index: usize) -> Result<Self> {
         let assets = create_assets_provider("assets")?;
         Self::with_assets(assets, demo_index)
