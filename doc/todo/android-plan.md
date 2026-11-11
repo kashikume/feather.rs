@@ -380,22 +380,29 @@ Every step ends with its part of `doc/android.md` (in brackets below), verified 
    logcat shows the engine destroyed, and launching again starts cleanly. [Doc: *Setup*'s
    device subsection; *Building and running* complete; the Gradle project, manifest and
    `MainActivity` in *Making an app run on Android*; `adb logcat` filters.]
-10. **Every demo on the device.** Found so far: the HUD disappears from the City demos on and
-    stays away until the app is suspended and resumed. Cause:
-    the frame's uniform buffer grows (to 512 KB entering demo 15 on the phone, 1 MB on 16), and the pipelines' cached
-    descriptor sets were rewritten only when the buffer's *handle* changed; Android drivers can
-    give the new buffer the old one's handle, so the HUD's sets (its pipelines outlive demo
-    switches) kept pointing at the freed buffer. Fixed by comparing `FrameUniformBuffer::id`, a
-    number never reused; growth is logged with both handles. (Windows gives new handles, so it
-    never showed there.) Confirmed on the S25: every grown buffer got its predecessor's
-    handle (`0xb40000770f24b7b0 -> 0xb40000770f24b7b0`); with the fix the HUD stays on demos
-    15, 16 and after them.
-    Then: Go through demos 0–22 with the HUD buttons, then put the app in
-    the background and back, and lock and unlock the screen, on each of a few demos. What
-    breaks is fixed or written down in this plan's *Device notes* (to add): likely candidates are
-    shader features a mobile GPU lacks, the size of the shadow maps and atlases, MSAA sample
-    counts, and the frame rate of the heavier demos (15, 16). [Doc: *Troubleshooting*, from what
-    was met here and in the earlier steps; the device the demos were checked on.]
+10. **Every demo on the device.** *Done, but for the other landscape side (by hand).* On the
+    Galaxy S25 (Android 17, Adreno 830, 120 Hz), release Rust build:
+    - All 23 demos draw as on Windows, with the HUD; no errors in the log (only demo 0's
+      `tobj` missing-material warning, as on Windows).
+    - Frame rates: 120 fps (the display's rate, `FIFO`) everywhere but City (15: 27–44 fps),
+      City (assets) (16: 25 fps) and Scrolling (22: 63–70 fps; a node per letter, CPU-bound
+      probably). Worth profiling later; not a correctness problem.
+    - Background and back (home, then the launcher) on demos 15, 21 and 22: the surface is
+      released and recreated, the demo goes on where it was. Back exits cleanly (step 9).
+    - The HUD disappeared from the City demos on and came back only after background and back.
+      Cause: the frame's uniform buffer grows (to 512 KB entering demo 15, 1 MB on 16 and 22),
+      and the pipelines' cached descriptor sets were rewritten only when the buffer's *handle*
+      changed; the S25's driver gives every grown buffer its predecessor's handle
+      (`0xb40000770f24b7b0 -> 0xb40000770f24b7b0`), so the HUD's sets (its pipelines outlive
+      demo switches) kept pointing at the freed buffer. Fixed by comparing
+      `FrameUniformBuffer::id`, a number never reused; growth is logged with both handles.
+      (Windows gives new handles, so it never showed there.)
+    - Not checked: the other landscape side (`sensorLandscape`), which needs the phone turned by
+      hand (a forced rotation through `adb` changed nothing visible); locking and unlocking the
+      screen (the phone has a PIN), which goes through the same `suspended` / `resumed` as
+      background and back.
+    [Doc: *Troubleshooting*, from what was met here and in the earlier steps; the device the
+    demos were checked on.]
 11. **Notes**: README (Android in *Requirements* and *Building* as a short version linking to
     `doc/android.md`, touch in *Features*); in the missing features note, items 21 and 35 move to
     covered features, and item 16 notes that on Vulkan only the surface and swapchain are lost.

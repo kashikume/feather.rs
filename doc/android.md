@@ -389,6 +389,19 @@ It needs only Android's system libraries (`liblog.so`, `libandroid.so`, `libdl.s
 points (`GameActivity_onCreate`, `Java_com_google_androidgamesdk_GameActivity_...`), which the
 Java side calls.
 
+### What runs on a phone
+
+Checked on the Galaxy S25 (see *The device*), with the debug APK (Rust built optimized):
+
+- All 23 demos of the test app draw as on Windows, with the HUD; the HUD's buttons switch demos
+  by touch.
+- Frame rate: one frame per display refresh (120 fps on this phone) for every demo but the two
+  City demos (25–45 fps) and Scrolling (about 65 fps).
+- Going to the background and back keeps the demo where it was; back leaves the app.
+
+Not checked yet: turning the phone to the other landscape side, and locking and unlocking the
+screen.
+
 ## Logs and debugging
 
 ### Reading the log
