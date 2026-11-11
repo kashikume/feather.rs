@@ -197,9 +197,9 @@ material, file import):
 ```
 apps/testapp/android/
   settings.gradle.kts           rootProject "FeatherTestApp", include(":app")
-  build.gradle.kts              AGP 8.8.0, Kotlin 1.9.0
+  build.gradle.kts              AGP 9.5.1 (see below)
   gradle.properties             as GuitarPrompter's
-  gradlew, gradlew.bat, gradle/wrapper/
+  gradlew, gradlew.bat, gradle/wrapper/   Gradle 9.6.0
   local.properties              sdk.dir (not committed)
   app/
     build.gradle.kts
@@ -208,6 +208,11 @@ apps/testapp/android/
     src/main/res/values/{strings,themes}.xml
 ```
 
+- **Gradle 9.6.0 and AGP 9.5.1, not GuitarPrompter's 8.10.2 and 8.8.0.** The only JDK here is
+  Android Studio's bundled JDK 25, and Gradle runs on JDK 25 from 9.1 only; AGP 9.5 needs
+  Gradle 9.6.0 and Build-Tools 36.0.0 (installed). AGP 9 has Kotlin built in, so the
+  `org.jetbrains.kotlin.android` plugin GuitarPrompter applies is probably not needed (and may
+  be refused): check when writing the build files.
 - **`app/build.gradle.kts`**: namespace and application id `com.kashikume.feather.testapp`,
   `minSdk` 30, `compileSdk` / `targetSdk` 33 (as GuitarPrompter); `abiFilters("arm64-v8a")`;
   dependencies `androidx.games:games-activity:2.0.2`, `androidx.appcompat:appcompat:1.6.1`,
@@ -249,9 +254,8 @@ adb shell am start -n com.kashikume.feather.testapp/.MainActivity
 adb logcat -s feather RustStdoutStderr AndroidRuntime
 ```
 
-Gradle needs a JDK 17 (Android Studio's `jbr`, through `JAVA_HOME`). `cargo ndk` finds the NDK
-through `ANDROID_NDK_HOME`, or the newest one under `ANDROID_HOME/ndk` (30.0.16248370 here).
-On this ARM64 Windows host, the NDK's x86-64 toolchain runs under emulation; slower, but works.
+The machine setup (SDK, NDK, JDK, Rust target, `cargo-ndk`) is in
+[doc/android.md](../android.md#setup).
 
 ## Documentation
 
@@ -277,7 +281,7 @@ Sections of `doc/android.md`:
 2. **Setup**, one subsection per tool, each with *install*, *configure*, *check*:
    - Android SDK (platform 33, build tools, platform tools / `adb`) and `ANDROID_HOME`;
    - NDK (version, `ANDROID_NDK_HOME`, the x86-64 toolchain under emulation on ARM64 Windows);
-   - JDK 17 (Android Studio's `jbr`) and `JAVA_HOME`;
+   - JDK (Android Studio's `jbr`, JDK 25 here) and `JAVA_HOME`;
    - Rust target `aarch64-linux-android` and `cargo-ndk`;
    - Vulkan SDK (`glslc` on the host; no layers on the device);
    - the device: developer options, USB debugging, `adb devices`, checking Vulkan support.
@@ -299,8 +303,8 @@ The README links to it from *Requirements* and *Building*, and keeps only the sh
 
 Every step ends with its part of `doc/android.md` (in brackets below), verified on this machine.
 
-1. **Toolchain.** Install the `aarch64-linux-android` target and `cargo-ndk`; check JDK 17 and
-   the NDK are found. No code changes. [Doc: *Overview* skeleton, the whole *Setup* section
+1. **Toolchain.** *Done.* Install the `aarch64-linux-android` target and `cargo-ndk`; check the
+   JDK and the NDK are found. No code changes. [Doc: *Overview* skeleton, the whole *Setup* section
    except the device, done tool by tool as each is installed and checked.]
 2. **The engine compiles for Android.** `winit` with `android-game-activity`; `feather` re-exports
    `AndroidApp`; `cfg` the Windows-only pieces so that
