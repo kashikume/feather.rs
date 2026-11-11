@@ -77,60 +77,58 @@ several per scene with an active one, defined in scene files), several scenes pe
 ## Images and textures
 
 23. **JPEG loading** (`feather-jpeg`): decode JPEG images into atlases/textures.
-24. **`.tex` texture file format** (`Atlas::CreateFromTexFile`, `Texture::CreateFromTexFile`): the
-    engine's own pre-processed texture format.
-25. **Mutable atlases** (`Atlas::setTexel`, `m_isMutable`, `buildTexBuffer`): change pixels at
+24. **Mutable atlases** (`Atlas::setTexel`, `m_isMutable`, `buildTexBuffer`): change pixels at
     runtime and re-upload the texture.
-26. **Texture from a raw buffer** (`Texture::CreateFromBuffer(w, h, format, buffer)`), including
+25. **Texture from a raw buffer** (`Texture::CreateFromBuffer(w, h, format, buffer)`), including
     **RGB (3-byte) pixel format** (`PixelFormat::RGB`); Rust atlases are RGBA only.
-27. **Texture size in pixels** (`Texture::getWidth`, `getHeight`, `getSize`).
+26. **Texture size in pixels** (`Texture::getWidth`, `getHeight`, `getSize`).
 
 ## Meshes
 
-28. **Ribbon mesh builder** (`feather-MeshBuilderRibbon`): a strip built from pairs of points with
+27. **Ribbon mesh builder** (`feather-MeshBuilderRibbon`): a strip built from pairs of points with
     UVs, with normals generated automatically.
-29. **Custom mesh builder** (`feather-MeshBuilderCustom`): add points (position, normal, UV) and
+28. **Custom mesh builder** (`feather-MeshBuilderCustom`): add points (position, normal, UV) and
     faces (polygons, optionally inverted) one by one.
-30. **Mesh merger** (`feather-MeshMerger`): combine two meshes into one.
-31. **Plane builder variants** (`feather-MeshBuilderPlane`): planes in the XZ plane, centered unit
+29. **Mesh merger** (`feather-MeshMerger`): combine two meshes into one.
+30. **Plane builder variants** (`feather-MeshBuilderPlane`): planes in the XZ plane, centered unit
     planes (`unitCXY`, `unitCXZ`), planes with custom UV ranges, and the **9-patch plane**
     (`build9pInXY`) for scalable UI panels.
-32. **Binary `.mesh` file loader** (`feather-MeshLoaderMeshFile`) and the generic
+31. **Binary `.mesh` file loader** (`feather-MeshLoaderMeshFile`) and the generic
     **`MeshLoader`** that picks the loader by file extension.
-33. **Coordinate system preview** (`CreateCoordinateSystemPreview`): a helper that adds X/Y/Z axes
+32. **Coordinate system preview** (`CreateCoordinateSystemPreview`): a helper that adds X/Y/Z axes
     gizmo nodes under a parent, for debugging.
 
 ## Input and application
 
-34. **Mouse input** (needed by `featherui::ui_hud::mouse_move` / `mouse_button_down` /
+33. **Mouse input** (needed by `featherui::ui_hud::mouse_move` / `mouse_button_down` /
     `mouse_button_up`): `FeatherApp` only receives key presses.
-35. **Thread-safe scene objects** (`ThreadsafeObject`, `FEATHER_THREADSAFE`): optional locking so
+34. **Thread-safe scene objects** (`ThreadsafeObject`, `FEATHER_THREADSAFE`): optional locking so
     the scene can be modified from a thread other than the render thread, and a debug check that
     catches access from the wrong thread.
-36. **Profiler integration** (Tracy `ZoneScoped` in `types.h`).
-37. **Android platform support** (`feather-Logs-android`, `feather-png-android`,
+35. **Profiler integration** (Tracy `ZoneScoped` in `types.h`).
+36. **Android platform support** (`feather-Logs-android`, `feather-png-android`,
     `feather-image-android`, `feather-jpeg-android`): logging, image decoding and app lifecycle on
     Android.
 
 ## UI library (`featherui`)
 
-38. **UI object base** (`featherui::object`): rectangle, width/height, left/right/top/bottom,
+37. **UI object base** (`featherui::object`): rectangle, width/height, left/right/top/bottom,
     visibility (`automatic`, `gone`, `invisible`, `visible`), `update(anchor, rect)` layout pass,
     mouse event hooks.
-39. **Layouts** (`featherui::layout`, `layout_nswe`): a container with north / south / east /
+38. **Layouts** (`featherui::layout`, `layout_nswe`): a container with north / south / east /
     west / center slots.
-40. **Controls with dragging** (`featherui::control`): mouse down/up/drag handling.
-41. **Scrollbars** (`featherui::scrollbar`, `vertical_scrollbar`, `horisontal_scrollbar`): min /
+39. **Controls with dragging** (`featherui::control`): mouse down/up/drag handling.
+40. **Scrollbars** (`featherui::scrollbar`, `vertical_scrollbar`, `horisontal_scrollbar`): min /
     max / value / page, minimum knob size, knob and track meshes and materials (normal and
     highlighted), value-changed observers, auto-hide when not needed.
-42. **Spacer control** (`featherui::distance`).
-43. **UI HUD** (`featherui::ui_hud`): owns a UI root with its own batcher and rendering state,
+41. **Spacer control** (`featherui::distance`).
+42. **UI HUD** (`featherui::ui_hud`): owns a UI root with its own batcher and rendering state,
     lays out the root layout in a rectangle, renders it and routes mouse events (including drag
     capture) to the hit object.
 
 ## Tools
 
-44. **ObjMeshConverter** (`tools/ObjMeshConverter`): converts OBJ files (with axis order and
+43. **ObjMeshConverter** (`tools/ObjMeshConverter`): converts OBJ files (with axis order and
     fixed-point factor options) into the binary `.mesh` format, one file per object.
 
 ## Animation ideas (not in C++ either)
@@ -155,3 +153,10 @@ several per scene with an active one, defined in scene files), several scenes pe
 - `Projection::Custom(Mat4)` for projections the app computes itself.
 - Only the active camera gets the image size each frame, so an inactive orthographic camera's
   `get_visible_size` reports the size from when it was last active.
+
+## Won't do / deprecated
+
+C++ features feather.rs won't port.
+
+- **`.tex` texture file format** (`Atlas::CreateFromTexFile`, `Texture::CreateFromTexFile`): the
+  C++ engine's own pre-processed texture format.
