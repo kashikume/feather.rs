@@ -1,0 +1,71 @@
+{
+  "atlases": [
+    {
+      "name": "Font",
+      "bitmap": "demo_021_animation_atlas.png",
+      "metadata": "demo_021_animation_atlas.atlas"
+    }
+  ],
+  "meshes": [
+    { "name": "Cube", "cuboid": { "x": [-0.25, 0.25], "y": [-0.25, 0.25], "z": [-0.25, 0.25] } },
+    { "name": "Track", "cuboid": { "x": [-3.3, 3.3], "y": [-0.04, 0.04], "z": [-0.32, -0.26] } }
+  ],
+  "shaders": [
+    {
+      "name": "Colored",
+      "vertex": "demo_021_animation_shader.vert.spv",
+      "fragment": "demo_021_animation_shader.frag.spv",
+      "model_uniform": "model",
+      "view_uniform": "view",
+      "projection_uniform": "proj"
+    },
+    {
+      "name": "Text",
+      "vertex": "demo_021_animation_text_shader.vert.spv",
+      "fragment": "demo_021_animation_text_shader.frag.spv",
+      "model_uniform": "model",
+      "view_uniform": "view",
+      "projection_uniform": "proj"
+    }
+  ],
+  "materials": [
+    {
+      "name": "Glossy",
+      "shader": "Colored",
+      "uniforms": {
+        "shininess": { "float": 40.0 },
+        "specularStrength": { "float": 0.6 },
+        "opacity": { "float": 1.0 }
+      }
+    },
+    {
+      "name": "Matte",
+      "shader": "Colored",
+      "uniforms": {
+        "shininess": { "float": 8.0 },
+        "specularStrength": { "float": 0.05 },
+        "opacity": { "float": 1.0 }
+      }
+    }
+  ],
+  "root": {
+    "name": "Scene root",
+    "children": [
+      {
+        "name": "Lanes",
+        "uniforms": {
+          "light": { "vec3": [0.4, 0.6, 1.2] },
+          "color": { "vec3": [0.32, 0.36, 0.44] }
+        }
+      },
+      {
+        "name": "Showcase",
+        "uniforms": { "light": { "vec3": [0.4, 0.6, 1.2] } }
+      },
+      {
+        "name": "Labels",
+        "uniforms": { "color": { "vec4": [0.85, 0.9, 0.95, 1.0] } }
+      }
+    ]
+  }
+}

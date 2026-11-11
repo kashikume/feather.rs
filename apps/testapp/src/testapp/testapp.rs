@@ -27,6 +27,7 @@ use super::demo_017_bouncing_balls::BouncingBallsShadowDemo;
 use super::demo_018_vases::VasesShadowDemo;
 use super::demo_019_walker::WalkerShadowDemo;
 use super::demo_020_spider::SpiderShadowDemo;
+use super::demo_021_animation::AnimationDemo;
 
 /// One demo of the test app: a scene, the camera looking at it, and its animation. A demo may
 /// have more scenes, each with its own camera, drawn one over the other (`scene_count`).
@@ -142,6 +143,10 @@ pub const DEMOS: &[DemoInfo] = &[
     DemoInfo {
         name: "Spider (shadows)",
         create: |assets| Ok(Box::new(SpiderShadowDemo::new(assets)?)),
+    },
+    DemoInfo {
+        name: "Animation",
+        create: |assets| Ok(Box::new(AnimationDemo::new(assets)?)),
     },
 ];
 
@@ -1064,5 +1069,47 @@ mod tests {
             assert_ne!(later, start);
             assert!(scene.nodes.iter().all(|node| !node.is_transparent()));
         }
+    }
+
+    #[test]
+    fn animation_demo_moves_everything_with_animations() {
+        let mut demo = demo(21);
+        let scene = demo.scene();
+        let lane = scene.find_node("Lane 0").unwrap();
+        let x_of = |scene: &Scene, node| scene.get_node(node).unwrap().get_transform().w.x;
+        assert!(scene.find_animation("Round").is_some());
+        assert!(scene.find_animation("Spin").is_some());
+
+        // The linear lane: at its start, then halfway after half the slide.
+        scene.advance_animations_to(0.0);
+        assert!((x_of(scene, lane) + 3.0).abs() < 1e-4);
+        scene.advance_animations_to(1.0);
+        assert!(x_of(scene, lane).abs() < 1e-4);
+
+        // Run long enough for several rounds and fading cubes, in frame-sized steps: the
+        // animations keep going, the faders are replaced and only one exists at a time.
+        let mut time = 1.0;
+        while time < 30.0 {
+            time += 1.0 / 30.0;
+            scene.advance_animations_to(time);
+        }
+        let faders: Vec<String> = scene
+            .nodes
+            .iter()
+            .filter_map(|n| n.get_name())
+            .filter(|n| n.starts_with("Fader"))
+            .collect();
+        assert_eq!(faders.len(), 1, "{faders:?}");
+        assert_ne!(faders[0], "Fader 0");
+        assert!(scene.find_animation("Round").is_some());
+        assert!(scene.find_animation("Spin").is_some());
+        // One slide per lane, the round timer, the spinner and the fader.
+        assert!(scene.animation_count() <= 11 + 3, "{}", scene.animation_count());
+
+        // The camera dollies in.
+        demo.update(0.0).unwrap();
+        let far = demo.camera().get_view();
+        demo.update(5.0).unwrap();
+        assert_ne!(demo.camera().get_view(), far);
     }
 }

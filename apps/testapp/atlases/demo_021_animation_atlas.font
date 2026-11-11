@@ -1,0 +1,4 @@
+# Demo 21's font: Segoe UI Semibold, 48 pixels high, with the font creator's default
+# characters. Rendered into an atlas during the build.
+font = Segoe UI Semibold
+height = 48

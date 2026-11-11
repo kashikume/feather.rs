@@ -44,6 +44,9 @@ What works today:
   `Scene::remove_mesh`); mesh GPU buffers are released with their last mesh
 - Skeletal animation (rigid): bones are scene nodes (`Skeleton`), moved by looping keyframe
   clips loaded from JSON (`AnimationClip`)
+- Animations: slides with easing and perpetual animations, owned by the scene and advanced by
+  the engine every frame (`Scene::add_animation`, `SlideAnimation`, `PerpetualAnimation`,
+  `Easing`), or by a standalone `Animator` for anything else, e.g. a camera
 - Shadows: a directional light per scene draws the shadow casters into a shadow map before each
   frame, and shaders sample it (`ShadowLight`, `Node::set_casts_shadow`)
 - MSAA
@@ -103,6 +106,7 @@ only command line argument is the number of the demo to start with (default 0). 
 | 18   | Vases (shadows) | Demo 7 again, with real shadows: the vases, glass included, cast onto the turning floor |
 | 19   | Walker (shadows) | Demo 8 again, with real shadows: the walking person's body casts onto the floor, with no shadow disc |
 | 20   | Spider (shadows) | Demo 9 again, with real shadows: the spider's body and legs cast onto the floor, with no shadow disc |
+| 21   | Animation   | A lane per kind of easing with a cube sliding across, round after round (in, out, in-out); a cube spinning forever; a cube fading in and out, then removed and replaced; a camera dollying in and swaying, with its own animator |
 
 Each demo is in its own file, `apps/testapp/src/testapp/demo_NNN_<name>.rs`, and its resources
 are named `demo_NNN_<name>_<kind>` (`scene`, `atlas`, `mesh`, `shader`, ...). Demos are listed in

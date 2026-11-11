@@ -1,4 +1,6 @@
+pub mod animation;
 pub mod animationclip;
+pub mod animator;
 pub mod app;
 pub mod appdata;
 pub mod assetsprovider;
@@ -10,6 +12,7 @@ pub mod colorobjects;
 pub mod commandbuffers;
 pub mod commandpool;
 pub mod dephobjects;
+pub mod easing;
 pub mod featherapp;
 pub mod framebuffers;
 pub mod gpuimage;

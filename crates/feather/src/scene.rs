@@ -2,7 +2,11 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use anyhow::Result;
 
+use std::collections::HashSet;
+
 use crate::{
+    animation::Animation,
+    animator::Animator,
     assetsprovider::AssetsProvider,
     atlas::Atlas,
     material::Material,
@@ -72,6 +76,8 @@ pub struct Scene {
     pub materials: ObjDB<Material>,
     shadow_light: Option<ShadowLight>,
     needs_create_mesh_buffer: bool,
+    /// Animations changing the scene; see `add_animation`.
+    animations: Animator<Scene>,
 }
 
 impl Scene {
@@ -86,6 +92,7 @@ impl Scene {
             materials: ObjDB::new(),
             shadow_light: None,
             needs_create_mesh_buffer: false,
+            animations: Animator::new(),
         }
     }
 
@@ -145,16 +152,99 @@ impl Scene {
 
     /// Removes a node and all its descendants from the scene. Their meshes and materials stay.
     /// Fails if the node does not exist.
+    /// Animations targeting any of the removed nodes (`Animation::get_target`) are cancelled.
     pub fn remove_node(&mut self, node_handle: usize) -> Result<()> {
         self.disconnect_node(node_handle)?;
+        let mut removed = HashSet::new();
         let mut stack = vec![node_handle];
         while let Some(handle) = stack.pop() {
             if let Some(node) = self.nodes.get(handle) {
                 stack.extend(node.get_children().iter().copied());
             }
             self.nodes.remove(handle);
+            removed.insert(handle);
         }
+        self.animations.cancel_targeting(&removed);
         Ok(())
+    }
+
+    /// Adds an animation changing the scene and returns its handle. It runs from the next
+    /// update: the engine advances the animations of every rendered scene once per frame, after
+    /// `FeatherApp::on_update` and before drawing (`advance_animations_to`). Its callbacks get the
+    /// scene, so they can change anything in it, including its animations. See `animation`.
+    ///
+    /// `name` lets `find_animation` look the animation up. If the animation has a target node,
+    /// removing that node (or an ancestor) cancels it.
+    pub fn add_animation(
+        &mut self,
+        name: Option<String>,
+        animation: impl Animation<Scene> + 'static,
+    ) -> usize {
+        self.animations.add(name, animation)
+    }
+
+    /// Handle of the running animation named `name`.
+    pub fn find_animation(&self, name: &str) -> Option<usize> {
+        self.animations.find(name)
+    }
+
+    /// Whether `handle` is a running animation (not finished or cancelled). Handles of finished
+    /// animations can be given to new ones.
+    pub fn is_animation_running(&self, handle: usize) -> bool {
+        self.animations.is_running(handle)
+    }
+
+    /// Number of running animations.
+    pub fn animation_count(&self) -> usize {
+        self.animations.len()
+    }
+
+    /// Ends an animation now: applies its final state, runs its end-of-animation callback and
+    /// removes it (`Animation::finish`). Does nothing for handles that aren't running, and for
+    /// the animation whose callback is calling this.
+    pub fn finish_animation(&mut self, handle: usize) {
+        let Some(serial) = self.animations.serial_of(handle) else {
+            return;
+        };
+        if let Some(mut taken) = self.animations.take(handle, serial) {
+            taken.animation.finish(self);
+            self.animations.restore(taken, true);
+        }
+    }
+
+    /// Removes an animation without running any of its callbacks.
+    pub fn cancel_animation(&mut self, handle: usize) {
+        self.animations.cancel(handle);
+    }
+
+    /// Removes every animation without running any callbacks.
+    pub fn cancel_all_animations(&mut self) {
+        self.animations.clear();
+    }
+
+    /// Sets the time elapsed since an animation started (`Animation::set_elapsed`).
+    pub fn set_animation_elapsed(&mut self, handle: usize, time: f32) {
+        self.animations.set_elapsed(handle, time);
+    }
+
+    /// Advances every animation by `dt` seconds, removing the ones that finish. Animations
+    /// added meanwhile by callbacks start in the next update.
+    pub fn update_animations(&mut self, dt: f32) {
+        for (handle, serial) in self.animations.running() {
+            if let Some(mut taken) = self.animations.take(handle, serial) {
+                let finished = taken.animation.update(self, dt);
+                self.animations.restore(taken, finished);
+            }
+        }
+    }
+
+    /// Advances every animation to `time` (seconds, on a clock that only goes forward): by the
+    /// time since the previous call, or by 0 on the first call. The engine calls it every frame
+    /// with the time it passes to `FeatherApp::on_update`; an app calling it first, with the same
+    /// time, gets the animations applied earlier and the engine's call then changes nothing.
+    pub fn advance_animations_to(&mut self, time: f32) {
+        let dt = self.animations.advance_time(time);
+        self.update_animations(dt);
     }
 
     pub fn get_node(&self, handle: usize) -> Option<&Node> {
@@ -1740,5 +1830,281 @@ mod tests {
 
         let nodes: Vec<usize> = scene.draw_items().iter().map(|i| i.node).collect();
         assert_eq!(nodes, [shown]);
+    }
+
+    mod animations {
+        use std::ops::ControlFlow;
+        use std::sync::{Arc, Mutex};
+
+        use super::*;
+        use crate::animation::{PerpetualAnimation, SlideAnimation};
+
+        /// A slide moving `node` along X from 0 to `distance`.
+        fn move_x(node: usize, duration: f32, distance: f32) -> SlideAnimation<Scene> {
+            SlideAnimation::new(duration, move |scene: &mut Scene, p| {
+                if let Some(n) = scene.get_node_mut(node) {
+                    n.set_transform(Mat4::from_translation(Vec3::new(distance * p, 0.0, 0.0)));
+                }
+            })
+            .target(node)
+        }
+
+        fn x_of(scene: &Scene, node: usize) -> f32 {
+            scene.get_node(node).unwrap().get_transform().w.x
+        }
+
+        type Log = Arc<Mutex<Vec<String>>>;
+
+        /// Events recorded by callbacks, shared with the test.
+        fn log() -> Log {
+            Arc::new(Mutex::new(Vec::new()))
+        }
+
+        fn events(log: &Log) -> Vec<String> {
+            std::mem::take(&mut *log.lock().unwrap())
+        }
+
+        #[test]
+        fn slide_moves_a_node_and_finishes() {
+            let mut scene = Scene::new();
+            let root = scene.create_root_node(None);
+            let node = scene.create_node(None, root).unwrap();
+            let a = scene.add_animation(Some("move".into()), move_x(node, 2.0, 4.0));
+            assert_eq!(scene.find_animation("move"), Some(a));
+            assert_eq!(scene.animation_count(), 1);
+
+            scene.update_animations(1.0);
+            assert_eq!(x_of(&scene, node), 2.0);
+            assert!(scene.is_animation_running(a));
+            scene.update_animations(1.0);
+            assert_eq!(x_of(&scene, node), 4.0);
+            assert!(!scene.is_animation_running(a));
+            assert_eq!(scene.find_animation("move"), None);
+            assert_eq!(scene.animation_count(), 0);
+        }
+
+        #[test]
+        fn advance_animations_to_uses_time_differences() {
+            let mut scene = Scene::new();
+            let root = scene.create_root_node(None);
+            let node = scene.create_node(None, root).unwrap();
+            scene.add_animation(None, move_x(node, 4.0, 4.0));
+            scene.advance_animations_to(100.0);
+            assert_eq!(x_of(&scene, node), 0.0);
+            scene.advance_animations_to(101.0);
+            assert_eq!(x_of(&scene, node), 1.0);
+            // Same time again (the app first, then the engine): no change.
+            scene.advance_animations_to(101.0);
+            assert_eq!(x_of(&scene, node), 1.0);
+            scene.advance_animations_to(103.0);
+            assert_eq!(x_of(&scene, node), 3.0);
+        }
+
+        #[test]
+        fn callbacks_can_add_animations_which_start_in_the_next_update() {
+            let mut scene = Scene::new();
+            let root = scene.create_root_node(None);
+            let node = scene.create_node(None, root).unwrap();
+            // Out to 2 in one second, then back from 2 to 0 in one second.
+            scene.add_animation(
+                None,
+                move_x(node, 1.0, 2.0).on_finish(move |scene: &mut Scene| {
+                    scene.add_animation(
+                        Some("back".into()),
+                        SlideAnimation::new(1.0, move |scene: &mut Scene, p| {
+                            let x = 2.0 * (1.0 - p);
+                            scene
+                                .get_node_mut(node)
+                                .unwrap()
+                                .set_transform(Mat4::from_translation(Vec3::new(x, 0.0, 0.0)));
+                        }),
+                    );
+                }),
+            );
+            scene.update_animations(1.0);
+            assert_eq!(x_of(&scene, node), 2.0);
+            let back = scene.find_animation("back").unwrap();
+            assert!(scene.is_animation_running(back));
+            scene.update_animations(0.5);
+            assert_eq!(x_of(&scene, node), 1.0);
+            scene.update_animations(0.5);
+            assert_eq!(x_of(&scene, node), 0.0);
+            assert_eq!(scene.animation_count(), 0);
+        }
+
+        #[test]
+        fn callbacks_can_cancel_and_finish_other_animations() {
+            let mut scene = Scene::new();
+            let root = scene.create_root_node(None);
+            let a = scene.create_node(None, root).unwrap();
+            let b = scene.create_node(None, root).unwrap();
+            let c = scene.create_node(None, root).unwrap();
+            let slide_b = scene.add_animation(None, move_x(b, 10.0, 10.0));
+            let slide_c = scene.add_animation(None, move_x(c, 10.0, 10.0));
+            scene.add_animation(
+                None,
+                move_x(a, 1.0, 1.0).on_finish(move |scene: &mut Scene| {
+                    scene.cancel_animation(slide_b);
+                    scene.finish_animation(slide_c);
+                }),
+            );
+            scene.update_animations(1.0);
+            assert_eq!(scene.animation_count(), 0);
+            // b was moved once (it was added before a, so it ran first), then cancelled; c was
+            // moved to its end.
+            assert_eq!(x_of(&scene, b), 1.0);
+            assert_eq!(x_of(&scene, c), 10.0);
+            scene.update_animations(1.0);
+            assert_eq!(x_of(&scene, b), 1.0);
+        }
+
+        #[test]
+        fn an_animation_can_cancel_itself() {
+            let mut scene = Scene::new();
+            let log = log();
+            let seen = log.clone();
+            scene.add_animation(
+                Some("self".into()),
+                PerpetualAnimation::new(move |scene: &mut Scene, _, _| {
+                    seen.lock().unwrap().push("step".into());
+                    let me = scene.find_animation("self").unwrap();
+                    scene.cancel_animation(me);
+                    ControlFlow::Continue(())
+                }),
+            );
+            scene.update_animations(1.0);
+            scene.update_animations(1.0);
+            assert_eq!(events(&log), ["step"]);
+            assert_eq!(scene.animation_count(), 0);
+        }
+
+        #[test]
+        fn a_handle_reused_during_an_update_keeps_the_new_animation() {
+            let mut scene = Scene::new();
+            let log = log();
+            let seen = log.clone();
+            // Cancels itself and adds a new animation, which gets its handle.
+            scene.add_animation(
+                Some("old".into()),
+                PerpetualAnimation::new(move |scene: &mut Scene, _, _| {
+                    let me = scene.find_animation("old").unwrap();
+                    scene.cancel_animation(me);
+                    let seen = seen.clone();
+                    let new = scene.add_animation(
+                        None,
+                        PerpetualAnimation::new(move |_: &mut Scene, _, elapsed| {
+                            seen.lock().unwrap().push(format!("new {elapsed}"));
+                            ControlFlow::Continue(())
+                        }),
+                    );
+                    assert_eq!(new, me);
+                    ControlFlow::Continue(())
+                }),
+            );
+            scene.update_animations(1.0);
+            // The new animation didn't run in the update that added it ...
+            assert!(events(&log).is_empty());
+            assert_eq!(scene.animation_count(), 1);
+            // ... and wasn't replaced by the old one when that one was put back.
+            scene.update_animations(1.0);
+            assert_eq!(events(&log), ["new 1"]);
+        }
+
+        #[test]
+        fn finishing_an_animation_runs_its_end() {
+            let mut scene = Scene::new();
+            let root = scene.create_root_node(None);
+            let node = scene.create_node(None, root).unwrap();
+            let log = log();
+            let seen = log.clone();
+            let a = scene.add_animation(
+                None,
+                move_x(node, 10.0, 5.0)
+                    .on_finish(move |_: &mut Scene| seen.lock().unwrap().push("done".into())),
+            );
+            scene.update_animations(1.0);
+            scene.finish_animation(a);
+            assert_eq!(x_of(&scene, node), 5.0);
+            assert_eq!(events(&log), ["done"]);
+            assert!(!scene.is_animation_running(a));
+            scene.finish_animation(a);
+            assert!(events(&log).is_empty());
+        }
+
+        #[test]
+        fn set_elapsed_and_cancel_all() {
+            let mut scene = Scene::new();
+            let root = scene.create_root_node(None);
+            let node = scene.create_node(None, root).unwrap();
+            let a = scene.add_animation(None, move_x(node, 4.0, 4.0));
+            scene.set_animation_elapsed(a, 3.0);
+            scene.update_animations(0.0);
+            assert_eq!(x_of(&scene, node), 3.0);
+            scene.add_animation(None, move_x(node, 4.0, 4.0));
+            scene.cancel_all_animations();
+            assert_eq!(scene.animation_count(), 0);
+        }
+
+        #[test]
+        fn removing_a_target_node_cancels_its_animations() {
+            let mut scene = Scene::new();
+            let root = scene.create_root_node(None);
+            let parent = scene.create_node(None, root).unwrap();
+            let child = scene.create_node(None, parent).unwrap();
+            let other = scene.create_node(None, root).unwrap();
+            let log = log();
+            let seen = log.clone();
+            let on_child = scene.add_animation(
+                None,
+                move_x(child, 1.0, 1.0)
+                    .on_finish(move |_: &mut Scene| seen.lock().unwrap().push("done".into())),
+            );
+            let on_other = scene.add_animation(None, move_x(other, 1.0, 1.0));
+            scene.remove_node(parent).unwrap();
+            assert!(!scene.is_animation_running(on_child));
+            assert!(scene.is_animation_running(on_other));
+            scene.update_animations(1.0);
+            assert!(events(&log).is_empty());
+            assert_eq!(x_of(&scene, other), 1.0);
+        }
+
+        #[test]
+        fn an_animation_can_remove_its_own_target() {
+            let mut scene = Scene::new();
+            let root = scene.create_root_node(None);
+            let node = scene.create_node(None, root).unwrap();
+            let a = scene.add_animation(
+                None,
+                move_x(node, 1.0, 1.0).on_finish(move |scene: &mut Scene| {
+                    scene.remove_node(node).unwrap();
+                }),
+            );
+            scene.update_animations(0.5);
+            scene.update_animations(0.5);
+            assert!(scene.get_node(node).is_none());
+            assert!(!scene.is_animation_running(a));
+            assert_eq!(scene.animation_count(), 0);
+        }
+
+        #[test]
+        fn scenes_with_animations_can_go_to_other_threads() {
+            fn assert_send_sync<T: Send + Sync>() {}
+            assert_send_sync::<Scene>();
+            assert_send_sync::<Animator<Scene>>();
+
+            let mut scene = Scene::new();
+            let root = scene.create_root_node(None);
+            let node = scene.create_node(None, root).unwrap();
+            scene.add_animation(None, move_x(node, 2.0, 2.0));
+            let scene = std::thread::spawn(move || {
+                let mut scene = scene;
+                scene.update_animations(1.0);
+                scene
+            })
+            .join()
+            .unwrap();
+            assert_eq!(x_of(&scene, node), 1.0);
+            assert_eq!(scene.animation_count(), 1);
+        }
     }
 }

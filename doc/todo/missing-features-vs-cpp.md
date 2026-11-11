@@ -14,6 +14,9 @@ scene files, perspective/orthographic cameras, several scenes per frame).
 
 ## Animation
 
+Done (see [animation-plan.md](animation-plan.md)): `animator.rs`, `animation.rs`, `easing.rs`,
+scene animations (`Scene::add_animation`) and demo 21.
+
 1. **Animator** (`feather-Animator`): a container that owns running animations, updates them with
    the frame's time delta and drops the finished ones.
 2. **SlideAnimation** (`feather-Animation`): a time-limited animation calling a step function with

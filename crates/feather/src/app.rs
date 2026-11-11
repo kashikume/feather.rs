@@ -133,11 +133,13 @@ impl App {
         })
     }
 
-    /// Gets the scenes ready for drawing: places new meshes in mesh buffers and updates node
-    /// uniforms and transforms.
-    fn prepare_scenes(&mut self) -> Result<()> {
+    /// Gets the scenes ready for drawing: advances their animations to `time` (the time passed
+    /// to `on_update`), places new meshes in mesh buffers and updates node uniforms and
+    /// transforms.
+    fn prepare_scenes(&mut self, time: f32) -> Result<()> {
         for i in 0..self.data.app.get_num_scenes_to_render() {
             let scene = self.data.app.get_scene_to_render(i);
+            scene.advance_animations_to(time);
             scene.build_missing_mesh_buffers()?;
             scene.update_nodes();
         }
@@ -538,7 +540,7 @@ impl App {
     pub unsafe fn render(&mut self, window: &Window) -> Result<()> {
         let time = self.start.elapsed().as_secs_f32();
         self.data.app.on_update(time)?;
-        self.prepare_scenes()?;
+        self.prepare_scenes(time)?;
         self.sync_gpu_state()?;
         self.data.app.on_render()?;
         let in_flight_fence = self.data.in_flight_fences[self.frame];
