@@ -329,8 +329,13 @@ Every step ends with its part of `doc/android.md` (in brackets below), verified 
    checked on Windows with demos 14 to 19, F9 four times between demo switches, no validation
    errors, clean exit on closing the window. [Doc: the
    lifecycle diagram in *Overview*; what an app may assume across `Suspended` / `Resumed`.]
-6. **Swapchain on Android**: format, composite alpha, `IDENTITY` transform and extent,
-   `SUBOPTIMAL_KHR` ignored on Android, start-up log of the surface's capabilities. [Doc: reading
+6. **Swapchain on Android**: *Done, untested on a device until step 9.* Format, composite alpha,
+   `IDENTITY` transform and extent, each a small function with unit tests (8). `SUBOPTIMAL_KHR`
+   is ignored not by platform but when the swapchain was made with a transform other than the
+   surface's current one (`Swapchain::suboptimal_expected`), so a real change still recreates
+   it everywhere. The surface's capabilities and the choices are logged at start-up and on
+   resume, not on resizes. Windows unchanged (`B8G8R8A8_SRGB`, `MAILBOX`, `IDENTITY`,
+   `OPAQUE`). [Doc: reading
    the surface capabilities log in *Logs and debugging*.]
 7. **Touch as the mouse** in `App::run`. Tests (no window needed if the mapping is a small
    function from `(phase, id, x, y)` and the followed finger to `FeatherApp` calls): first finger

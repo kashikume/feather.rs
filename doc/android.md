@@ -265,7 +265,7 @@ Android builds go to `target\aarch64-linux-android\`, next to the Windows ones i
 
 ## Logs and debugging
 
-*Reading logs from the device: not written yet (plan steps 6, 8 and 9).*
+*Reading logs from the device: not written yet (plan steps 8 and 9).*
 
 ### Validation layers
 
@@ -287,6 +287,36 @@ Validation layer VK_LAYER_KHRONOS_validation not found; running without validati
 
 Problems in Vulkan use are therefore found on Windows: run the same demo there in a debug build
 first. (Packing the layers into debug APKs is planned: see the plan's *Later*.)
+
+### Surface and swapchain
+
+At start-up and on each resume, the engine logs what the window's surface offers and what it
+chose (`feather::swapchain`). On this Windows machine:
+
+```
+Surface: current extent 1280x960, image extent 1x1 to 16384x16384, window 1280x960, current transform IDENTITY, supported transforms IDENTITY, composite alpha OPAQUE, 2 to 8 images
+Surface formats: [(R8G8B8A8_UNORM, SRGB_NONLINEAR), (R8G8B8A8_SRGB, SRGB_NONLINEAR), (B8G8R8A8_UNORM, SRGB_NONLINEAR), (B8G8R8A8_SRGB, SRGB_NONLINEAR), (R16G16B16A16_SFLOAT, SRGB_NONLINEAR)]; present modes: [IMMEDIATE, MAILBOX, FIFO, FIFO_RELAXED]
+Swapchain: B8G8R8A8_SRGB SRGB_NONLINEAR, 1280x960, MAILBOX, transform IDENTITY, composite alpha OPAQUE
+```
+
+These are the first lines to read when the image on a device looks wrong. What the engine
+chooses, and what typically differs on Android:
+
+| Choice          | Rule                                                        | Typical on Android |
+|-----------------|-------------------------------------------------------------|--------------------|
+| Format          | `B8G8R8A8_SRGB`, else `R8G8B8A8_SRGB`, else the first one    | `R8G8B8A8_SRGB` |
+| Present mode    | `MAILBOX`, else `FIFO` (always there)                        | `FIFO` (vsync) |
+| Composite alpha | `OPAQUE`, else `INHERIT`, ...                                | often only `INHERIT` |
+| Transform       | `IDENTITY` when supported, else the surface's current one    | `IDENTITY`, with current `ROTATE_90` or `ROTATE_270` on a phone in landscape |
+| Extent          | the surface's current extent; the window's size when the display is rotated and the image isn't | the window's (landscape) size |
+
+- **Format.** If the chosen format isn't an `_SRGB` one, colors come out too dark: the shaders
+  write linear colors and expect the format to encode them.
+- **Transform.** A phone's natural orientation is portrait, and the test app is landscape, so
+  the display is rotated. The engine draws the image unrotated and lets Android's compositor
+  rotate it, which costs the compositor a little work (drawing pre-rotated is in the plan's
+  *Later*). Android then reports every present as *suboptimal*; the engine knows it chose this
+  and doesn't recreate the swapchain for it (otherwise it would, every frame).
 
 ### Device features
 

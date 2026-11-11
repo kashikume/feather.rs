@@ -105,7 +105,7 @@ impl App {
             .limits
             .min_uniform_buffer_offset_alignment;
         let device = create_logical_device(&entry, &instance, &mut data)?;
-        data.swapchain = Swapchain::create(window, &instance, &device, &data)?;
+        data.swapchain = Swapchain::create(window, &instance, &device, &data, true)?;
         data.swapchain.create_image_views(&device)?;
         create_render_pass(&instance, &device, &mut data)?;
         create_command_pool(&instance, &device, &mut data)?;
@@ -177,7 +177,7 @@ impl App {
         )? {
             bail!("the device's present queue (family {present}) can't present to the new surface");
         }
-        self.create_swapchain_objects(window)?;
+        self.create_swapchain_objects(window, true)?;
         self.suspended = false;
         self.resized = false;
         let size = window.inner_size();
@@ -669,8 +669,11 @@ impl App {
         let result = self
             .device
             .queue_present_khr(self.data.present_queue, &present_info);
-        let changed = result == Ok(vk::SuccessCode::SUBOPTIMAL_KHR)
-            || result == Err(vk::ErrorCode::OUT_OF_DATE_KHR);
+        // Suboptimal: the swapchain no longer matches the surface (e.g. a resize), unless it was
+        // made that way on purpose (`Swapchain::suboptimal_expected`: Android in landscape).
+        let suboptimal = result == Ok(vk::SuccessCode::SUBOPTIMAL_KHR)
+            && !self.data.swapchain.suboptimal_expected;
+        let changed = suboptimal || result == Err(vk::ErrorCode::OUT_OF_DATE_KHR);
         if self.resized || changed {
             self.resized = false;
             self.recreate_swapchain(window)?;
@@ -687,13 +690,14 @@ impl App {
     unsafe fn recreate_swapchain(&mut self, window: &Window) -> Result<()> {
         self.device.device_wait_idle()?;
         self.destroy_swapchain();
-        self.create_swapchain_objects(window)
+        self.create_swapchain_objects(window, false)
     }
 
     /// Creates the swapchain for the current surface and what depends on it (the parts
-    /// `destroy_swapchain` destroys).
-    unsafe fn create_swapchain_objects(&mut self, window: &Window) -> Result<()> {
-        self.data.swapchain = Swapchain::create(window, &self.instance, &self.device, &self.data)?;
+    /// `destroy_swapchain` destroys). With `log`, logs the surface's capabilities.
+    unsafe fn create_swapchain_objects(&mut self, window: &Window, log: bool) -> Result<()> {
+        self.data.swapchain =
+            Swapchain::create(window, &self.instance, &self.device, &self.data, log)?;
         self.data.swapchain.create_image_views(&self.device)?;
         create_render_pass(&self.instance, &self.device, &mut self.data)?;
         create_color_objects(&self.instance, &self.device, &mut self.data)?;
