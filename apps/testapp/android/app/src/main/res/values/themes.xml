@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- GameActivity is an AppCompatActivity: an AppCompat theme, without the action bar.
+         Black behind the first frame; drawn under the camera cut-out too. -->
+    <style name="Theme.FeatherTestApp" parent="Theme.AppCompat.NoActionBar">
+        <item name="android:windowBackground">@android:color/black</item>
+        <item name="android:windowLayoutInDisplayCutoutMode">always</item>
+    </style>
+</resources>

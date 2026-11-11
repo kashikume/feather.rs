@@ -2,9 +2,9 @@
 
 use anyhow::Result;
 use log::LevelFilter;
-use winit::event_loop::EventLoopBuilder;
+use winit::event_loop::EventLoop;
 use winit::platform::android::EventLoopBuilderExtAndroid;
-use winit::window::WindowBuilder;
+use winit::window::Window;
 
 use feather::androidassetsprovider::AndroidAssetsProvider;
 use feather::app::App;
@@ -31,15 +31,32 @@ fn android_main(app: AndroidApp) {
     }
     log::info!("The feather test app has ended.");
     // Android may call `android_main` again in this process for a new activity, and winit
-    // can't make a second event loop in a process: end the process instead.
-    std::process::exit(0);
+    // can't make a second event loop in a process: end the process instead. With `_exit`, not
+    // `std::process::exit`: the latter runs C++ static destructors, and GameActivity's
+    // (`GameTextInput`) aborts the process on a stale JNI reference. The engine and the app are
+    // already destroyed; nothing else needs to run.
+    unsafe { _exit(0) }
+}
+
+extern "C" {
+    /// bionic's `_exit`: ends the process without running `atexit` handlers or destructors.
+    fn _exit(status: i32) -> !;
 }
 
 fn run(app: AndroidApp) -> Result<()> {
-    let event_loop = EventLoopBuilder::new().with_android_app(app.clone()).build()?;
-    let window = WindowBuilder::new()
-        .with_title(demo_window_title(0))
-        .build(&event_loop)?;
+    let event_loop = EventLoop::builder().with_android_app(app.clone()).build()?;
+    let window = Window::default_attributes().with_title(demo_window_title(0));
     let assets = Box::new(AndroidAssetsProvider::new(&app));
-    App::run(window, event_loop, Box::new(TestApp::with_assets(assets, 0)?))
+    App::run(event_loop, window, Box::new(TestApp::with_assets(assets, 0)?))
+}
+
+/// `MainActivity.nativeRequestExit()`: back was pressed and the activity is finishing. Ends the
+/// event loop (winit 0.30 doesn't, on Android), so the engine and the app are destroyed and
+/// `android_main` returns.
+#[no_mangle]
+extern "system" fn Java_com_kashikume_feather_testapp_MainActivity_nativeRequestExit(
+    _env: *mut std::ffi::c_void,
+    _this: *mut std::ffi::c_void,
+) {
+    feather::app::request_exit();
 }

@@ -48,7 +48,7 @@ start ──▶ Resumed (first) ──▶ engine created: Vulkan device, surface
           Resumed ────▶ surface and swapchain made      │
                         again; app.on_resized() ────────┘
 
-window closed / activity finished ──▶ LoopExiting ──▶ engine and app destroyed
+window closed / activity finished ──▶ exiting ──▶ engine and app destroyed
 ```
 
 What an app can count on across `Suspended` / `Resumed`:
@@ -238,8 +238,58 @@ Target: SPIR-V 1.0
 
 ### The device
 
-*Not written yet (plan step 9): developer options, USB debugging, `adb devices`, checking
-Vulkan support.*
+A real phone, connected by USB. (The emulator's Vulkan support varies; it isn't used here.)
+
+Checked with: Samsung Galaxy S25 (SM-S931B), Android 17 (API 37), Snapdragon 8 Elite (SM8750)
+with an Adreno 830 GPU, Vulkan 1.3, screen 1080×2340.
+
+**Install.** On the phone, turn on USB debugging (the steps are Samsung's; other phones name
+things slightly differently):
+
+1. *Settings → About phone → Software information*: tap **Build number** seven times (and
+   confirm with the PIN). *Developer options* appear in *Settings*.
+2. *Settings → Developer options*: turn on **USB debugging**.
+3. Connect the phone (or unplug and reconnect it). The phone asks **Allow USB debugging?** with
+   the computer's key fingerprint: tick *Always allow from this computer* and tap **Allow**.
+
+**Configure.** Nothing on the computer: Windows' own driver handles `adb` for this phone.
+
+Without USB debugging, Windows sees the phone only as a media device (it shows in Explorer by its
+name) and `adb devices` lists nothing. In *Device Manager* (or `Get-PnpDevice` in PowerShell),
+the phone's USB device then has only a portable device (MTP) and a serial (modem) interface; with
+USB debugging on, it gains an ADB interface.
+
+**Check.**
+
+```powershell
+adb devices -l
+```
+
+```
+List of devices attached
+RFCY50LYQGM            device product:pa1qxeea model:SM_S931B device:pa1q transport_id:1
+```
+
+`device` in the second column means ready; `unauthorized` means the *Allow USB debugging?*
+prompt on the phone wasn't accepted yet.
+
+Then what the phone is, and that it has Vulkan:
+
+```powershell
+adb shell getprop ro.build.version.sdk       # API level: 37 (Android 17); the app needs 30 or more
+adb shell getprop ro.product.cpu.abilist     # arm64-v8a: what the app is built for
+adb shell pm list features | Select-String vulkan
+```
+
+```
+feature:android.hardware.vulkan.compute
+feature:android.hardware.vulkan.level=1
+feature:android.hardware.vulkan.version=4206592
+feature:android.software.vulkan.deqp.level=132645633
+```
+
+`vulkan.version` is the Vulkan version packed as a number: `4206592` is `0x403000`, Vulkan 1.3.
+The engine needs 1.0 (`4194304`, `0x400000`) or more.
 
 ## Building and running
 
@@ -393,8 +443,17 @@ every platform. On Android, winit runs on top of the
 `android-game-activity` feature. The feature only matters when building for Android; Windows
 builds are unchanged.
 
-`android-activity` contains GameActivity's native code (version 2.0.2), so the app's Java side
-has to use the same version, `androidx.games:games-activity:2.0.2`.
+`android-activity` contains GameActivity's native code, so the app's Java side has to use the
+same GameActivity version. The versions go together:
+
+| winit  | `android-activity` | GameActivity (native, bundled) | Java side                               |
+|--------|--------------------|--------------------------------|-----------------------------------------|
+| 0.30   | 0.6.1              | 4.4.0                          | `androidx.games:games-activity:4.4.0`   |
+| 0.29   | 0.5.2              | 2.0.2                          | `androidx.games:games-activity:2.0.2`   |
+
+The engine uses winit 0.30. When upgrading winit (or `android-activity`), check which
+GameActivity the new `android-activity` bundles (`#define GAMEACTIVITY_*_VERSION` in its
+`GameActivity.h`, or its changelog) and change the Java side to match.
 
 `feather` re-exports `android-activity`'s `AndroidApp` as `feather::AndroidApp` (Android only):
 the handle to the running activity that `android_main` receives. Apps use it from there and don't
@@ -451,18 +510,19 @@ fn android_main(app: AndroidApp) {
 }
 
 fn run(app: AndroidApp) -> Result<()> {
-    let event_loop = EventLoopBuilder::new().with_android_app(app.clone()).build()?;
-    let window = WindowBuilder::new().build(&event_loop)?;
+    let event_loop = EventLoop::builder().with_android_app(app.clone()).build()?;
+    let window = Window::default_attributes().with_title(demo_window_title(0));
     let assets = Box::new(AndroidAssetsProvider::new(&app));
-    App::run(window, event_loop, Box::new(TestApp::with_assets(assets, 0)?))
+    App::run(event_loop, window, Box::new(TestApp::with_assets(assets, 0)?))
 }
 ```
 
 - `#[no_mangle]`: `android-activity` calls the function by its plain name.
 - The event loop is built **with the `AndroidApp`** (`EventLoopBuilderExtAndroid`), so winit
   gets the activity's events.
-- The window is built at once: on Android it stands for the activity's window, whose native
-  window (and so the Vulkan surface) arrives later, with `Resumed` (see *Lifecycle*).
+- The app passes only the window's attributes: the engine makes the window on the first
+  `resumed`, as winit 0.30 requires; on Android the native window (and so the Vulkan surface)
+  exists only from then on (see *Lifecycle*).
 - Assets come from the APK (`AndroidAssetsProvider`); `TestApp::new`, which reads them from
   next to the executable, exists on Windows only.
 - The app starts with demo 0: there is no command line on Android.
@@ -524,7 +584,7 @@ screen.)
 ### `cargo check --target aarch64-linux-android` fails in `android-activity`'s build script
 
 ```
-error: failed to run custom build command for `android-activity v0.5.2`
+error: failed to run custom build command for `android-activity v0.6.1`
 ...
   cargo:rerun-if-changed=game-activity-csrc/game-activity/GameActivity.h
   cargo:rerun-if-changed=game-activity-csrc/game-activity/GameActivity.cpp
@@ -537,9 +597,9 @@ The build script compiles GameActivity's C++ code and finds no compiler for Andr
 
 ```
 error: Either "game-activity" or "native-activity" must be enabled as features
-   --> ...\android-activity-0.5.2\src\lib.rs:140:1
+   --> ...\android-activity-<version>\src\lib.rs
 error[E0583]: file not found for module `activity_impl`
 ```
 
 winit is used without an Android backend. The workspace's `Cargo.toml` must have
-`winit = { version = "0.29", features = ["android-game-activity"] }`.
+`winit = { version = "0.30", features = ["android-game-activity"] }`.

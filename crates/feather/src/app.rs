@@ -1,17 +1,32 @@
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 use anyhow::{anyhow, bail, Result};
 use vulkanalia::loader::{LibloadingLoader, LIBRARY};
 use vulkanalia::prelude::v1_0::*;
-use winit::event::{ElementState, Event, KeyEvent, MouseButton, MouseScrollDelta, Touch, WindowEvent};
+use winit::application::ApplicationHandler;
+use winit::event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, Touch, WindowEvent};
 use winit::keyboard::{KeyCode, PhysicalKey};
-use winit::event_loop::{EventLoop, EventLoopWindowTarget};
-use winit::window::Window;
+use winit::event_loop::{ActiveEventLoop, EventLoop};
+use winit::window::{Window, WindowAttributes, WindowId};
 
 use vulkanalia::vk::ExtDebugUtilsExtension;
 use vulkanalia::vk::KhrSurfaceExtension;
 use vulkanalia::vk::KhrSwapchainExtension;
+
+/// Set by `request_exit`, checked by `App::run`'s loop.
+static EXIT_REQUESTED: AtomicBool = AtomicBool::new(false);
+
+/// Asks `App::run` to end its loop, destroying the engine and the app, as closing the window
+/// does. Can be called from any thread.
+///
+/// For Android, where nothing closes the window: when the activity is finished (back), winit
+/// 0.30 doesn't end its loop, so the activity asks for it through this (a JNI call from its
+/// back handler; see the test app's `android.rs`).
+pub fn request_exit() {
+    EXIT_REQUESTED.store(true, Ordering::SeqCst);
+}
 
 /// The maximum number of frames that can be processed concurrently.
 const MAX_FRAMES_IN_FLIGHT: usize = 2;
@@ -776,24 +791,30 @@ impl App {
         }
     }
 
-    /// Runs `app` in `window` until the window is closed (on Android: the activity is finished).
+    /// Runs `app` in a window made with `attributes`, until the window is closed (on Android:
+    /// the activity is finished).
     ///
-    /// The engine follows winit's lifecycle events, which every platform sends:
+    /// The engine follows winit's lifecycle, which every platform goes through:
     ///
-    /// - the first `Resumed` creates the engine (`App::create`) and calls the app's
-    ///   `on_create`; on Android the window has no surface before it;
-    /// - `Suspended` drops the surface and the swapchain (`suspend`); a later `Resumed` makes
+    /// - the first `resumed` makes the window, creates the engine (`App::create`) and calls the
+    ///   app's `on_create`; on Android the window has no surface before it;
+    /// - `suspended` drops the surface and the swapchain (`suspend`); a later `resumed` makes
     ///   them again (`resume`);
-    /// - `LoopExiting` destroys the engine and the app (`destroy`).
+    /// - `exiting` destroys the engine and the app (`destroy`).
     ///
     /// In debug builds, F9 suspends and resumes at once, to exercise on Windows what Android
     /// does when the app goes to the background and back.
     ///
     /// An error creating, resuming or drawing ends the loop and is returned. Errors from the
     /// app's input and resize handlers are logged.
-    pub fn run(window: Window, event_loop: EventLoop<()>, app: Box<dyn FeatherApp>) -> Result<()> {
+    pub fn run(
+        event_loop: EventLoop<()>,
+        attributes: WindowAttributes,
+        app: Box<dyn FeatherApp>,
+    ) -> Result<()> {
         let mut runner = Runner {
-            window,
+            attributes,
+            window: None,
             pending: Some(app),
             engine: None,
             minimized: false,
@@ -801,13 +822,7 @@ impl App {
             touch: TouchAsMouse::default(),
             error: None,
         };
-        event_loop.run(|event, elwt| {
-            if let Err(e) = runner.handle(event, elwt) {
-                log::error!("{e:#}");
-                runner.error.get_or_insert(e);
-                elwt.exit();
-            }
-        })?;
+        event_loop.run_app(&mut runner)?;
         match runner.error {
             Some(e) => Err(e),
             None => Ok(()),
@@ -817,8 +832,10 @@ impl App {
 
 /// The state of `App::run`'s event loop.
 struct Runner {
-    window: Window,
-    /// The app, until the engine is created on the first `Resumed`.
+    /// What the window is made with, on the first `resumed`.
+    attributes: WindowAttributes,
+    window: Option<Window>,
+    /// The app, until the engine is created on the first `resumed`.
     pending: Option<Box<dyn FeatherApp>>,
     engine: Option<App>,
     minimized: bool,
@@ -830,54 +847,82 @@ struct Runner {
     error: Option<anyhow::Error>,
 }
 
-impl Runner {
-    fn handle(&mut self, event: Event<()>, elwt: &EventLoopWindowTarget<()>) -> Result<()> {
-        match event {
-            Event::Resumed => self.resumed()?,
-            Event::Suspended => {
-                if let Some(engine) = &mut self.engine {
-                    unsafe { engine.suspend()? };
-                }
-            }
-            Event::LoopExiting => {
-                if let Some(mut engine) = self.engine.take() {
-                    unsafe { engine.destroy() };
-                }
-            }
-            // Request a redraw when all events were processed.
-            Event::AboutToWait => self.window.request_redraw(),
-            Event::WindowEvent { event, .. } => self.window_event(event, elwt)?,
-            _ => {}
-        }
-        Ok(())
+impl ApplicationHandler for Runner {
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        let result = self.on_resumed(event_loop);
+        self.check(result, event_loop);
     }
 
-    /// The first `Resumed` creates the engine; later ones (after `Suspended`) bring back the
-    /// surface.
-    fn resumed(&mut self) -> Result<()> {
+    fn suspended(&mut self, event_loop: &ActiveEventLoop) {
+        if let Some(engine) = &mut self.engine {
+            let result = unsafe { engine.suspend() };
+            self.check(result, event_loop);
+        }
+    }
+
+    fn window_event(&mut self, event_loop: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
+        let result = self.on_window_event(event, event_loop);
+        self.check(result, event_loop);
+    }
+
+    // Request a redraw when all events were processed.
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        if EXIT_REQUESTED.swap(false, Ordering::SeqCst) {
+            log::info!("Exit requested.");
+            event_loop.exit();
+            return;
+        }
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+    }
+
+    fn exiting(&mut self, _: &ActiveEventLoop) {
+        if let Some(mut engine) = self.engine.take() {
+            unsafe { engine.destroy() };
+        }
+    }
+}
+
+impl Runner {
+    /// Ends the loop on the first error, keeping it for `App::run` to return.
+    fn check(&mut self, result: Result<()>, event_loop: &ActiveEventLoop) {
+        if let Err(e) = result {
+            log::error!("{e:#}");
+            self.error.get_or_insert(e);
+            event_loop.exit();
+        }
+    }
+
+    /// The first `resumed` makes the window and creates the engine; later ones (after
+    /// `suspended`) bring back the surface.
+    fn on_resumed(&mut self, event_loop: &ActiveEventLoop) -> Result<()> {
+        if self.window.is_none() {
+            self.window = Some(event_loop.create_window(self.attributes.clone())?);
+        }
+        let window = self.window.as_ref().unwrap();
         if let Some(app) = self.pending.take() {
-            let mut engine = unsafe { App::create(&self.window, app)? };
-            engine.apply_window_title(&self.window);
-            let size = self.window.inner_size();
+            let mut engine = unsafe { App::create(window, app)? };
+            engine.apply_window_title(window);
+            let size = window.inner_size();
             if size.width > 0 && size.height > 0 {
                 engine.data.app.on_resized(size.width, size.height)?;
             }
             self.engine = Some(engine);
         } else if let Some(engine) = &mut self.engine {
-            unsafe { engine.resume(&self.window)? };
+            unsafe { engine.resume(window)? };
         }
         Ok(())
     }
 
-    fn window_event(&mut self, event: WindowEvent, elwt: &EventLoopWindowTarget<()>) -> Result<()> {
-        let Some(engine) = &mut self.engine else {
+    fn on_window_event(&mut self, event: WindowEvent, event_loop: &ActiveEventLoop) -> Result<()> {
+        let (Some(engine), Some(window)) = (&mut self.engine, &self.window) else {
             return Ok(());
         };
-        let window = &self.window;
         match event {
             // Render a frame if the engine is not being destroyed and has a surface.
             WindowEvent::RedrawRequested
-                if !elwt.exiting() && !self.minimized && !engine.is_suspended() =>
+                if !event_loop.exiting() && !self.minimized && !engine.is_suspended() =>
             {
                 unsafe { engine.render(window)? };
             }
@@ -979,8 +1024,8 @@ impl Runner {
                 }
                 engine.apply_window_title(window);
             }
-            // Leave the loop; the engine is destroyed on `LoopExiting`.
-            WindowEvent::CloseRequested => elwt.exit(),
+            // Leave the loop; the engine is destroyed in `exiting`.
+            WindowEvent::CloseRequested => event_loop.exit(),
             _ => {}
         }
         Ok(())

@@ -1,0 +1,18 @@
+# Every version the Android project uses. See doc/android.md for why these.
+
+[versions]
+# Android Gradle plugin; needs Gradle 9.6.0 or newer (the wrapper's is 9.9.1).
+agp = "9.5.1"
+# Must be the GameActivity version compiled into the Rust side: android-activity 0.6.1
+# (from winit 0.30) bundles GameActivity 4.4.0.
+gamesActivity = "4.4.0"
+appcompat = "1.8.0"
+core = "1.19.1"
+
+[libraries]
+games-activity = { module = "androidx.games:games-activity", version.ref = "gamesActivity" }
+appcompat = { module = "androidx.appcompat:appcompat", version.ref = "appcompat" }
+core-ktx = { module = "androidx.core:core-ktx", version.ref = "core" }
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }

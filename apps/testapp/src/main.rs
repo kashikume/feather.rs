@@ -1,7 +1,7 @@
 use anyhow::{bail, Result};
 use winit::dpi::LogicalSize;
 use winit::event_loop::EventLoop;
-use winit::window::WindowBuilder;
+use winit::window::Window;
 
 use feather::app::App;
 
@@ -16,12 +16,11 @@ fn main() -> Result<()> {
     let demo = demo_from_args(std::env::args().skip(1))?;
 
     let event_loop = EventLoop::new()?;
-    let window = WindowBuilder::new()
+    let window = Window::default_attributes()
         .with_title(demo_window_title(demo))
-        .with_inner_size(LogicalSize::new(1024, 768))
-        .build(&event_loop)?;
+        .with_inner_size(LogicalSize::new(1024, 768));
 
-    App::run(window, event_loop, Box::new(TestApp::new(demo)?))
+    App::run(event_loop, window, Box::new(TestApp::new(demo)?))
 }
 
 /// The demo number from the command line arguments (without the program name).

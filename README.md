@@ -371,11 +371,11 @@ file and create a material and a node for every texture of the atlas in code.
 `main.rs` passes the app to the engine, which runs it until the window is closed:
 
 ```rust
-App::run(window, event_loop, Box::new(TestApp::new(demo)?))?;
+App::run(event_loop, window, Box::new(TestApp::new(demo)?))?;
 ```
 
 The engine itself (the Vulkan device, the window's surface) is created on winit's first
-`Resumed` event, which then calls the app's `on_create`. On Android the window's surface also
+`resumed` (winit's `ApplicationHandler`), which then calls the app's `on_create`. On Android the window's surface also
 goes away when the app is in the background (`Suspended`) and comes back on `Resumed`; the
 engine handles that, and the app keeps its scenes. In debug builds, F9 suspends and resumes at
 once, to try this on Windows.

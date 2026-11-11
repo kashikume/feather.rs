@@ -49,8 +49,9 @@ of item 16 that Vulkan needs (losing the window's surface).
   `Cache::onSurfaceCreated` rebuilding everything: only the swapchain and what hangs off it
   (render pass, framebuffers, color and depth images, pipelines) is rebuilt, which
   `recreate_swapchain` already does.
-- **winit and `android-activity` replace `native_app_glue`.** winit 0.29 runs on Android through
-  `android-activity` 0.5.2 (already in `Cargo.lock`), with the `android-game-activity` feature:
+- **winit and `android-activity` replace `native_app_glue`.** winit 0.30 runs on Android through
+  `android-activity` 0.6.1, with the `android-game-activity` feature (the engine started on winit
+  0.29 / `android-activity` 0.5.2 and was moved to 0.30 for a current GameActivity, below):
   it brings its own copy of the GameActivity C sources and `native_app_glue`, and turns
   `APP_CMD_*` and input into winit events. The app's entry point is
   `#[no_mangle] fn android_main(app: AndroidApp)`, and the event loop is built with
@@ -58,15 +59,16 @@ of item 16 that Vulkan needs (losing the window's surface).
 
   | GuitarPrompter                    | winit                                          |
   |-----------------------------------|------------------------------------------------|
-  | `APP_CMD_INIT_WINDOW`             | `Event::Resumed`                               |
-  | `APP_CMD_TERM_WINDOW`             | `Event::Suspended`                             |
+  | `APP_CMD_INIT_WINDOW`             | `ApplicationHandler::resumed`                  |
+  | `APP_CMD_TERM_WINDOW`             | `ApplicationHandler::suspended`                |
   | `updateLayout()` size check       | `WindowEvent::Resized`                         |
   | motion events                     | `WindowEvent::Touch { phase, location, id }`   |
-  | `destroyRequested`                | `Event::LoopExiting`                           |
+  | `destroyRequested`                | `ApplicationHandler::exiting`                  |
 
-- **GameActivity 2.0.2, not 1.2.2.** `android-activity` 0.5.2 compiles GameActivity 2.0.2's
-  C sources, and the Java side must match: the app depends on
-  `androidx.games:games-activity:2.0.2`.
+- **GameActivity 4.4.0, not 1.2.2.** `android-activity` compiles GameActivity's C sources,
+  and the Java side must match exactly. With winit 0.29 (`android-activity` 0.5.2) that was
+  2.0.2, from 2023; winit 0.30 (`android-activity` 0.6.1) bundles 4.4.0, so the engine moved to
+  winit 0.30 and the app depends on `androidx.games:games-activity:4.4.0`.
 - **Gradle builds the Rust library with `cargo ndk`**, not `externalNativeBuild { cmake }`: an
   `Exec` task runs `cargo ndk -t arm64-v8a -o app/src/main/jniLibs build -p testapp --lib`
   before the APK is packed.
@@ -183,7 +185,7 @@ differs from the binary's (`testapp`) so that Windows doesn't build a `testapp.d
 `testapp.exe` with clashing `.pdb` files.
 
 `std::process::exit(0)` after the loop: Android may start `android_main` again in the same
-process, and winit 0.29 refuses to create a second event loop. The manifest's `configChanges`
+process, and winit refuses to create a second event loop. The manifest's `configChanges`
 also keeps the activity from being recreated on rotation and keyboard changes.
 
 The HUD needs nothing new: its buttons switch demos with the finger, and `set_scale(height /
@@ -194,53 +196,65 @@ The HUD needs nothing new: its buttons switch demos with the finger, and `set_sc
 Mirrors `guitarprompter/platform/android`, without what only GuitarPrompter needs (oboe,
 material, file import):
 
+Not GuitarPrompter's setup, which is outdated (AGP 8.8, Gradle 8.10, Kotlin plugin 1.9, SDK 33,
+GameActivity 1.2.2, `systemUiVisibility` flags, `onKeyDown` for back): current versions and
+APIs throughout, checked in November 2026.
+
 ```
 apps/testapp/android/
-  settings.gradle.kts           rootProject "FeatherTestApp", include(":app")
-  build.gradle.kts              AGP 9.5.1 (see below)
-  gradle.properties             as GuitarPrompter's
-  gradlew, gradlew.bat, gradle/wrapper/   Gradle 9.6.0
+  settings.gradle.kts           plugin and dependency repositories, rootProject, include(":app")
+  build.gradle.kts              plugins declared, not applied
+  gradle.properties             JVM memory for the Gradle daemon
+  gradle/libs.versions.toml     version catalog: every version in one place
+  gradlew, gradlew.bat, gradle/wrapper/   Gradle 9.9.1
   local.properties              sdk.dir (not committed)
   app/
-    build.gradle.kts
+    build.gradle.kts            the app, and the cargo task
     src/main/AndroidManifest.xml
-    src/main/java/com/kashikume/feather/testapp/MainActivity.kt
+    src/main/kotlin/com/kashikume/feather/testapp/MainActivity.kt
     src/main/res/values/{strings,themes}.xml
 ```
 
-- **Gradle 9.6.0 and AGP 9.5.1, not GuitarPrompter's 8.10.2 and 8.8.0.** The only JDK here is
-  Android Studio's bundled JDK 25, and Gradle runs on JDK 25 from 9.1 only; AGP 9.5 needs
-  Gradle 9.6.0 and Build-Tools 36.0.0 (installed). AGP 9 has Kotlin built in, so the
-  `org.jetbrains.kotlin.android` plugin GuitarPrompter applies is probably not needed (and may
-  be refused): check when writing the build files.
-- **`app/build.gradle.kts`**: namespace and application id `com.kashikume.feather.testapp`,
-  `minSdk` 30, `compileSdk` / `targetSdk` 33 (as GuitarPrompter); `abiFilters("arm64-v8a")`;
-  dependencies `androidx.games:games-activity:2.0.2`, `androidx.appcompat:appcompat:1.6.1`,
-  `androidx.core:core-ktx:1.9.0`.
-- **Cargo tasks**: `cargoBuildDebug` / `cargoBuildRelease` (`Exec`) run `cargo ndk` from the
-  workspace root (`--release` for the release variant) into `app/src/main/jniLibs`
-  (git-ignored), and `preBuild` depends on them. The debug variant also builds Rust in release by
-  default: unoptimized Rust is too slow for most demos on a phone. A Gradle property
-  (`-PrustProfile=debug`) switches it.
-- **Assets**: `sourceSets["main"].assets.srcDir("<workspace>/target/aarch64-linux-android/<profile>/assets")`.
-- **`AndroidManifest.xml`**: one activity, `.MainActivity`, `exported`, `screenOrientation=
-  "landscape"`, `configChanges="orientation|screenSize|screenLayout|keyboardHidden|keyboard"`,
-  `android.app.lib_name` = `feather_testapp`, and
+| What                    | Version          | Why                                                          |
+|-------------------------|------------------|--------------------------------------------------------------|
+| Gradle                  | 9.9.1 (latest)   | runs on Android Studio's JDK 25 (from 9.1); AGP 9.5 needs ≥ 9.6.0 |
+| Android Gradle plugin   | 9.5.1 (latest)   | Kotlin built in (no `org.jetbrains.kotlin.android` plugin)   |
+| `compileSdk` / `targetSdk` | 37 (latest, installed as `android-37.2`) | AGP 9.5 supports up to 37 |
+| `minSdk`                | 30 (Android 11)  | a recent floor (the engine needs only Vulkan 1.0); also `cargo ndk -P 30` |
+| GameActivity            | 4.4.0            | must match `android-activity` 0.6.1's bundled native code (latest is 4.4.2, but not what the native side was built from) |
+| AppCompat               | 1.8.0 (latest)   | GameActivity is an `AppCompatActivity`; the theme           |
+| AndroidX Core           | 1.19.1 (latest)  | `WindowCompat` / `WindowInsetsControllerCompat` for full screen |
+
+- **`app/build.gradle.kts`**: namespace and application id `com.kashikume.feather.testapp`;
+  `ndk { abiFilters += "arm64-v8a" }`; no `externalNativeBuild`.
+- **The cargo task** (`CargoNdkTask`, in `app/build.gradle.kts`): runs
+  `cargo ndk -t arm64-v8a -P 30 -o <out>/jniLibs build -p testapp --lib [--release]` from the
+  workspace root, then copies `target/aarch64-linux-android/<profile>/assets` into
+  `<out>/assets` (a fresh copy: no stale assets in the APK). Wired with the **Variant API**
+  (`androidComponents.onVariants`: `sources.jniLibs` and `sources.assets`
+  `.addGeneratedSourceDirectory(task, ...)`), so Gradle knows the task produces the APK's
+  libraries and assets, runs it before packing, and nothing is written into `src/`. Both
+  variants build Rust with `--release` by default (unoptimized Rust is too slow for most demos
+  on a phone); `-Pfeather.rustProfile=debug` switches to a Rust debug build.
+- **`AndroidManifest.xml`**: one activity, `.MainActivity`, `exported`,
+  `screenOrientation="sensorLandscape"` (either landscape side), `configChanges` covering
+  orientation, size, layout, keyboard, density and UI mode (the activity is never recreated: see
+  `android_main`'s `process::exit`), `android.app.lib_name` = `feather_testapp`, and
   `<uses-feature android:name="android.hardware.vulkan.version" android:version="0x400000"
-  android:required="true"/>` (Vulkan 1.0).
-- **`MainActivity.kt`**: `class MainActivity : GameActivity()` with GuitarPrompter's
-  `companion object { init { System.loadLibrary("feather_testapp") } }`, `onWindowFocusChanged`
-  with `hideSystemUi()` and `FLAG_KEEP_SCREEN_ON`, and the back button (below). Nothing else.
-- **Back leaves the app.** GameActivity passes key events to native code and reports them
-  handled, so Android's default (finishing the activity) never runs, and the Rust side has no
-  `finish()` without JNI. `MainActivity` overrides `onKeyDown`: `KEYCODE_BACK` calls `finish()`
-  and returns `true`; other keys go to `super`. (If GameActivity 2.0.2 takes keys in
-  `dispatchKeyEvent` rather than `onKeyDown`, override that instead, checking `ACTION_DOWN`.)
-  With `targetSdk` 33 the back gesture arrives as the same key. Finishing the activity destroys
-  it: winit ends the event loop, the engine is destroyed on `LoopExiting`, and `android_main`
-  exits the process. Exiting the process from Rust on the key instead would skip the activity's
-  own teardown.
-- **Theme**: `Theme.AppCompat.NoActionBar` based (GameActivity is an `AppCompatActivity`).
+  android:required="true"/>` (Vulkan 1.0, what the engine asks for). (On large screens, Android 16+ ignores orientation
+  locks for apps targeting 36+; on a phone it holds.)
+- **`MainActivity.kt`**: `class MainActivity : GameActivity()`; loads `feather_testapp` in a
+  `companion object`; in `onCreate`, `FLAG_KEEP_SCREEN_ON`, edge to edge and the system bars
+  hidden with `WindowInsetsControllerCompat` (`BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE`), again in
+  `onWindowFocusChanged` (they come back after dialogs); the back callback (below).
+- **Back leaves the app**, through `OnBackPressedDispatcher`: since targeting Android 16 (API
+  36), back (button or gesture) no longer arrives as `KEYCODE_BACK` or `onBackPressed()`, only
+  through the dispatcher's callbacks (predictive back). The callback calls `finish()`: the
+  activity is destroyed, winit's loop ends, the engine is destroyed in `exiting`, and
+  `android_main` ends the process. (Android's default for a root activity is now to move the
+  task to the background instead of finishing it; the plan wants back to leave.)
+- **Theme**: `Theme.AppCompat.NoActionBar` with a black window background and
+  `windowLayoutInDisplayCutoutMode` `always`, so the image covers the camera cut-out area too.
 - No launcher icon at first (Android's default).
 
 Building and running:
@@ -349,6 +363,11 @@ Every step ends with its part of `doc/android.md` (in brackets below), verified 
    libraries (no `libc++_shared.so`) and exports `android_main`. `cargo run` and `cargo test --workspace` unchanged;
    `cargo ndk -t arm64-v8a build -p testapp --lib` produces `libfeather_testapp.so`. [Doc: the
    library target and `android_main`; building the Rust library alone; the panic hook.]
+8b. **winit 0.30.** *Done.* For a current GameActivity (4.4.0 instead of 2.0.2): winit 0.30.13,
+   `android-activity` 0.6.1. `App::run(event_loop, window_attributes, app)`: `Runner` is an
+   `ApplicationHandler`, and the window is made on the first `resumed` (winit 0.30 makes windows
+   only from a running loop). Windows checked as in step 5 (demos 20 to 22, F9 twice, clean
+   exit).
 9. **Gradle project** in `apps/testapp/android`, as above, with a `.gitignore` for `build/`,
    `.gradle/`, `local.properties` and `app/src/main/jniLibs/`. First milestone: the APK installs,
    starts, logs to logcat and shows demo 0; back (button and gesture) returns to the launcher,
