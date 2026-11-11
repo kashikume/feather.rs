@@ -474,15 +474,24 @@ impl App {
         let needed = arena.bytes().len() as u64;
         let slot = &mut self.data.frame_uniforms[image_index];
         if slot.as_ref().map_or(true, |b| b.size < needed) {
+            let old_handle = slot.as_ref().map(|b| b.buffer);
             if let Some(old) = slot.take() {
                 old.destroy(&self.device);
             }
-            *slot = Some(FrameUniformBuffer::create(
+            let new = FrameUniformBuffer::create(
                 &self.instance,
                 &self.device,
                 &self.data.physical_device,
                 needed,
-            )?);
+            )?;
+            if let Some(old_handle) = old_handle {
+                log::info!(
+                    "Uniform buffer of swapchain image {image_index} grown to {} KB (handle {old_handle:?} -> {:?}).",
+                    new.size / 1024,
+                    new.buffer,
+                );
+            }
+            *slot = Some(new);
         }
         let buffer = slot.as_ref().unwrap();
         buffer.write(arena.bytes());
@@ -499,6 +508,7 @@ impl App {
                 image_index,
                 &draw.textures,
                 buffer.buffer,
+                buffer.id,
             )?;
         }
         Ok(())

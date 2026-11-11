@@ -133,8 +133,9 @@ pub struct PipelineKey {
 /// Descriptor sets for one swapchain image and one combination of textures.
 struct CachedSets {
     sets: Vec<vk::DescriptorSet>,
-    /// The uniform buffer the sets' uniform blocks point at.
-    uniform_buffer: vk::Buffer,
+    /// The uniform buffer the sets' uniform blocks point at (`FrameUniformBuffer::id`: handles
+    /// may be reused for a new buffer).
+    uniform_buffer_id: u64,
 }
 
 /// Number of descriptor set groups (all sets of the shader) each descriptor pool holds.
@@ -268,16 +269,17 @@ impl ShaderPipeline {
         image: usize,
         textures: &[(vk::ImageView, vk::Sampler)],
         uniform_buffer: vk::Buffer,
+        uniform_buffer_id: u64,
     ) -> Result<Vec<vk::DescriptorSet>> {
         if self.set_layouts.is_empty() {
             return Ok(Vec::new());
         }
         let key = (image, textures.to_vec());
         if let Some(cached) = self.descriptor_sets.get_mut(&key) {
-            if cached.uniform_buffer != uniform_buffer {
+            if cached.uniform_buffer_id != uniform_buffer_id {
                 // The frame's uniform buffer was replaced (it grew).
                 write_descriptor_sets(device, &self.layout_info, &cached.sets, uniform_buffer, None);
-                cached.uniform_buffer = uniform_buffer;
+                cached.uniform_buffer_id = uniform_buffer_id;
             }
             return Ok(cached.sets.clone());
         }
@@ -294,7 +296,7 @@ impl ShaderPipeline {
             key,
             CachedSets {
                 sets: sets.clone(),
-                uniform_buffer,
+                uniform_buffer_id,
             },
         );
         Ok(sets)

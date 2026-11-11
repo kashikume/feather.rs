@@ -1,4 +1,5 @@
 use std::ptr::copy_nonoverlapping as memcpy;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use anyhow::Result;
 use vulkanalia::prelude::v1_0::*;
@@ -14,6 +15,10 @@ use super::other::{begin_single_time_commands, end_single_time_commands, get_mem
 /// holding the uniform blocks of every draw of its frame.
 pub struct FrameUniformBuffer {
     pub buffer: vk::Buffer,
+    /// Tells this buffer apart from every other one, for the lifetime of the process. The
+    /// `buffer` handle can't: a driver may give a new buffer the handle of one just destroyed
+    /// (Android drivers do), and descriptor sets written for the old one must be rewritten.
+    pub id: u64,
     memory: vk::DeviceMemory,
     pub size: u64,
     mapped: *mut u8,
@@ -46,8 +51,10 @@ impl FrameUniformBuffer {
                 return Err(e.into());
             }
         };
+        static NEXT_ID: AtomicU64 = AtomicU64::new(1);
         Ok(Self {
             buffer,
+            id: NEXT_ID.fetch_add(1, Ordering::Relaxed),
             memory,
             size,
             mapped,

@@ -380,7 +380,17 @@ Every step ends with its part of `doc/android.md` (in brackets below), verified 
    logcat shows the engine destroyed, and launching again starts cleanly. [Doc: *Setup*'s
    device subsection; *Building and running* complete; the Gradle project, manifest and
    `MainActivity` in *Making an app run on Android*; `adb logcat` filters.]
-10. **Every demo on the device.** Go through demos 0–22 with the HUD buttons, then put the app in
+10. **Every demo on the device.** Found so far: the HUD disappears from the City demos on and
+    stays away until the app is suspended and resumed. Cause:
+    the frame's uniform buffer grows (to 512 KB entering demo 15 on the phone, 1 MB on 16), and the pipelines' cached
+    descriptor sets were rewritten only when the buffer's *handle* changed; Android drivers can
+    give the new buffer the old one's handle, so the HUD's sets (its pipelines outlive demo
+    switches) kept pointing at the freed buffer. Fixed by comparing `FrameUniformBuffer::id`, a
+    number never reused; growth is logged with both handles. (Windows gives new handles, so it
+    never showed there.) Confirmed on the S25: every grown buffer got its predecessor's
+    handle (`0xb40000770f24b7b0 -> 0xb40000770f24b7b0`); with the fix the HUD stays on demos
+    15, 16 and after them.
+    Then: Go through demos 0–22 with the HUD buttons, then put the app in
     the background and back, and lock and unlock the screen, on each of a few demos. What
     breaks is fixed or written down in this plan's *Device notes* (to add): likely candidates are
     shader features a mobile GPU lacks, the size of the shadow maps and atlases, MSAA sample
@@ -413,6 +423,11 @@ Every step ends with its part of `doc/android.md` (in brackets below), verified 
 - **Density-aware HUD scale**: size the HUD from the screen's DPI (`AConfiguration_getDensity`)
   instead of its height, so buttons are finger-sized on small screens.
 - **Release signing**, launcher icon, app name per demo.
+- **Texture handles in the descriptor set cache**: `ShaderPipeline::descriptor_sets` is keyed
+  by `(image view, sampler)` handles. A driver may reuse a destroyed image view's handle for a
+  new one (as happened with buffers, step 10), so a scene that removes an atlas and uploads
+  another could draw with sets pointing at the freed view. Key by atlas ids instead, or drop a
+  pipeline's cached sets when an atlas it used is released.
 - **Stale assets**: `build.rs` copies into `assets/` but never removes, so assets deleted or
   renamed in the sources stay there (19 such files in `target/debug/assets` today) and would
   be packed into the APK. Clear the directory first, or copy to a fresh one.

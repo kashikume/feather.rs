@@ -837,3 +837,26 @@ The process was ended with `std::process::exit`, which runs C++ static destructo
 GameActivity's `GameTextInput` destructor then uses a JNI reference that is no longer valid, and
 Android aborts. End the process with `_exit` instead (as `android.rs` does): everything that
 matters was destroyed already.
+
+### The HUD (or another long-lived scene) disappears after switching to a big scene
+
+Seen on the Galaxy S25 with the test app's HUD after switching to the City demos: the HUD was
+gone and came back only after the app went to the background and back.
+
+Each frame's uniform data lives in a buffer that grows when a frame needs more (the log says
+`Uniform buffer of swapchain image 0 grown to 256 KB (handle ... -> ...)`). Pipelines cache
+their descriptor sets, which point at that buffer, and rewrite them when the buffer is
+replaced. The engine used to notice the replacement by the buffer's Vulkan handle, but Android's
+driver can give the new buffer the handle of the one just destroyed, and on the S25 it always
+did:
+
+```
+I feather : feather::app: Uniform buffer of swapchain image 0 grown to 512 KB (handle Buffer(0xb40000770f24b7b0) -> Buffer(0xb40000770f24b7b0)).
+```
+
+so the sets kept pointing at freed memory. Scenes that are replaced (the demos) got new pipelines and were fine; the HUD,
+drawn throughout, wasn't. The engine now tells buffers apart by an id of its own
+(`FrameUniformBuffer::id`). Windows' driver gives new handles, so it never showed there.
+
+In general: don't assume a Vulkan handle identifies an object after it is destroyed; on Android
+handles are often addresses, and addresses get reused.
