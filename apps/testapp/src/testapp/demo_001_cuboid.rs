@@ -2,9 +2,7 @@ use anyhow::{anyhow, Result};
 use cgmath::Deg;
 
 use feather::assetsprovider::AssetsProvider;
-use feather::camera::Camera;
-use feather::math::{Mat4, Point3, Vec3};
-use feather::perspectivecamera::PerspectiveCamera;
+use feather::math::Mat4;
 use feather::scene::Scene;
 
 use super::testapp::Demo;
@@ -15,7 +13,6 @@ use super::testapp::Demo;
 /// and the scale (set in the scene file).
 pub struct CuboidDemo {
     scene: Scene,
-    camera: PerspectiveCamera,
     rotation_node: usize,
 }
 
@@ -26,16 +23,8 @@ impl CuboidDemo {
             .find_node("Rotation")
             .ok_or_else(|| anyhow!("the scene has no node `Rotation`"))?;
 
-        let mut camera = PerspectiveCamera::new();
-        camera.set_fov(45.0).set_near_far(0.1, 10.0).set_view(
-            Point3::new(2.0, 2.0, 2.0),
-            Point3::new(0.0, 0.0, 0.0),
-            Vec3::new(0.0, 0.0, 1.0),
-        );
-
         Ok(Self {
             scene,
-            camera,
             rotation_node,
         })
     }
@@ -44,10 +33,6 @@ impl CuboidDemo {
 impl Demo for CuboidDemo {
     fn scene(&mut self) -> &mut Scene {
         &mut self.scene
-    }
-
-    fn camera(&mut self) -> &mut dyn Camera {
-        &mut self.camera
     }
 
     fn update(&mut self, time: f32) -> Result<()> {

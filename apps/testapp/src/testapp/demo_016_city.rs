@@ -10,9 +10,7 @@ use anyhow::{anyhow, Result};
 use cgmath::{InnerSpace, Rad};
 
 use feather::assetsprovider::AssetsProvider;
-use feather::camera::Camera;
 use feather::math::{Mat4, Point3, Vec2, Vec3};
-use feather::perspectivecamera::PerspectiveCamera;
 use feather::scene::Scene;
 use feather::shadow::ShadowLight;
 
@@ -96,7 +94,8 @@ struct Person {
 /// Demo 16: same busy city as demo 15, loaded from OBJ meshes and a PNG atlas.
 pub struct CityAssetsDemo {
     scene: Scene,
-    camera: PerspectiveCamera,
+    /// The camera moving through the streets (`Street` in the scene file).
+    street_camera: usize,
     sky: usize,
     traffic: Traffic,
     car_nodes: Vec<(usize, CarModel)>,
@@ -121,6 +120,7 @@ impl CityAssetsDemo {
         };
         let city = find("node `City`", scene.find_node("City"))?;
         let sky = find("node `Sky`", scene.find_node("Sky"))?;
+        let street_camera = find("camera `Street`", scene.find_camera("Street"))?;
         let statics = find("node `Static`", scene.find_node("Static"))?;
 
         scene
@@ -183,7 +183,7 @@ impl CityAssetsDemo {
 
         let mut demo = Self {
             scene,
-            camera: PerspectiveCamera::new(),
+            street_camera,
             sky,
             traffic: Traffic {
                 lanes: Vec::new(),
@@ -197,7 +197,6 @@ impl CityAssetsDemo {
         demo.add_lamps(city)?;
         demo.add_traffic(city, &mut random)?;
         demo.add_people(city, &mut random)?;
-        demo.camera.set_fov(60.0).set_near_far(0.2, 520.0);
         demo.update(0.0)?;
         Ok(demo)
     }
@@ -463,33 +462,40 @@ impl CityAssetsDemo {
         let (ahead, _) = route(distance + 18.0);
         let eye = Point3::new(eye.x, eye.y, CAMERA_HEIGHT);
         let target = Point3::new(ahead.x, ahead.y, CAMERA_HEIGHT - 1.2);
-        self.camera.set_view(eye, target, Vec3::new(0.0, 0.0, 1.0));
-
-        self.scene.get_node_mut(self.sky).unwrap().set_transform(
-            Mat4::from_translation(Vec3::new(eye.x, eye.y, eye.z)) * Mat4::from_scale(480.0),
-        );
-
-        let forward = (target - eye).normalize();
-        let centre =
-            eye + Vec3::new(forward.x, forward.y, 0.0).normalize() * (SHADOW_RADIUS * 0.45);
-        let centre = Point3::new(centre.x, centre.y, 6.0);
         self.scene
-            .set_shadow_light(Some(ShadowLight::directional_snapped(
-                -sun(),
-                centre,
-                SHADOW_RADIUS,
-                SHADOW_MAP_SIZE,
-            )));
+            .get_camera_mut(self.street_camera)
+            .unwrap()
+            .set_view(eye, target, Vec3::new(0.0, 0.0, 1.0));
+        follow_active_camera(&mut self.scene, self.sky);
     }
+}
+
+/// Puts the sky dome around the scene's active camera and the shadows around what it sees,
+/// moving by whole texels.
+fn follow_active_camera(scene: &mut Scene, sky: usize) {
+    let Some(camera) = scene.active_camera() else {
+        return;
+    };
+    let (eye, target) = (camera.get_eye_position(), camera.get_target_position());
+    scene.get_node_mut(sky).unwrap().set_transform(
+        Mat4::from_translation(Vec3::new(eye.x, eye.y, eye.z)) * Mat4::from_scale(480.0),
+    );
+
+    let forward = target - eye;
+    let centre =
+        eye + Vec3::new(forward.x, forward.y, 0.0).normalize() * (SHADOW_RADIUS * 0.45);
+    let centre = Point3::new(centre.x, centre.y, 6.0);
+    scene.set_shadow_light(Some(ShadowLight::directional_snapped(
+        -sun(),
+        centre,
+        SHADOW_RADIUS,
+        SHADOW_MAP_SIZE,
+    )));
 }
 
 impl Demo for CityAssetsDemo {
     fn scene(&mut self) -> &mut Scene {
         &mut self.scene
-    }
-
-    fn camera(&mut self) -> &mut dyn Camera {
-        &mut self.camera
     }
 
     fn update(&mut self, time: f32) -> Result<()> {

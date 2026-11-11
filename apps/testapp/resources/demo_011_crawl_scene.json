@@ -27,6 +27,17 @@
   "materials": [
     { "name": "Stars", "shader": "Stars" }
   ],
+  "cameras": [
+    {
+      "name": "Camera",
+      "perspective": { "fov": 45 },
+      "eye": [0, 2.6, 11.5],
+      "target": [0, 0, -6],
+      "up": [0, 1, 0],
+      "near": 0.1,
+      "far": 120
+    }
+  ],
   "root": {
     "name": "Scene root",
     "children": [

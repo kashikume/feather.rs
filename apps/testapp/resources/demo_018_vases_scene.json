@@ -35,6 +35,17 @@
     }
   ],
   "shadow_light": { "direction": [-0.5, 0.7, -1.4], "center": [0, 0, 1], "radius": 7.0 },
+  "cameras": [
+    {
+      "name": "Camera",
+      "perspective": { "fov": 45 },
+      "eye": [0, -10, 5],
+      "target": [0, 0, 0.6],
+      "up": [0, 0, 1],
+      "near": 0.1,
+      "far": 50
+    }
+  ],
   "root": {
     "name": "Scene root",
     "uniforms": { "light": { "vec3": [0.5, -0.7, 1.4] } },

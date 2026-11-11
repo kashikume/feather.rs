@@ -892,6 +892,8 @@ def make_scene_files(mesh_names):
             {"name": "Sky", "vertex": "demo_016_city_sky_shader.vert.spv", "fragment": "demo_016_city_sky_shader.frag.spv", "model_uniform": "model", "view_uniform": "view", "projection_uniform": "proj"},
         ],
         "materials": [{"name": "Sky", "shader": "Sky"}] + mats,
+        # Moved along its route through the streets every frame by the demo.
+        "cameras": [{"name": "Street", "perspective": {"fov": 60.0}, "eye": [0.0, -75.0, 4.5], "target": [18.0, -75.0, 3.3], "up": [0.0, 0.0, 1.0], "near": 0.2, "far": 520.0}],
         "root": {"name": "Scene root", "children": [
             {"name": "Sky", "mesh": "sky_dome_mesh", "material": "Sky", "uniforms": {"sunColor": {"vec3": [1.6, 1.45, 1.2]}, "skyColor": {"vec3": [0.14, 0.32, 0.72]}, "horizonColor": {"vec3": [0.62, 0.7, 0.8]}, "groundColor": {"vec3": [0.28, 0.27, 0.26]}}},
             {"name": "City", "uniforms": {"sunColor": {"vec3": [1.6, 1.45, 1.2]}, "skyColor": {"vec3": [0.14, 0.32, 0.72]}, "horizonColor": {"vec3": [0.62, 0.7, 0.8]}, "groundColor": {"vec3": [0.28, 0.27, 0.26]}, "fogDensity": {"float": 0.0055}, "tint": {"vec3": [1.0, 1.0, 1.0]}, "emissive": {"vec3": [0.0, 0.0, 0.0]}}, "children": [{"name": "Static"}]},

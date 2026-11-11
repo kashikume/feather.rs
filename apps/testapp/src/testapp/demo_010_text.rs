@@ -4,9 +4,7 @@ use anyhow::{anyhow, Result};
 use cgmath::SquareMatrix;
 
 use feather::assetsprovider::AssetsProvider;
-use feather::camera::Camera;
-use feather::math::{Mat4, Point3, Vec3, Vec4};
-use feather::perspectivecamera::PerspectiveCamera;
+use feather::math::{Mat4, Vec3, Vec4};
 use feather::scene::Scene;
 use feather::text::{
     create_text_material, HorizontalAlign, Text, TextBuilder, TextMethod, TextPlane, VerticalAlign,
@@ -40,7 +38,6 @@ const WAVE_STEP: f32 = 0.07;
 /// (`TextMethod::NodePerGlyph`): the demo moves each letter's node and gives it a colour.
 pub struct TextDemo {
     scene: Scene,
-    camera: PerspectiveCamera,
     title: usize,
     clock: Text,
     turntable: usize,
@@ -212,18 +209,10 @@ impl TextDemo {
             .uniforms_mut()
             .set("color", Vec4::new(0.45, 0.7, 1.0, 0.85));
 
-        // Straight in front of the texts, looking level so their sides don't lean; the floor
-        // text is far enough below to be seen from above.
-        let mut camera = PerspectiveCamera::new();
-        camera.set_fov(45.0).set_near_far(0.1, 50.0).set_view(
-            Point3::new(0.0, 0.4, 11.0),
-            Point3::new(0.0, 0.4, 0.0),
-            Vec3::new(0.0, 1.0, 0.0),
-        );
-
+        // The scene file's camera: straight in front of the texts, looking level so their sides
+        // don't lean; the floor text is far enough below to be seen from above.
         let mut demo = Self {
             scene,
-            camera,
             title: title.get_node(),
             clock,
             turntable,
@@ -244,10 +233,6 @@ impl TextDemo {
 impl Demo for TextDemo {
     fn scene(&mut self) -> &mut Scene {
         &mut self.scene
-    }
-
-    fn camera(&mut self) -> &mut dyn Camera {
-        &mut self.camera
     }
 
     fn update(&mut self, time: f32) -> Result<()> {

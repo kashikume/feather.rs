@@ -2,9 +2,7 @@ use anyhow::{anyhow, Result};
 use cgmath::Deg;
 
 use feather::assetsprovider::AssetsProvider;
-use feather::camera::Camera;
-use feather::math::{Mat4, Point3, Vec3};
-use feather::perspectivecamera::PerspectiveCamera;
+use feather::math::Mat4;
 use feather::scene::Scene;
 
 use super::testapp::Demo;
@@ -21,7 +19,6 @@ const TURN_SPEED: f32 = 15.0;
 /// the farthest first. This demo only turns the `Turntable` node holding the floor and vases.
 pub struct VasesDemo {
     scene: Scene,
-    camera: PerspectiveCamera,
     turntable_node: usize,
 }
 
@@ -32,17 +29,9 @@ impl VasesDemo {
             .find_node("Turntable")
             .ok_or_else(|| anyhow!("the scene has no node `Turntable`"))?;
 
-        // In front of the floor and above it, looking at its middle.
-        let mut camera = PerspectiveCamera::new();
-        camera.set_fov(45.0).set_near_far(0.1, 50.0).set_view(
-            Point3::new(0.0, -10.0, 5.0),
-            Point3::new(0.0, 0.0, 0.6),
-            Vec3::new(0.0, 0.0, 1.0),
-        );
-
+        // The scene file's camera: in front of the floor and above it, looking at its middle.
         Ok(Self {
             scene,
-            camera,
             turntable_node,
         })
     }
@@ -51,10 +40,6 @@ impl VasesDemo {
 impl Demo for VasesDemo {
     fn scene(&mut self) -> &mut Scene {
         &mut self.scene
-    }
-
-    fn camera(&mut self) -> &mut dyn Camera {
-        &mut self.camera
     }
 
     fn update(&mut self, time: f32) -> Result<()> {

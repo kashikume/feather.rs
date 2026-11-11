@@ -3,9 +3,7 @@ use std::f32::consts::TAU;
 use anyhow::{anyhow, bail, Result};
 
 use feather::assetsprovider::AssetsProvider;
-use feather::camera::Camera;
-use feather::math::{Mat4, Point3, Vec3};
-use feather::perspectivecamera::PerspectiveCamera;
+use feather::math::{Mat4, Vec3};
 use feather::scene::Scene;
 
 use super::random::Random;
@@ -26,7 +24,6 @@ const SPACING: f32 = 1.3;
 /// `strength`). The shader moves the plates; this demo only passes it the `time`.
 pub struct WavingAtlasDemo {
     scene: Scene,
-    camera: PerspectiveCamera,
     plates_node: usize,
 }
 
@@ -82,19 +79,11 @@ impl WavingAtlasDemo {
                 .set("strength", 0.3 + random.next() * 0.3);
         }
 
-        // In front of the grid and a little to the side, so that the wind's push is visible,
-        // looking at its centre. The `Plates` node turns the plates from the XY plane to the XZ
-        // plane, facing -Y.
-        let mut camera = PerspectiveCamera::new();
-        camera.set_fov(45.0).set_near_far(0.1, 20.0).set_view(
-            Point3::new(3.2, -6.4, 1.6),
-            Point3::new(0.0, 0.0, 0.0),
-            Vec3::new(0.0, 0.0, 1.0),
-        );
-
+        // The scene file's camera: in front of the grid and a little to the side, so that the
+        // wind's push is visible, looking at its centre. The `Plates` node turns the plates from
+        // the XY plane to the XZ plane, facing -Y.
         Ok(Self {
             scene,
-            camera,
             plates_node,
         })
     }
@@ -103,10 +92,6 @@ impl WavingAtlasDemo {
 impl Demo for WavingAtlasDemo {
     fn scene(&mut self) -> &mut Scene {
         &mut self.scene
-    }
-
-    fn camera(&mut self) -> &mut dyn Camera {
-        &mut self.camera
     }
 
     fn update(&mut self, time: f32) -> Result<()> {

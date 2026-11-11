@@ -2,20 +2,14 @@ use anyhow::{anyhow, Result};
 
 use feather::animation::SlideAnimation;
 use feather::assetsprovider::AssetsProvider;
-use feather::camera::Camera;
 use feather::easing::Easing;
 use feather::math::{Mat4, Vec3, Vec4};
-use feather::orthographiccamera::{OrthographicCamera, ScreenOrigin, ScreenUnits};
 use feather::scene::Scene;
 use feather::text::{create_text_material, HorizontalAlign, Text, TextBuilder, VerticalAlign};
 use feather::uniform::UniformValue;
 
 use super::demo_000_viking_room::VikingRoomDemo;
 use super::testapp::Demo;
-
-/// The overlay's height in its units: it is laid out as if the window were this many pixels
-/// high, whatever its real size and the display scaling.
-const OVERLAY_HEIGHT: f32 = 768.0;
 
 /// How long each side of the overlay takes to slide and fade in, in seconds.
 pub const INTRO_DURATION: f32 = 0.8;
@@ -31,8 +25,9 @@ pub const INTRO_OFFSET: f32 = 120.0;
 ///
 /// The overlay is `demo_012_overlay_scene.json`: its font (Segoe UI Semibold, rendered during
 /// the build from `atlases/demo_012_overlay_atlas.font`), demo 0's texture as an image, a
-/// square mesh for panels and images, three shaders (text, image, panel) and the nodes. It is
-/// laid out in units of a 768-pixel-high window with the origin at the top left, so y goes
+/// square mesh for panels and images, three shaders (text, image, panel), the nodes and its
+/// flat camera. It is laid out in units of a 768-pixel-high window with the origin at the top
+/// left (as its camera shows it, whatever the window's size and the display scaling), so y goes
 /// down to -768; the `Right` group is moved to the right edge, which depends on the window's
 /// width, every frame. Panels are transparent and a little behind (z = -1) what they hold, so
 /// they are drawn first.
@@ -45,7 +40,6 @@ pub const INTRO_OFFSET: f32 = 120.0;
 pub struct OverlayDemo {
     room: VikingRoomDemo,
     overlay: Scene,
-    overlay_camera: OrthographicCamera,
     right: usize,
 }
 
@@ -143,10 +137,6 @@ impl OverlayDemo {
         Ok(Self {
             room,
             overlay,
-            overlay_camera: OrthographicCamera::new(
-                ScreenOrigin::TopLeft,
-                ScreenUnits::Height(OVERLAY_HEIGHT),
-            ),
             right,
         })
     }
@@ -155,10 +145,6 @@ impl OverlayDemo {
 impl Demo for OverlayDemo {
     fn scene(&mut self) -> &mut Scene {
         self.room.scene()
-    }
-
-    fn camera(&mut self) -> &mut dyn Camera {
-        self.room.camera()
     }
 
     fn scene_count(&self) -> usize {
@@ -172,18 +158,15 @@ impl Demo for OverlayDemo {
         }
     }
 
-    fn camera_at(&mut self, index: usize) -> &mut dyn Camera {
-        match index {
-            0 => self.room.camera(),
-            _ => &mut self.overlay_camera,
-        }
-    }
-
     fn update(&mut self, time: f32) -> Result<()> {
         self.room.update(time)?;
 
         // The right-hand group sits at the right edge of the window.
-        let (width, _) = self.overlay_camera.get_visible_size();
+        let (width, _) = self
+            .overlay
+            .active_camera()
+            .and_then(|camera| camera.get_visible_size())
+            .ok_or_else(|| anyhow!("the overlay has no flat camera"))?;
         self.overlay
             .get_node_mut(self.right)
             .unwrap()

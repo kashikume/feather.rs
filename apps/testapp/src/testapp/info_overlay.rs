@@ -4,17 +4,14 @@ use anyhow::{anyhow, Result};
 
 use feather::animation::PerpetualAnimation;
 use feather::assetsprovider::AssetsProvider;
-use feather::camera::Camera;
 use feather::math::{Mat4, Vec3};
-use feather::orthographiccamera::{OrthographicCamera, ScreenOrigin, ScreenUnits};
 use feather::scene::Scene;
 use feather::text::{
     create_text_material, HorizontalAlign, Text, TextBuilder, TextMethod, VerticalAlign,
 };
 
-/// The overlay's height in its units: it is laid out as if the window were this many pixels
-/// high, whatever its real size and the display scaling.
-const OVERLAY_HEIGHT: f32 = 768.0;
+// The overlay is laid out as if the window were 768 pixels high, whatever its real size and
+// the display scaling: its camera, in the scene file, shows 768 units from the bottom left.
 /// Distance of the panel from the window's bottom left corner, and of the texts from the
 /// panel's edges.
 const MARGIN: f32 = 12.0;
@@ -32,7 +29,7 @@ const WIDEST_FPS: &str = "8888 fps";
 /// see-through panel, the demo's number and name and, below, the frame rate. Being part of the
 /// picture (not the window title), it shows in full screen too.
 ///
-/// It is a scene of its own (`testapp_overlay_scene.json`), seen by a flat camera, which the
+/// It is a scene of its own (`testapp_overlay_scene.json`), seen by the flat camera it defines, which the
 /// app draws after the demo's scenes. It stays when demos are switched; `set_title` changes the
 /// name shown.
 ///
@@ -41,7 +38,6 @@ const WIDEST_FPS: &str = "8888 fps";
 /// rebuild a mesh, which would make the CPU wait for the GPU (see `doc/text-performance.md`).
 pub struct InfoOverlay {
     scene: Scene,
-    camera: OrthographicCamera,
     title: Text,
     panel: usize,
     /// Width of the widest frame rate text, so the panel doesn't change size with it.
@@ -94,10 +90,6 @@ impl InfoOverlay {
 
         let mut overlay = Self {
             scene,
-            camera: OrthographicCamera::new(
-                ScreenOrigin::BottomLeft,
-                ScreenUnits::Height(OVERLAY_HEIGHT),
-            ),
             title,
             panel,
             fps_width,
@@ -119,10 +111,6 @@ impl InfoOverlay {
 
     pub fn scene(&mut self) -> &mut Scene {
         &mut self.scene
-    }
-
-    pub fn camera(&mut self) -> &mut dyn Camera {
-        &mut self.camera
     }
 
     /// Sizes the panel around both lines. It is a little behind them (z = -1), and transparent,

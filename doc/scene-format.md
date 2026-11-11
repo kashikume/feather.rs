@@ -2,6 +2,7 @@
 
 A scene file describes a whole `Scene` in JSON:
 - the objects it uses: atlases, meshes, shaders and materials;
+- the cameras it can be seen through;
 - the tree of nodes that places those objects in the world.
 
 Load one with:
@@ -56,6 +57,17 @@ The viking room used by the test app ([`apps/testapp/resources/demo_000_viking_r
       "texture": { "atlas": "Room atlas" }
     }
   ],
+  "cameras": [
+    {
+      "name": "Camera",
+      "perspective": { "fov": 45 },
+      "eye": [2, 2, 2],
+      "target": [0, 0, 0],
+      "up": [0, 0, 1],
+      "near": 0.1,
+      "far": 10
+    }
+  ],
   "root": {
     "name": "Scene root",
     "children": [
@@ -74,6 +86,8 @@ The viking room used by the test app ([`apps/testapp/resources/demo_000_viking_r
 | `shaders`   | array of shaders  | no       | Vertex + fragment programs                 |
 | `materials` | array of materials| no       | A shader with uniform values               |
 | `shadow_light` | object         | no       | The light casting the scene's shadows, see [Shadows](#shadows) |
+| `cameras`   | array of cameras  | no       | What the scene can be seen through, see [Cameras](#cameras) |
+| `active_camera` | string        | no       | Name of the camera the scene is drawn through (default: the first) |
 | `root`      | node              | **yes**  | The root of the node tree                  |
 
 The lists are loaded in this order:
@@ -81,12 +95,14 @@ The lists are loaded in this order:
 2. meshes;
 3. shaders;
 4. materials;
-5. nodes.
+5. cameras;
+6. nodes.
 
 So an object can only refer to objects of a kind loaded before it. Within a list, the order of
 items doesn't matter.
 
-Names must be unique within each list. The same name may be used in different lists: a mesh and a
+Names must be unique within each list (cameras don't need one, but named cameras must have
+different names). The same name may be used in different lists: a mesh and a
 material can both be called `"Room"`.
 
 ## Atlases
@@ -383,7 +399,9 @@ Loading fails, and nothing of the scene is kept, when:
   outside its atlas;
 - a shader uses resources the engine doesn't support, or its matrix or texture edge uniform
   names are wrong;
-- a transform has both `matrix` and translation/rotation/scale.
+- a transform has both `matrix` and translation/rotation/scale;
+- a camera has both or neither of `perspective` and `orthographic`, or invalid settings (see
+  [Cameras](#cameras)), or `active_camera` names no camera.
 
 The message lists where the problem is, from the outside in:
 
@@ -411,9 +429,56 @@ shadow map. Shaders receive shadows by naming a `shadow_matrix_uniform` (a `mat4
 view-projection matrix) and a `shadow_map_sampler`, and comparing depths (see the README's
 [Shadows](../README.md#shadows)). A smaller radius gives sharper shadows in a smaller area.
 
+## Cameras
+
+A scene is drawn through its active camera. `cameras` lists the scene's cameras, which are added
+in that order; the first one is the active camera, unless `active_camera` names another. A
+scene without cameras isn't drawn until the application adds one (`Scene::add_camera`).
+Applications find cameras with `Scene::find_camera`, move them, and switch the active one with
+`Scene::set_active_camera`.
+
+```json
+"cameras": [
+  { "name": "Street", "perspective": { "fov": 60 },
+    "eye": [0, -75, 4.5], "target": [18, -75, 3.3], "up": [0, 0, 1], "near": 0.2, "far": 520 },
+  { "name": "Overlay", "orthographic": { "origin": "top_left", "height": 768 } }
+],
+"active_camera": "Street"
+```
+
+| Field          | Type      | Required | Description                                            |
+| -------------- | --------- | -------- | ------------------------------------------------------ |
+| `name`         | string    | no       | Used by `Scene::find_camera`, `active_camera` and in errors |
+| `perspective`  | object    | one of   | A perspective projection, see below                    |
+| `orthographic` | object    | one of   | A flat projection, for 2D scenes, see below            |
+| `eye`          | [x, y, z] | no       | Where the camera is                                    |
+| `target`       | [x, y, z] | no       | The point it looks at (not `eye`)                      |
+| `up`           | [x, y, z] | no       | Which way is up on the screen (not zero)               |
+| `near`, `far`  | number    | no       | The visible depth range along the view direction (`near` below `far`) |
+
+`perspective`:
+
+| Field | Type   | Default | Description                                   |
+| ----- | ------ | ------- | --------------------------------------------- |
+| `fov` | number | `45`    | Vertical field of view in degrees, 0 to 180   |
+
+Defaults: `eye` `[2, 2, 2]`, `target` `[0, 0, 0]`, `up` `[0, 1, 0]`, `near` `0.1`, `far` `10`.
+`near` must be above 0.
+
+`orthographic`:
+
+| Field    | Type   | Default    | Description                                            |
+| -------- | ------ | ---------- | ------------------------------------------------------ |
+| `origin` | string | `"center"` | Where (0, 0) is on the screen: `"top_left"`, `"center"` or `"bottom_left"` |
+| `height` | number | none       | The screen's height in scene units, above 0; the width follows the window's aspect ratio. Without it, one unit per pixel |
+
+Defaults: `eye` `[0, 0, 0]`, `target` `[0, 0, -1]` and `up` `[0, 1, 0]`, so it shows the XY
+plane with Y up; `near` `-1000` and `far` `1000`, so objects between z = -1000 and z = 1000 are
+visible, the nearer ones (greater z) over the farther ones. With `"origin": "top_left"` and
+`"height": 768`, the screen spans x `0..width` and y `-768..0`.
+
 ## Not in the format yet
 
-- **Cameras:** the application creates its own (`FeatherApp::get_camera_to_render_scene`).
 - **Moving lights:** `shadow_light` is fixed; applications move it with `Scene::set_shadow_light`.
 - **Other mesh sources:** only OBJ files, cuboids, planes and spheres; other generated meshes
   must be created in code.

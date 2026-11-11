@@ -11,8 +11,8 @@ textures as atlas regions, cuboid / plane / OBJ mesh builders, text in the XY an
 named lookup of resources, animations (animator, slide and perpetual animations, easing
 functions), the atlas creator and font creator tools.
 feather.rs also has things C++ never had (Vulkan, SPIR-V reflection, sphere builder, skeletons
-and animation clips, JSON scene files, perspective/orthographic cameras, several scenes per
-frame).
+and animation clips, JSON scene files, cameras as scene objects (perspective or orthographic,
+several per scene with an active one, defined in scene files), several scenes per frame).
 
 ## Scene graph / nodes
 
@@ -144,3 +144,14 @@ frame).
   standalone `Animator` with its own context. Demo 11's episode spawning stays in `update`
   because it needs the demo's random generator and counter. If this comes up often, consider
   storing `Text`s in the scene, or letting scenes hold user data.
+
+## Camera ideas (not in C++ either)
+
+- The same scene drawn through two cameras (split screen, minimap, mirror): a camera override in
+  `FeatherApp`, or the renderer drawing each of the scene's enabled cameras into its own
+  viewport. Today a scene is drawn once, through its active camera.
+- A camera attached to a node, following its global transform (e.g. riding a car in demo 15).
+- Transitions between cameras: blend view and projection over time instead of cutting.
+- `Projection::Custom(Mat4)` for projections the app computes itself.
+- Only the active camera gets the image size each frame, so an inactive orthographic camera's
+  `get_visible_size` reports the size from when it was last active.

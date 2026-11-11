@@ -19,6 +19,17 @@
     { "name": "Plain", "shader": "Shadowed" }
   ],
   "shadow_light": { "direction": [0.55, 1.0, -0.9], "center": [0, 0, 0.8], "radius": 4.6 },
+  "cameras": [
+    {
+      "name": "Camera",
+      "perspective": { "fov": 45 },
+      "eye": [2.6, -4.6, 5.2],
+      "target": [0.4, 0.8, 0.3],
+      "up": [0, 0, 1],
+      "near": 0.1,
+      "far": 30
+    }
+  ],
   "root": {
     "name": "Scene root",
     "uniforms": { "light": { "vec3": [-0.55, -1.0, 0.9] } },

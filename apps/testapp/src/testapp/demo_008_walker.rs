@@ -4,9 +4,7 @@ use anyhow::{anyhow, Result};
 
 use feather::animationclip::AnimationClip;
 use feather::assetsprovider::AssetsProvider;
-use feather::camera::Camera;
-use feather::math::{Mat4, Point3, Vec3};
-use feather::perspectivecamera::PerspectiveCamera;
+use feather::math::{Mat4, Vec3};
 use feather::scene::Scene;
 use feather::skeleton::Skeleton;
 
@@ -30,7 +28,6 @@ const WALK_SPEED: f32 = 1.15;
 /// hips), while it moves the `Walker` node along the circle, facing where it goes.
 pub struct WalkerDemo {
     scene: Scene,
-    camera: PerspectiveCamera,
     skeleton: Skeleton,
     walk: AnimationClip,
     walker_node: usize,
@@ -46,16 +43,8 @@ impl WalkerDemo {
         let walk = AnimationClip::load(assets, "demo_008_walker_walk.json")?;
         skeleton.check(&walk)?;
 
-        let mut camera = PerspectiveCamera::new();
-        camera.set_fov(45.0).set_near_far(0.1, 50.0).set_view(
-            Point3::new(0.0, -5.6, 2.4),
-            Point3::new(0.0, 0.0, 0.8),
-            Vec3::new(0.0, 0.0, 1.0),
-        );
-
         let mut demo = Self {
             scene,
-            camera,
             skeleton,
             walk,
             walker_node,
@@ -68,10 +57,6 @@ impl WalkerDemo {
 impl Demo for WalkerDemo {
     fn scene(&mut self) -> &mut Scene {
         &mut self.scene
-    }
-
-    fn camera(&mut self) -> &mut dyn Camera {
-        &mut self.camera
     }
 
     fn update(&mut self, time: f32) -> Result<()> {

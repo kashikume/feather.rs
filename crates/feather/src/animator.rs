@@ -1,11 +1,11 @@
 //! `Animator`: runs animations (see `animation`) on a context `C`.
 //!
-//! Scenes have their own animator for animations that change the scene (`Scene::add_animation`,
-//! driven by the engine every frame). Use a standalone `Animator<C>` for anything else, e.g. a
-//! camera, and drive it from the app:
+//! Scenes have their own animator for animations that change the scene, its cameras included
+//! (`Scene::add_animation`, driven by the engine every frame). Use a standalone `Animator<C>` for
+//! anything else, e.g. the app's own state, and drive it from the app:
 //!
 //! ```ignore
-//! self.camera_animator.advance_to(&mut self.camera, time);
+//! self.music_animator.advance_to(&mut self.music, time);
 //! ```
 //!
 //! Animations are addressed by handles, like a scene's nodes. As with other handles, a handle can

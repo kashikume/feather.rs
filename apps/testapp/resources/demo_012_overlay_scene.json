@@ -40,6 +40,12 @@
     { "name": "Room texture", "shader": "Image", "texture": { "atlas": "Room texture" } },
     { "name": "Panel", "shader": "Panel" }
   ],
+  "cameras": [
+    {
+      "name": "Camera",
+      "orthographic": { "origin": "top_left", "height": 768 }
+    }
+  ],
   "root": {
     "name": "Overlay root",
     "children": [

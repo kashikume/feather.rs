@@ -1,7 +1,7 @@
 //! Loading a scene from a JSON file.
 //!
-//! The file lists the scene's atlases, meshes, shaders and materials, and describes the node
-//! tree starting from the root. Objects refer to each other by name; files (PNG, `.atlas`, OBJ,
+//! The file lists the scene's atlases, meshes, shaders, materials and cameras, and describes the
+//! node tree starting from the root. Objects refer to each other by name; files (PNG, `.atlas`, OBJ,
 //! SPIR-V) are asset names read through an `AssetsProvider`. Example:
 //!
 //! ```json
@@ -25,6 +25,10 @@
 //!                 { "name": "Star", "shader": "Basic",
 //!                   "texture": { "atlas": "Icons", "name": "star" } }],
 //!   "shadow_light": { "direction": [1, 0.5, -2], "center": [0, 0, 0], "radius": 6 },
+//!   "cameras": [{ "name": "Main", "perspective": { "fov": 45 },
+//!                 "eye": [2, 2, 2], "target": [0, 0, 0.3], "up": [0, 0, 1], "far": 10 },
+//!               { "name": "Flat", "orthographic": { "origin": "center", "height": 10 } }],
+//!   "active_camera": "Main",
 //!   "root": {
 //!     "name": "Scene root",
 //!     "children": [{
@@ -36,7 +40,8 @@
 //! }
 //! ```
 //!
-//! - Every list item needs a name, unique within its list. All lists are optional.
+//! - Every list item needs a name, unique within its list (cameras: if they have one). All
+//!   lists are optional.
 //! - An atlas is a PNG `bitmap` with optional `metadata` (a `.atlas` file naming rectangles of
 //!   the bitmap, see `atlas::parse_metadata`).
 //! - A material's `texture` is a texture of an atlas: the rectangle `name` from the atlas's
@@ -57,6 +62,12 @@
 //! - `shadow_light` (optional) is a directional light casting the scene's shadows
 //!   (`ShadowLight::directional`): its `direction`, the `center` (default the origin) and
 //!   `radius` of the area it covers, and an optional `map_size` in pixels (default 2048).
+//! - A camera (`Camera`) has either `perspective` (with an optional `fov` in degrees, default
+//!   45) or `orthographic` (with an optional `origin`, `"top_left"`, `"center"` (default) or
+//!   `"bottom_left"`, and an optional `height` in scene units; without it, one unit per pixel).
+//!   Both take optional `eye`, `target`, `up`, `near` and `far`, with the defaults of
+//!   `Camera::perspective` and `Camera::orthographic`. Cameras are added in order, so the
+//!   first one is the active camera unless `active_camera` names another.
 //! - Unknown fields are errors, so typos don't go unnoticed.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -66,6 +77,7 @@ use cgmath::{Deg, Matrix2, Matrix3, Matrix4};
 use serde::Deserialize;
 
 use super::assetsprovider::AssetsProvider;
+use super::camera::{Camera, ScreenOrigin, ScreenUnits};
 use super::math::{IVec2, IVec3, IVec4, Mat4, Point3, UVec2, UVec3, UVec4, Vec2, Vec3, Vec4};
 use super::meshbuildercuboid::MeshBuilderCuboid;
 use super::meshbuilderobjfile::MeshBuilderObjFile;
@@ -89,7 +101,50 @@ struct SceneFile {
     #[serde(default)]
     materials: Vec<MaterialEntry>,
     shadow_light: Option<ShadowLightEntry>,
+    #[serde(default)]
+    cameras: Vec<CameraEntry>,
+    /// Name of the camera the scene is drawn through; the first camera by default.
+    active_camera: Option<String>,
     root: NodeEntry,
+}
+
+/// A camera (`Camera`): `perspective` or `orthographic`, plus the settings both have.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CameraEntry {
+    name: Option<String>,
+    perspective: Option<PerspectiveEntry>,
+    orthographic: Option<OrthographicEntry>,
+    eye: Option<[f32; 3]>,
+    target: Option<[f32; 3]>,
+    up: Option<[f32; 3]>,
+    near: Option<f32>,
+    far: Option<f32>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PerspectiveEntry {
+    /// Vertical field of view in degrees.
+    fov: Option<f32>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct OrthographicEntry {
+    #[serde(default)]
+    origin: OriginEntry,
+    /// Scene units shown vertically; without it, one unit per pixel.
+    height: Option<f32>,
+}
+
+#[derive(Deserialize, Default, Clone, Copy)]
+#[serde(rename_all = "snake_case")]
+enum OriginEntry {
+    TopLeft,
+    #[default]
+    Center,
+    BottomLeft,
 }
 
 /// A directional light casting the scene's shadows (`ShadowLight::directional`).
@@ -283,6 +338,7 @@ impl Scene {
         check_unique("mesh", file.meshes.iter().map(|m| &m.name))?;
         check_unique("shader", file.shaders.iter().map(|s| &s.name))?;
         check_unique("material", file.materials.iter().map(|m| &m.name))?;
+        check_unique("camera", file.cameras.iter().filter_map(|c| c.name.as_ref()))?;
 
         let mut atlases = HashMap::new();
         for entry in &file.atlases {
@@ -364,6 +420,20 @@ impl Scene {
             scene.set_shadow_light(Some(shadow));
         }
 
+        for (index, entry) in file.cameras.iter().enumerate() {
+            let camera = build_camera(entry).with_context(|| match &entry.name {
+                Some(name) => format!("camera `{name}`"),
+                None => format!("camera {index}"),
+            })?;
+            scene.add_camera(camera);
+        }
+        if let Some(name) = &file.active_camera {
+            let camera = scene
+                .find_camera(name)
+                .ok_or_else(|| anyhow!("active_camera: unknown camera `{name}`"))?;
+            scene.set_active_camera(camera)?;
+        }
+
         let root = scene.create_root_node(file.root.name.clone());
         setup_node(&mut scene, root, &file.root, &names)?;
         Ok(scene)
@@ -413,6 +483,60 @@ fn build_mesh(scene: &mut Scene, assets: &dyn AssetsProvider, entry: &MeshEntry)
         .build(scene, name),
         _ => bail!("a mesh needs exactly one of `file`, `cuboid`, `plane` and `sphere`"),
     }
+}
+
+fn build_camera(entry: &CameraEntry) -> Result<Camera> {
+    let mut camera = match (&entry.perspective, &entry.orthographic) {
+        (Some(perspective), None) => {
+            let mut camera = Camera::perspective();
+            if let Some(fov) = perspective.fov {
+                if !(fov > 0.0 && fov < 180.0) {
+                    bail!("fov must be between 0 and 180 degrees, got {fov}");
+                }
+                camera.set_fov(fov);
+            }
+            camera
+        }
+        (None, Some(orthographic)) => {
+            let origin = match orthographic.origin {
+                OriginEntry::TopLeft => ScreenOrigin::TopLeft,
+                OriginEntry::Center => ScreenOrigin::Center,
+                OriginEntry::BottomLeft => ScreenOrigin::BottomLeft,
+            };
+            let units = match orthographic.height {
+                None => ScreenUnits::Pixels,
+                Some(height) if height > 0.0 => ScreenUnits::Height(height),
+                Some(height) => bail!("height must be above 0, got {height}"),
+            };
+            Camera::orthographic(origin, units)
+        }
+        _ => bail!("a camera needs exactly one of `perspective` and `orthographic`"),
+    };
+    if let Some(name) = &entry.name {
+        camera = camera.with_name(name.clone());
+    }
+
+    let near = entry.near.unwrap_or(camera.get_near());
+    let far = entry.far.unwrap_or(camera.get_far());
+    if !(near < far) {
+        bail!("near ({near}) must be below far ({far})");
+    }
+    if entry.perspective.is_some() && !(near > 0.0) {
+        bail!("near must be above 0 for a perspective camera, got {near}");
+    }
+    camera.set_near_far(near, far);
+
+    let eye = entry.eye.map_or(camera.get_eye_position(), Point3::from);
+    let target = entry.target.map_or(camera.get_target_position(), Point3::from);
+    let up = entry.up.map_or(camera.get_up_vector(), Vec3::from);
+    if eye == target {
+        bail!("eye and target must differ, both are {:?}", eye);
+    }
+    if up == Vec3::new(0.0, 0.0, 0.0) {
+        bail!("up must not be zero");
+    }
+    camera.set_view(eye, target, up);
+    Ok(camera)
 }
 
 /// The texture `entry` refers to, from an atlas loaded earlier.
@@ -812,6 +936,98 @@ mod tests {
             let error = format!("{:#}", Scene::from_json(&assets(), &json).err().unwrap());
             assert!(error.contains(expected), "{error}");
         }
+    }
+
+    /// A scene with `cameras` (the JSON of the array's items) and other top-level `extra`.
+    fn with_cameras(cameras: &str, extra: &str) -> String {
+        format!(r#"{{ "cameras": [{cameras}], {extra} "root": {{ "name": "R" }} }}"#)
+    }
+
+    #[test]
+    fn loads_cameras() {
+        use crate::camera::{Projection, ScreenOrigin, ScreenUnits};
+        let json = with_cameras(
+            r#"{ "name": "Persp", "perspective": { "fov": 60 }, "eye": [1, 2, 3],
+                 "target": [0, 0, 1], "up": [0, 0, 1], "near": 0.5, "far": 100 },
+               { "name": "Flat", "orthographic": { "origin": "top_left", "height": 12 },
+                 "near": -10, "far": 10 },
+               { "orthographic": {} },
+               { "perspective": {} }"#,
+            "",
+        );
+        let scene = Scene::from_json(&assets(), &json).unwrap();
+        assert_eq!(scene.cameras.iter().count(), 4);
+
+        let persp = scene.get_camera(scene.find_camera("Persp").unwrap()).unwrap();
+        assert_eq!(persp.get_projection_kind(), Projection::Perspective);
+        assert_eq!(persp.get_fov(), 60.0);
+        assert_eq!((persp.get_near(), persp.get_far()), (0.5, 100.0));
+        assert_eq!(persp.get_eye_position(), Point3::new(1.0, 2.0, 3.0));
+        assert_eq!(persp.get_target_position(), Point3::new(0.0, 0.0, 1.0));
+        assert_eq!(persp.get_up_vector(), Vec3::new(0.0, 0.0, 1.0));
+
+        let flat = scene.get_camera(scene.find_camera("Flat").unwrap()).unwrap();
+        assert_eq!(flat.get_projection_kind(), Projection::Orthographic);
+        assert_eq!(flat.get_origin(), ScreenOrigin::TopLeft);
+        assert_eq!(flat.get_units(), ScreenUnits::Height(12.0));
+        assert_eq!((flat.get_near(), flat.get_far()), (-10.0, 10.0));
+
+        // Defaults: those of `Camera::orthographic` and `Camera::perspective`.
+        let mut unnamed = scene.cameras.iter().filter(|c| c.get_name().is_none());
+        let flat = unnamed.next().unwrap();
+        let default_flat = Camera::orthographic(ScreenOrigin::Center, ScreenUnits::Pixels);
+        assert_eq!(flat.get_origin(), ScreenOrigin::Center);
+        assert_eq!(flat.get_units(), ScreenUnits::Pixels);
+        assert_eq!(flat.get_view(), default_flat.get_view());
+        assert_eq!(flat.get_projection(), default_flat.get_projection());
+        let persp = unnamed.next().unwrap();
+        let default_persp = Camera::perspective();
+        assert_eq!(persp.get_view(), default_persp.get_view());
+        assert_eq!(persp.get_projection(), default_persp.get_projection());
+    }
+
+    #[test]
+    fn first_camera_is_active_unless_active_camera_says_otherwise() {
+        let cameras = r#"{ "name": "A", "perspective": {} }, { "name": "B", "perspective": {} }"#;
+        let scene = Scene::from_json(&assets(), &with_cameras(cameras, "")).unwrap();
+        assert_eq!(scene.active_camera_handle(), scene.find_camera("A"));
+
+        let json = with_cameras(cameras, r#""active_camera": "B","#);
+        let scene = Scene::from_json(&assets(), &json).unwrap();
+        assert_eq!(scene.active_camera_handle(), scene.find_camera("B"));
+
+        // No cameras: no active camera.
+        let scene = Scene::from_json(&assets(), SCENE).unwrap();
+        assert!(scene.active_camera().is_none());
+    }
+
+    #[test]
+    fn camera_errors_name_the_problem() {
+        let p = r#""perspective": {}"#;
+        let o = r#""orthographic": {}"#;
+        for (camera, extra, expected) in [
+            (format!("{{ {p}, {o} }}"), "", "exactly one of `perspective` and `orthographic`"),
+            ("{}".to_string(), "", "exactly one of `perspective` and `orthographic`"),
+            (r#"{ "perspective": { "fov": 180 } }"#.into(), "", "fov must be between 0 and 180"),
+            (r#"{ "perspective": { "fov": 0 } }"#.into(), "", "fov must be between 0 and 180"),
+            (r#"{ "orthographic": { "height": 0 } }"#.into(), "", "height must be above 0"),
+            (r#"{ "orthographic": { "origin": "top" } }"#.into(), "", "unknown variant `top`"),
+            (format!(r#"{{ {p}, "near": 5, "far": 5 }}"#), "", "must be below far"),
+            (format!(r#"{{ {p}, "near": -1 }}"#), "", "near must be above 0"),
+            (format!(r#"{{ {p}, "eye": [1, 1, 1], "target": [1, 1, 1] }}"#), "", "must differ"),
+            (format!(r#"{{ {p}, "up": [0, 0, 0] }}"#), "", "up must not be zero"),
+            (format!(r#"{{ {p}, "zoom": 2 }}"#), "", "unknown field `zoom`"),
+            (format!(r#"{{ "name": "C", {p} }}, {{ "name": "C", {o} }}"#), "", "more than one camera named `C`"),
+            (format!("{{ {p} }}"), r#""active_camera": "Nope","#, "unknown camera `Nope`"),
+        ] {
+            let error = load_error(&with_cameras(&camera, extra));
+            assert!(error.contains(expected), "{camera}: {error}");
+        }
+        // Errors name the camera, or its index.
+        let error = load_error(&with_cameras(r#"{ "name": "Cam", "orthographic": { "height": -1 } }"#, ""));
+        assert!(error.contains("camera `Cam`"), "{error}");
+        let error = load_error(&with_cameras(&format!(r#"{{ {p} }}, {{ {o}, "far": -2000 }}"#), ""));
+        assert!(error.contains("camera 1"), "{error}");
     }
 
     #[test]

@@ -86,6 +86,8 @@ pub struct SceneGpuState {
     pub failed_atlases: HashSet<usize>,
     /// The shadow map, while the scene has a shadow light.
     pub shadow_map: Option<ShadowMap>,
+    /// Whether the scene not having a camera was logged (once until it has one again).
+    pub warned_no_camera: bool,
 }
 
 impl SceneGpuState {

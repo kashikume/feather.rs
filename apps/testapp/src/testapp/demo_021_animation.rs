@@ -6,12 +6,9 @@ use anyhow::{anyhow, Result};
 use cgmath::{Deg, InnerSpace};
 
 use feather::animation::{PerpetualAnimation, SlideAnimation};
-use feather::animator::Animator;
 use feather::assetsprovider::AssetsProvider;
-use feather::camera::Camera;
 use feather::easing::Easing;
-use feather::math::{Mat4, Point3, Vec3};
-use feather::perspectivecamera::PerspectiveCamera;
+use feather::math::{Mat4, Vec3};
 use feather::scene::Scene;
 use feather::text::{create_text_material, HorizontalAlign, Text, TextBuilder, VerticalAlign};
 
@@ -35,8 +32,10 @@ const PAUSE: f32 = 0.7;
 /// Where the showcase's spinning and fading cubes are.
 const SPINNER_AT: Vec3 = Vec3::new(8.0, 2.6, 0.0);
 const FADER_AT: Vec3 = Vec3::new(8.0, -2.2, 0.0);
-/// Camera: how far it starts and ends its dolly, how long that takes, how far it sways
-/// sideways and how long a sway takes.
+/// Camera: how far it starts and ends its dolly (the scene file puts it at the start), how
+/// long that takes, how far it sways sideways and how long a sway takes. It looks at
+/// (`CAMERA_X`, 0, 0).
+const CAMERA_X: f32 = 1.3;
 const CAMERA_START: f32 = 40.0;
 const CAMERA_END: f32 = 21.0;
 const DOLLY_TIME: f32 = 3.0;
@@ -57,32 +56,13 @@ const SWAY_PERIOD: f32 = 14.0;
 /// - the fader's fade-in adds the fade-out in its `on_finish`, whose own `on_finish` removes the
 ///   cube (the animation's own target) and creates the next one.
 ///
-/// The camera isn't part of the scene: a standalone `Animator<CameraRig>` animates it, with a
-/// slide (the dolly) and a perpetual animation (the sway) changing different parts of the rig.
+/// - the camera is part of the scene too: a slide (the dolly) and a perpetual animation (the
+///   sway) move it, each changing its own coordinates of the camera's position.
 ///
-/// The scene file has the meshes, shaders, materials, the font atlas and the `Lanes`,
-/// `Showcase` and `Labels` nodes; this demo adds the rest.
+/// The scene file has the meshes, shaders, materials, the font atlas, the camera and the
+/// `Lanes`, `Showcase` and `Labels` nodes; this demo adds the rest.
 pub struct AnimationDemo {
     scene: Scene,
-    rig: CameraRig,
-    camera_animator: Animator<CameraRig>,
-}
-
-/// What the camera animations change: the distance to the scene and the sideways offset.
-pub struct CameraRig {
-    camera: PerspectiveCamera,
-    distance: f32,
-    sway: f32,
-}
-
-impl CameraRig {
-    fn apply(&mut self) {
-        self.camera.set_view(
-            Point3::new(1.3 + self.sway, -0.6 * self.sway, self.distance),
-            Point3::new(1.3, 0.0, 0.0),
-            Vec3::new(0.0, 1.0, 0.0),
-        );
-    }
 }
 
 /// The lanes' cubes and the round headers, shared by every round's callbacks.
@@ -199,36 +179,34 @@ impl AnimationDemo {
             },
         )?;
 
-        let mut camera = PerspectiveCamera::new();
-        camera.set_fov(45.0).set_near_far(0.1, 100.0);
-        let mut rig = CameraRig {
-            camera,
-            distance: CAMERA_START,
-            sway: 0.0,
-        };
-        rig.apply();
-
-        let mut camera_animator = Animator::new();
-        camera_animator.add(
+        // The camera: the dolly moves it along Z, the sway along X and Y.
+        let camera = find("camera `Camera`", scene.find_camera("Camera"))?;
+        scene.add_animation(
             Some("Dolly".into()),
-            SlideAnimation::new(DOLLY_TIME, |rig: &mut CameraRig, p| {
-                rig.distance = CAMERA_START + (CAMERA_END - CAMERA_START) * p;
+            SlideAnimation::new(DOLLY_TIME, move |scene: &mut Scene, p| {
+                if let Some(camera) = scene.get_camera_mut(camera) {
+                    let mut eye = camera.get_eye_position();
+                    eye.z = CAMERA_START + (CAMERA_END - CAMERA_START) * p;
+                    camera.set_eye_position(eye);
+                }
             })
             .easing(Easing::CubicOut),
         );
-        camera_animator.add(
+        scene.add_animation(
             Some("Sway".into()),
-            PerpetualAnimation::new(|rig: &mut CameraRig, _, elapsed| {
-                rig.sway = SWAY * (elapsed * TAU / SWAY_PERIOD).sin();
+            PerpetualAnimation::new(move |scene: &mut Scene, _, elapsed| {
+                let Some(camera) = scene.get_camera_mut(camera) else {
+                    return ControlFlow::Break(());
+                };
+                let sway = SWAY * (elapsed * TAU / SWAY_PERIOD).sin();
+                let mut eye = camera.get_eye_position();
+                (eye.x, eye.y) = (CAMERA_X + sway, -0.6 * sway);
+                camera.set_eye_position(eye);
                 ControlFlow::Continue(())
             }),
         );
 
-        Ok(Self {
-            scene,
-            rig,
-            camera_animator,
-        })
+        Ok(Self { scene })
     }
 }
 
@@ -381,13 +359,7 @@ impl Demo for AnimationDemo {
         &mut self.scene
     }
 
-    fn camera(&mut self) -> &mut dyn Camera {
-        &mut self.rig.camera
-    }
-
-    fn update(&mut self, time: f32) -> Result<()> {
-        self.camera_animator.advance_to(&mut self.rig, time);
-        self.rig.apply();
+    fn update(&mut self, _time: f32) -> Result<()> {
         Ok(())
     }
 }

@@ -23,6 +23,17 @@
       "vmax_uniform": "vmax"
     }
   ],
+  "cameras": [
+    {
+      "name": "Camera",
+      "perspective": { "fov": 45 },
+      "eye": [3.2, -6.4, 1.6],
+      "target": [0, 0, 0],
+      "up": [0, 0, 1],
+      "near": 0.1,
+      "far": 20
+    }
+  ],
   "root": {
     "name": "Scene root",
     "children": [

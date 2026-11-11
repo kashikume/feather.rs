@@ -28,8 +28,9 @@ What works today:
 - Uniforms on materials and nodes, inherited down the scene graph
 - Assets loaded through a platform-specific `AssetsProvider`
 - Scenes described in JSON files, with objects referring to each other by name
-- Perspective camera, and an orthographic (flat) camera for 2D scenes
-- Several scenes drawn together, one over the other, each through its own camera (e.g. a 2D
+- Cameras, perspective or orthographic (flat, for 2D scenes), switchable at run time; a scene
+  holds any number of cameras, from code or its JSON file, and is drawn through its active one
+- Several scenes drawn together, one over the other, each through its active camera (e.g. a 2D
   overlay over a 3D scene)
 - Atlases uploaded with mipmaps; a material's texture passes its UV rectangle to the shader
   (`umin`, `umax`, `vmin`, `vmax` uniforms)
@@ -46,7 +47,7 @@ What works today:
   clips loaded from JSON (`AnimationClip`)
 - Animations: slides with easing and perpetual animations, owned by the scene and advanced by
   the engine every frame (`Scene::add_animation`, `SlideAnimation`, `PerpetualAnimation`,
-  `Easing`), or by a standalone `Animator` for anything else, e.g. a camera
+  `Easing`), including the scene's cameras, or by a standalone `Animator` for anything else
 - Shadows: a directional light per scene draws the shadow casters into a shadow map before each
   frame, and shaders sample it (`ShadowLight`, `Node::set_casts_shadow`)
 - MSAA
@@ -54,7 +55,7 @@ What works today:
 
 > The renderer draws every visible node that has a mesh and a material, with the material's
 > shader and texture, and the node's uniforms. An app can draw several scenes, one over the
-> other, each through its own camera. See
+> other, each through its active camera. See
 > [doc/todo](doc/todo/node-uniforms-rendering.md) for the plan and known limitations.
 
 ## Requirements
@@ -103,13 +104,13 @@ scenes, so it shows in full screen too. Its frame rate is a scene animation.
 | 12   | Overlay     | Two scenes together: demo 0's spinning room behind, and in front a 2D overlay seen by an orthographic camera, with see-through panels, text and the room's texture as an image, which slide and fade in at the start with eased scene animations |
 | 13   | Simple shadow | A human figure (a generated mesh) standing on a floor, casting its shadow from a fixed light; nothing moves, the shader takes one shadow-map sample |
 | 14   | Shadows     | A sun going round the sky over a ring of stone pillars, a spinning golden cube on a pedestal and bouncing balls; their soft-edged shadows turn and stretch with it |
-| 15   | City        | A busy city the camera glides through: 5 x 5 blocks of buildings in four styles, streets with lanes, crosswalks and traffic lights, trees, lamps and a park; over 100 cars stopping at red lights and keeping their distance, over 100 people walking; everything textured (textures painted in code, no image files) and casting shadows from the afternoon sun, with sky reflections on glass and fog into a sky dome |
+| 15   | City        | A busy city a camera glides through, with cuts to a second camera above an intersection (a scene animation switching the active camera): 5 x 5 blocks of buildings in four styles, streets with lanes, crosswalks and traffic lights, trees, lamps and a park; over 100 cars stopping at red lights and keeping their distance, over 100 people walking; everything textured (textures painted in code, no image files) and casting shadows from the afternoon sun, with sky reflections on glass and fog into a sky dome |
 | 16   | City (assets) | The same city as demo 15, but every model is an OBJ and every texture is a PNG packed into an atlas at build time (`tools/generate_demo_016_city_assets.py`); denser geometry (recessed windows, richer cars, people and trees) |
 | 17   | Bouncing balls (shadows) | Demo 6 again, with real shadows: the balls cast into a shadow map instead of sitting on flat discs |
 | 18   | Vases (shadows) | Demo 7 again, with real shadows: the vases, glass included, cast onto the turning floor |
 | 19   | Walker (shadows) | Demo 8 again, with real shadows: the walking person's body casts onto the floor, with no shadow disc |
 | 20   | Spider (shadows) | Demo 9 again, with real shadows: the spider's body and legs cast onto the floor, with no shadow disc |
-| 21   | Animation   | A lane per kind of easing with a cube sliding across, round after round (in, out, in-out); a cube spinning forever; a cube fading in and out, then removed and replaced; a camera dollying in and swaying, with its own animator |
+| 21   | Animation   | A lane per kind of easing with a cube sliding across, round after round (in, out, in-out); a cube spinning forever; a cube fading in and out, then removed and replaced; the scene's camera dollying in and swaying |
 
 Each demo is in its own file, `apps/testapp/src/testapp/demo_NNN_<name>.rs`, and its resources
 are named `demo_NNN_<name>_<kind>` (`scene`, `atlas`, `mesh`, `shader`, ...). Demos are listed in
@@ -280,7 +281,7 @@ crates/
     uniformdata.rs   packing uniform values into the bytes a shader reads
     assetsprovider.rs, windowsassetsprovider.rs
                      platform-independent asset access and its Windows implementation
-    camera.rs, perspectivecamera.rs, orthographiccamera.rs
+    camera.rs        cameras: perspective or orthographic
     shadow.rs, shadowpass.rs
                      shadow lights, and the shadow pass drawing casters into shadow maps
     instance.rs, physicaldevice.rs, logicaldevice.rs, swapchain.rs, pipeline.rs, ...
@@ -310,8 +311,8 @@ on the `feather` crate unless they need the engine: it requires the Vulkan SDK t
 
 ## Writing an application
 
-An application implements the `FeatherApp` trait and gives the engine the scenes and cameras to
-render:
+An application implements the `FeatherApp` trait and gives the engine the scenes to render, each
+drawn through its active camera:
 
 ```rust
 pub trait FeatherApp {
@@ -322,7 +323,6 @@ pub trait FeatherApp {
 
     fn get_num_scenes_to_render(&self) -> usize;
     fn get_scene_to_render(&mut self, scene_index: usize) -> &mut Scene;
-    fn get_camera_to_render_scene(&mut self, scene_index: usize) -> &mut dyn Camera;
 
     /// Optional: called when a key is pressed.
     fn on_key_pressed(&mut self, key: KeyCode) -> Result<()> { Ok(()) }
@@ -404,27 +404,47 @@ Demo 13 is the simplest use: one caster, one fixed light, one shadow-map sample 
 (`demo_013_simple_shadow_shader.frag`). Demo 14's shader averages 3x3 samples for soft edges
 (`demo_014_shadows_shader.frag`).
 
+### Cameras
+
+Cameras are scene objects: `Scene::add_camera` returns a handle, `get_camera_mut` and
+`find_camera` reach them, and `remove_camera` removes one. A scene is drawn through its active
+camera; the first camera added is active until `set_active_camera` picks another, so cutting
+between cameras is one call, e.g. from a scene animation (demo 15). A scene without a camera
+isn't drawn.
+
+A `Camera` has a position, a target and an up direction (`set_view`), a depth range
+(`set_near_far`) and a projection, `Projection::Perspective` or `Projection::Orthographic`,
+which `set_projection` switches at run time. A camera keeps the settings of both kinds: a
+field of view for perspective (`set_fov`), and for orthographic a `ScreenOrigin` (the origin
+at the top left, the centre or the bottom left of the screen) and `ScreenUnits` (pixels, or a
+fixed screen height in units, the width following the window's aspect ratio). The renderer
+gives the active camera the image's size every frame.
+
+```rust
+// A perspective camera for a 3D scene, and a flat one for a 2D overlay.
+let mut camera = Camera::perspective().with_name("Main");
+camera.set_fov(60.0).set_near_far(0.1, 100.0).set_view(eye, target, Vec3::new(0.0, 0.0, 1.0));
+let main = scene.add_camera(camera);
+
+let flat = Camera::orthographic(ScreenOrigin::TopLeft, ScreenUnits::Height(768.0));
+// Looks down -Z from the origin with Y up: the screen spans x 0..width and y -768..0, and
+// get_visible_size() gives the width. Nearer objects (greater z) are drawn over farther ones.
+overlay.add_camera(flat);
+```
+
+Scene files define cameras too (`cameras` and `active_camera`, see
+[doc/scene-format.md](doc/scene-format.md#cameras)); the test app's demos all do.
+
 ### Several scenes
 
-A `FeatherApp` says how many scenes to draw (`get_num_scenes_to_render`), and gives each with its
-own camera (`get_scene_to_render(i)`, `get_camera_to_render_scene(i)`). Scenes are drawn in
-order, each sorted as above and through its own camera; the depth buffer is cleared before each
+A `FeatherApp` says how many scenes to draw (`get_num_scenes_to_render`) and gives them
+(`get_scene_to_render(i)`). Scenes are drawn in order, each sorted as above and through its
+active camera; the depth buffer is cleared before each
 scene after the first, so a later scene is drawn over the earlier ones, whatever their depths.
 Each scene keeps its own GPU state (mesh buffers, atlases, pipelines), released when the app
 stops drawing it.
 
-For 2D scenes, `OrthographicCamera` shows the XY plane without perspective, looking down -Z
-with Y up. Its `ScreenOrigin` puts the origin at the top left, the centre or the bottom left of
-the screen; its `ScreenUnits` are pixels, or a fixed screen height in units (the width follows
-the window's aspect ratio). Nearer objects (greater z) are drawn over farther ones.
-
-```rust
-let camera = OrthographicCamera::new(ScreenOrigin::TopLeft, ScreenUnits::Height(768.0));
-// The screen spans x 0..width and y -768..0; get_visible_size() gives the width.
-```
-
-The test app's demos draw one scene, unless they override `Demo::scene_count`, `scene_at` and
-`camera_at`. Demo 12 draws demo 0's room with a 2D overlay over it.
+The test app's demos draw one scene, unless they override `Demo::scene_count` and `scene_at`. Demo 12 draws demo 0's room with a 2D overlay over it.
 
 ### Bones and animation
 

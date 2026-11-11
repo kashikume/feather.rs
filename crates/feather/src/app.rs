@@ -168,8 +168,8 @@ impl App {
 
     /// Collects the draw calls of every rendered scene, scene after scene, each in drawing
     /// order (`sort_for_rendering`: opaque by shader, then transparent back to front) and seen
-    /// through its own camera, and packs their uniforms into the returned arena; and the shadow
-    /// passes of the scenes with a shadow light. The first draw of every scene but the first
+    /// through its active camera, and packs their uniforms into the returned arena; and the shadow
+    /// passes of the scenes with a shadow light. Scenes without a camera are skipped. The first draw of every scene but the first
     /// clears the depth buffer, so later scenes are drawn over earlier ones. Creates the
     /// pipelines of shaders drawn for the first time.
     unsafe fn collect_draws(&mut self) -> Result<(Vec<GpuDraw>, Vec<ShadowPass>, UniformArena)> {
@@ -198,14 +198,23 @@ impl App {
         arena: &mut UniformArena,
     ) -> Result<()> {
         let extent = self.data.swapchain.swapchain_extent;
-        let camera = self.data.app.get_camera_to_render_scene(index);
-        camera.set_screen_dimention(extent.width, extent.height);
-        let (view, proj) = (camera.get_view(), camera.get_projection());
-
         let data = &mut self.data;
         let scene = data.app.get_scene_to_render(index);
         let scene_id = scene.get_id();
         let gpu = data.scenes.entry(scene_id).or_default();
+
+        // Seen through the scene's active camera; a scene without a camera isn't drawn.
+        let Some(camera) = scene.active_camera_mut() else {
+            if !gpu.warned_no_camera {
+                log::warn!("Scene {index} has no camera; it isn't drawn");
+                gpu.warned_no_camera = true;
+            }
+            return Ok(());
+        };
+        gpu.warned_no_camera = false;
+        camera.set_screen_dimention(extent.width, extent.height);
+        let (view, proj) = (camera.get_view(), camera.get_projection());
+        let scene = &*scene;
 
         // Pipelines of shaders that no longer exist. They may still be used by frames in
         // flight, so wait for the GPU before destroying them.

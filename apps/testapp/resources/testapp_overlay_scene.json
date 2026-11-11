@@ -30,6 +30,12 @@
   "materials": [
     { "name": "Panel", "shader": "Panel" }
   ],
+  "cameras": [
+    {
+      "name": "Camera",
+      "orthographic": { "origin": "bottom_left", "height": 768 }
+    }
+  ],
   "root": {
     "name": "Overlay root",
     "children": [

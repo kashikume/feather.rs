@@ -9,6 +9,7 @@ use crate::{
     animator::Animator,
     assetsprovider::AssetsProvider,
     atlas::Atlas,
+    camera::Camera,
     material::Material,
     object::Object,
     shader::{Shader, ShaderUniformNames},
@@ -74,6 +75,9 @@ pub struct Scene {
     pub atlases: ObjDB<Atlas>,
     pub shaders: ObjDB<Shader>,
     pub materials: ObjDB<Material>,
+    /// The cameras; the scene is drawn through the active one (`set_active_camera`).
+    pub cameras: ObjDB<Camera>,
+    active_camera: Option<usize>,
     shadow_light: Option<ShadowLight>,
     needs_create_mesh_buffer: bool,
     /// Animations changing the scene; see `add_animation`.
@@ -90,6 +94,8 @@ impl Scene {
             atlases: ObjDB::new(),
             shaders: ObjDB::new(),
             materials: ObjDB::new(),
+            cameras: ObjDB::new(),
+            active_camera: None,
             shadow_light: None,
             needs_create_mesh_buffer: false,
             animations: Animator::new(),
@@ -526,6 +532,64 @@ impl Scene {
     /// Handle of the first material named `name`.
     pub fn find_material(&self, name: &str) -> Option<usize> {
         self.materials.get_by_name(name).map(|m| m.get_handle())
+    }
+
+    // --- cameras ---
+
+    /// Adds a camera and returns its handle. The first camera added (more exactly: a camera
+    /// added while the scene has no active camera) becomes the active camera.
+    pub fn add_camera(&mut self, camera: Camera) -> usize {
+        let handle = self.cameras.add(camera);
+        if self.active_camera.is_none() {
+            self.active_camera = Some(handle);
+        }
+        handle
+    }
+
+    pub fn get_camera(&self, handle: usize) -> Option<&Camera> {
+        self.cameras.get(handle)
+    }
+
+    pub fn get_camera_mut(&mut self, handle: usize) -> Option<&mut Camera> {
+        self.cameras.get_mut(handle)
+    }
+
+    /// Handle of the first camera named `name`.
+    pub fn find_camera(&self, name: &str) -> Option<usize> {
+        self.cameras.get_by_name(name).map(|c| c.get_handle())
+    }
+
+    /// Removes a camera. If it was the active camera, the remaining camera with the lowest
+    /// handle becomes active, or none if no camera is left. Invalid handles are ignored.
+    pub fn remove_camera(&mut self, handle: usize) {
+        self.cameras.remove(handle);
+        if self.active_camera == Some(handle) {
+            self.active_camera = self.cameras.iter().map(|c| c.get_handle()).min();
+        }
+    }
+
+    /// Makes camera `handle` the one the scene is drawn through. Fails if there is no such
+    /// camera.
+    pub fn set_active_camera(&mut self, handle: usize) -> Result<()> {
+        if self.cameras.get(handle).is_none() {
+            anyhow::bail!("Camera {handle} not found");
+        }
+        self.active_camera = Some(handle);
+        Ok(())
+    }
+
+    /// Handle of the camera the scene is drawn through; `None` when the scene has no camera.
+    pub fn active_camera_handle(&self) -> Option<usize> {
+        self.active_camera
+    }
+
+    /// The camera the scene is drawn through; `None` when the scene has no camera.
+    pub fn active_camera(&self) -> Option<&Camera> {
+        self.cameras.get(self.active_camera?)
+    }
+
+    pub fn active_camera_mut(&mut self) -> Option<&mut Camera> {
+        self.cameras.get_mut(self.active_camera?)
     }
 
     pub fn create_mesh_buffer(&mut self) -> usize {
@@ -1339,6 +1403,69 @@ mod tests {
             atlas.get_texture("quarter"),
             Some(Texture::new(b, 0.0, 0.5, 0.0, 0.5))
         );
+    }
+
+    // --- cameras ---
+
+    #[test]
+    fn scene_starts_without_camera() {
+        let mut scene = Scene::new();
+        assert_eq!(scene.active_camera_handle(), None);
+        assert!(scene.active_camera().is_none());
+        assert!(scene.active_camera_mut().is_none());
+    }
+
+    #[test]
+    fn first_camera_added_is_active() {
+        let mut scene = Scene::new();
+        let first = scene.add_camera(Camera::perspective().with_name("first"));
+        let second = scene.add_camera(Camera::perspective().with_name("second"));
+        assert_ne!(first, second);
+        assert_eq!(scene.active_camera_handle(), Some(first));
+        assert_eq!(scene.active_camera().unwrap().get_name().as_deref(), Some("first"));
+        assert_eq!(scene.find_camera("second"), Some(second));
+        assert_eq!(scene.find_camera("nope"), None);
+    }
+
+    #[test]
+    fn set_active_camera_switches_cameras() {
+        let mut scene = Scene::new();
+        let first = scene.add_camera(Camera::perspective());
+        let second = scene.add_camera(Camera::perspective());
+        scene.set_active_camera(second).unwrap();
+        assert_eq!(scene.active_camera_handle(), Some(second));
+
+        scene.active_camera_mut().unwrap().set_fov(70.0);
+        assert_eq!(scene.get_camera(second).unwrap().get_fov(), 70.0);
+        assert_eq!(scene.get_camera(first).unwrap().get_fov(), 45.0);
+
+        let error = scene.set_active_camera(99).unwrap_err().to_string();
+        assert!(error.contains("Camera 99 not found"), "{error}");
+        assert_eq!(scene.active_camera_handle(), Some(second));
+    }
+
+    #[test]
+    fn removing_the_active_camera_activates_the_lowest_handle() {
+        let mut scene = Scene::new();
+        let a = scene.add_camera(Camera::perspective());
+        let b = scene.add_camera(Camera::perspective());
+        let c = scene.add_camera(Camera::perspective());
+        scene.set_active_camera(c).unwrap();
+
+        // Removing an inactive camera keeps the active one.
+        scene.remove_camera(b);
+        assert_eq!(scene.active_camera_handle(), Some(c));
+
+        scene.remove_camera(c);
+        assert_eq!(scene.active_camera_handle(), Some(a));
+
+        scene.remove_camera(a);
+        assert_eq!(scene.active_camera_handle(), None);
+        assert!(scene.active_camera().is_none());
+
+        // With no active camera, the next camera added becomes active.
+        let d = scene.add_camera(Camera::perspective());
+        assert_eq!(scene.active_camera_handle(), Some(d));
     }
 
     #[test]

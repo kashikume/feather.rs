@@ -22,6 +22,17 @@
       "texture": { "atlas": "Room atlas" }
     }
   ],
+  "cameras": [
+    {
+      "name": "Camera",
+      "perspective": { "fov": 45 },
+      "eye": [2, 2, 2],
+      "target": [0, 0, 0],
+      "up": [0, 0, 1],
+      "near": 0.1,
+      "far": 10
+    }
+  ],
   "root": {
     "name": "Scene root",
     "children": [

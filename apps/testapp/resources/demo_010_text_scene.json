@@ -21,6 +21,17 @@
       "projection_uniform": "proj"
     }
   ],
+  "cameras": [
+    {
+      "name": "Camera",
+      "perspective": { "fov": 45 },
+      "eye": [0, 0.4, 11],
+      "target": [0, 0.4, 0],
+      "up": [0, 1, 0],
+      "near": 0.1,
+      "far": 50
+    }
+  ],
   "root": {
     "name": "Scene root",
     "uniforms": { "color": { "vec4": [1.0, 1.0, 1.0, 1.0] } },

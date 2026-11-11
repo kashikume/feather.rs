@@ -22,6 +22,26 @@
   "materials": [
     { "name": "Sky", "shader": "Sky" }
   ],
+  "cameras": [
+    {
+      "name": "Street",
+      "perspective": { "fov": 60 },
+      "eye": [0, -75, 4.5],
+      "target": [18, -75, 3.3],
+      "up": [0, 0, 1],
+      "near": 0.2,
+      "far": 520
+    },
+    {
+      "name": "Intersection",
+      "perspective": { "fov": 50 },
+      "eye": [52, -58, 38],
+      "target": [25, -25, 0],
+      "up": [0, 0, 1],
+      "near": 0.5,
+      "far": 520
+    }
+  ],
   "root": {
     "name": "Scene root",
     "children": [

@@ -3,9 +3,7 @@ use std::f32::consts::TAU;
 use anyhow::{anyhow, Result};
 
 use feather::assetsprovider::AssetsProvider;
-use feather::camera::Camera;
-use feather::math::{Mat4, Point3, Vec3};
-use feather::perspectivecamera::PerspectiveCamera;
+use feather::math::{Mat4, Vec3};
 use feather::scene::Scene;
 
 use super::random::Random;
@@ -56,7 +54,6 @@ struct Ball {
 /// `Shadows` node.
 pub struct BouncingBallsDemo {
     scene: Scene,
-    camera: PerspectiveCamera,
     balls: Vec<Ball>,
     random: Random,
     /// Simulated time, in seconds since the demo started.
@@ -110,17 +107,9 @@ impl BouncingBallsDemo {
             balls.push(ball);
         }
 
-        // In front of the floor and above it, looking at its middle.
-        let mut camera = PerspectiveCamera::new();
-        camera.set_fov(45.0).set_near_far(0.1, 50.0).set_view(
-            Point3::new(0.0, -12.0, 5.0),
-            Point3::new(0.0, 0.0, 0.5),
-            Vec3::new(0.0, 0.0, 1.0),
-        );
-
+        // The scene file's camera: in front of the floor and above it, looking at its middle.
         let mut demo = Self {
             scene,
-            camera,
             balls,
             random,
             time: 0.0,
@@ -214,10 +203,6 @@ fn hsv_to_rgb(hue: f32, saturation: f32, value: f32) -> Vec3 {
 impl Demo for BouncingBallsDemo {
     fn scene(&mut self) -> &mut Scene {
         &mut self.scene
-    }
-
-    fn camera(&mut self) -> &mut dyn Camera {
-        &mut self.camera
     }
 
     fn update(&mut self, time: f32) -> Result<()> {

@@ -39,6 +39,17 @@
       }
     }
   ],
+  "cameras": [
+    {
+      "name": "Camera",
+      "perspective": { "fov": 45 },
+      "eye": [0, -8, 1.4],
+      "target": [0, 0, 0],
+      "up": [0, 0, 1],
+      "near": 0.1,
+      "far": 30
+    }
+  ],
   "root": {
     "name": "Scene root",
     "uniforms": {

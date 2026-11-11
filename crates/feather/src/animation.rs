@@ -1,8 +1,8 @@
 //! Animations: changes spread over time, driven by an `Animator` or by a `Scene`.
 //!
 //! An animation changes a context `C`, which it gets on every update: usually the `Scene`
-//! (scene animations, see `Scene::add_animation`), or anything else the app animates with its
-//! own `Animator<C>`, e.g. a camera. Closures capture what they change by value: node handles,
+//! (scene animations, see `Scene::add_animation`), which includes the scene's cameras, or
+//! anything else the app animates with its own `Animator<C>`, e.g. the app's own state. Closures capture what they change by value: node handles,
 //! start and end values; never references.
 //!
 //! - `SlideAnimation` runs for a set time and calls its step with the progress, 0 to 1, then

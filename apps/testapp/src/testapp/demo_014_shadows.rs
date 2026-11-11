@@ -4,9 +4,7 @@ use anyhow::{anyhow, Result};
 use cgmath::{Deg, InnerSpace};
 
 use feather::assetsprovider::AssetsProvider;
-use feather::camera::Camera;
 use feather::math::{Mat4, Point3, Vec3};
-use feather::perspectivecamera::PerspectiveCamera;
 use feather::scene::Scene;
 use feather::shadow::ShadowLight;
 
@@ -39,7 +37,6 @@ const SHADOW_RADIUS: f32 = 10.5;
 /// map, averaging 3x3 samples to soften the edges.
 pub struct ShadowsDemo {
     scene: Scene,
-    camera: PerspectiveCamera,
     root: usize,
     cube: usize,
     balls: Vec<(usize, f32)>,
@@ -95,16 +92,8 @@ impl ShadowsDemo {
             balls.push((node, i as f32 * 0.37));
         }
 
-        let mut camera = PerspectiveCamera::new();
-        camera.set_fov(45.0).set_near_far(0.1, 60.0).set_view(
-            Point3::new(11.0, -12.0, 8.5),
-            Point3::new(0.0, 0.0, 0.8),
-            Vec3::new(0.0, 0.0, 1.0),
-        );
-
         let mut demo = Self {
             scene,
-            camera,
             root,
             cube,
             balls,
@@ -131,10 +120,6 @@ impl ShadowsDemo {
 impl Demo for ShadowsDemo {
     fn scene(&mut self) -> &mut Scene {
         &mut self.scene
-    }
-
-    fn camera(&mut self) -> &mut dyn Camera {
-        &mut self.camera
     }
 
     fn update(&mut self, time: f32) -> Result<()> {

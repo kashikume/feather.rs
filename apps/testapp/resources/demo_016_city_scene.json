@@ -453,6 +453,31 @@
       }
     }
   ],
+  "cameras": [
+    {
+      "name": "Street",
+      "perspective": {
+        "fov": 60.0
+      },
+      "eye": [
+        0.0,
+        -75.0,
+        4.5
+      ],
+      "target": [
+        18.0,
+        -75.0,
+        3.3
+      ],
+      "up": [
+        0.0,
+        0.0,
+        1.0
+      ],
+      "near": 0.2,
+      "far": 520.0
+    }
+  ],
   "root": {
     "name": "Scene root",
     "children": [

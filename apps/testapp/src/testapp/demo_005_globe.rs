@@ -2,9 +2,7 @@ use anyhow::{anyhow, Result};
 use cgmath::Deg;
 
 use feather::assetsprovider::AssetsProvider;
-use feather::camera::Camera;
-use feather::math::{Mat4, Point3, Vec3};
-use feather::perspectivecamera::PerspectiveCamera;
+use feather::math::{Mat4, Vec3};
 use feather::scene::Scene;
 
 use super::testapp::Demo;
@@ -33,7 +31,6 @@ const MOON_SPEED: f32 = 24.0;
 ///   dark seas). The moon's material switches off the water highlight and the atmosphere.
 pub struct GlobeDemo {
     scene: Scene,
-    camera: PerspectiveCamera,
     orbit_node: usize,
     globe_node: usize,
     moon_orbit_node: usize,
@@ -51,17 +48,10 @@ impl GlobeDemo {
         let globe_node = find("Globe")?;
         let moon_orbit_node = find("Moon orbit")?;
 
-        // In front of the globe's path, a little above it; the light comes from the right.
-        let mut camera = PerspectiveCamera::new();
-        camera.set_fov(45.0).set_near_far(0.1, 30.0).set_view(
-            Point3::new(0.0, -8.0, 1.4),
-            Point3::new(0.0, 0.0, 0.0),
-            Vec3::new(0.0, 0.0, 1.0),
-        );
-
+        // The scene file's camera: in front of the globe's path, a little above it; the light comes
+        // from the right.
         Ok(Self {
             scene,
-            camera,
             orbit_node,
             globe_node,
             moon_orbit_node,
@@ -72,10 +62,6 @@ impl GlobeDemo {
 impl Demo for GlobeDemo {
     fn scene(&mut self) -> &mut Scene {
         &mut self.scene
-    }
-
-    fn camera(&mut self) -> &mut dyn Camera {
-        &mut self.camera
     }
 
     fn update(&mut self, time: f32) -> Result<()> {

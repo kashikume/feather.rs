@@ -5,15 +5,15 @@ mod traffic;
 
 use std::collections::HashMap;
 use std::f32::consts::{FRAC_PI_2, PI, TAU};
+use std::ops::ControlFlow;
 
 use anyhow::{anyhow, Result};
 use cgmath::{Deg, InnerSpace, Rad};
 
+use feather::animation::PerpetualAnimation;
 use feather::assetsprovider::AssetsProvider;
 use feather::atlas::Atlas;
-use feather::camera::Camera;
 use feather::math::{Mat4, Point3, Vec2, Vec3};
-use feather::perspectivecamera::PerspectiveCamera;
 use feather::scene::Scene;
 use feather::shadow::ShadowLight;
 
@@ -44,6 +44,11 @@ const ROUTE_HALF: f32 = 75.0;
 const ROUTE_CORNER: f32 = 2.5;
 const CAMERA_HEIGHT: f32 = 4.5;
 const CAMERA_SPEED: f32 = 7.0;
+
+/// How long the demo shows the street camera, then the camera above an intersection, in
+/// seconds, before cutting back to the street.
+pub const STREET_SHOT: f32 = 14.0;
+pub const INTERSECTION_SHOT: f32 = 6.0;
 
 /// The sun, and the area its shadows cover around the camera.
 const SHADOW_RADIUS: f32 = 75.0;
@@ -77,7 +82,7 @@ struct Person {
     height: f32,
 }
 
-/// Demo 15: a busy city. The camera glides through the streets of a city of 5 x 5 blocks:
+/// Demo 15: a busy city. A camera glides through the streets of a city of 5 x 5 blocks:
 /// buildings of four kinds, streets with lanes, crosswalks and traffic lights, sidewalks with
 /// trees and lamps, a park, cars stopping at red lights and keeping their distance, and people
 /// walking around the blocks. Everything is textured and casts shadows from the afternoon sun.
@@ -92,9 +97,15 @@ struct Person {
 /// shimmer (`ShadowLight::directional_snapped`). The shader (`demo_015_city_shader.frag`) adds
 /// light from the sky and the ground, darker street level, sky reflections on glass and fog
 /// into the sky dome (`demo_015_city_sky_shader.frag`).
+///
+/// The scene file has two cameras: `Street`, which the demo moves along its route, and
+/// `Intersection`, fixed above a crossroads. A scene animation (`camera_cuts`) cuts between
+/// them, making each in turn the scene's active camera; the sky and the shadows follow the
+/// active camera.
 pub struct CityDemo {
     scene: Scene,
-    camera: PerspectiveCamera,
+    /// The camera moving through the streets (`Street` in the scene file).
+    street_camera: usize,
     sky: usize,
     traffic: Traffic,
     /// Each car's node and model.
@@ -124,6 +135,13 @@ impl CityDemo {
         let lit = find("shader `Lit`", scene.find_shader("Lit"))?;
         let city = find("node `City`", scene.find_node("City"))?;
         let sky = find("node `Sky`", scene.find_node("Sky"))?;
+        let street_camera = find("camera `Street`", scene.find_camera("Street"))?;
+        let intersection_camera =
+            find("camera `Intersection`", scene.find_camera("Intersection"))?;
+        scene.add_animation(
+            Some("Camera cuts".into()),
+            camera_cuts(street_camera, intersection_camera, sky),
+        );
 
         // Textures and their materials: (texture, shininess, specular strength, reflectivity).
         let mut materials = HashMap::new();
@@ -172,7 +190,7 @@ impl CityDemo {
 
         let mut demo = Self {
             scene,
-            camera: PerspectiveCamera::new(),
+            street_camera,
             sky,
             traffic: Traffic {
                 lanes: Vec::new(),
@@ -186,7 +204,6 @@ impl CityDemo {
         demo.build_city(city, &materials, &mut random)?;
         demo.add_traffic(city, &materials, &mut random)?;
         demo.add_people(city, &materials, &mut random)?;
-        demo.camera.set_fov(60.0).set_near_far(0.2, 520.0);
         demo.update(0.0)?;
         Ok(demo)
     }
@@ -711,34 +728,53 @@ impl CityDemo {
         let (ahead, _) = route(distance + 18.0);
         let eye = Point3::new(eye.x, eye.y, CAMERA_HEIGHT);
         let target = Point3::new(ahead.x, ahead.y, CAMERA_HEIGHT - 1.2);
-        self.camera.set_view(eye, target, Vec3::new(0.0, 0.0, 1.0));
-
-        self.scene.get_node_mut(self.sky).unwrap().set_transform(
-            Mat4::from_translation(Vec3::new(eye.x, eye.y, eye.z)) * Mat4::from_scale(480.0),
-        );
-
-        // Shadows around what the camera sees, moving by whole texels.
-        let forward = (target - eye).normalize();
-        let centre =
-            eye + Vec3::new(forward.x, forward.y, 0.0).normalize() * (SHADOW_RADIUS * 0.45);
-        let centre = Point3::new(centre.x, centre.y, 6.0);
         self.scene
-            .set_shadow_light(Some(ShadowLight::directional_snapped(
-                -sun(),
-                centre,
-                SHADOW_RADIUS,
-                SHADOW_MAP_SIZE,
-            )));
+            .get_camera_mut(self.street_camera)
+            .unwrap()
+            .set_view(eye, target, Vec3::new(0.0, 0.0, 1.0));
+        follow_active_camera(&mut self.scene, self.sky);
     }
+}
+
+/// An animation cutting from `street` to `intersection` and back, for `STREET_SHOT` and
+/// `INTERSECTION_SHOT` seconds; the sky and the shadows follow.
+fn camera_cuts(street: usize, intersection: usize, sky: usize) -> PerpetualAnimation<Scene> {
+    PerpetualAnimation::new(move |scene: &mut Scene, _, elapsed| {
+        let in_street = elapsed % (STREET_SHOT + INTERSECTION_SHOT) < STREET_SHOT;
+        let camera = if in_street { street } else { intersection };
+        if scene.active_camera_handle() != Some(camera) && scene.set_active_camera(camera).is_ok() {
+            follow_active_camera(scene, sky);
+        }
+        ControlFlow::Continue(())
+    })
+}
+
+/// Puts the sky dome around the scene's active camera and the shadows around what it sees,
+/// moving by whole texels.
+fn follow_active_camera(scene: &mut Scene, sky: usize) {
+    let Some(camera) = scene.active_camera() else {
+        return;
+    };
+    let (eye, target) = (camera.get_eye_position(), camera.get_target_position());
+    scene.get_node_mut(sky).unwrap().set_transform(
+        Mat4::from_translation(Vec3::new(eye.x, eye.y, eye.z)) * Mat4::from_scale(480.0),
+    );
+
+    let forward = target - eye;
+    let centre =
+        eye + Vec3::new(forward.x, forward.y, 0.0).normalize() * (SHADOW_RADIUS * 0.45);
+    let centre = Point3::new(centre.x, centre.y, 6.0);
+    scene.set_shadow_light(Some(ShadowLight::directional_snapped(
+        -sun(),
+        centre,
+        SHADOW_RADIUS,
+        SHADOW_MAP_SIZE,
+    )));
 }
 
 impl Demo for CityDemo {
     fn scene(&mut self) -> &mut Scene {
         &mut self.scene
-    }
-
-    fn camera(&mut self) -> &mut dyn Camera {
-        &mut self.camera
     }
 
     fn update(&mut self, time: f32) -> Result<()> {

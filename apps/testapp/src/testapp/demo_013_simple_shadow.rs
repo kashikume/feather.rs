@@ -1,9 +1,6 @@
 use anyhow::Result;
 
 use feather::assetsprovider::AssetsProvider;
-use feather::camera::Camera;
-use feather::math::{Point3, Vec3};
-use feather::perspectivecamera::PerspectiveCamera;
 use feather::scene::Scene;
 
 use super::testapp::Demo;
@@ -23,31 +20,19 @@ use super::testapp::Demo;
 /// (`demo_013_simple_shadow_human_mesh.obj`) is one generated mesh of overlapping ellipsoids.
 pub struct SimpleShadowDemo {
     scene: Scene,
-    camera: PerspectiveCamera,
 }
 
 impl SimpleShadowDemo {
     pub fn new(assets: &dyn AssetsProvider) -> Result<Self> {
         let scene = Scene::load(assets, "demo_013_simple_shadow_scene.json")?;
 
-        let mut camera = PerspectiveCamera::new();
-        camera.set_fov(45.0).set_near_far(0.1, 30.0).set_view(
-            Point3::new(2.6, -4.6, 5.2),
-            Point3::new(0.4, 0.8, 0.3),
-            Vec3::new(0.0, 0.0, 1.0),
-        );
-
-        Ok(Self { scene, camera })
+        Ok(Self { scene })
     }
 }
 
 impl Demo for SimpleShadowDemo {
     fn scene(&mut self) -> &mut Scene {
         &mut self.scene
-    }
-
-    fn camera(&mut self) -> &mut dyn Camera {
-        &mut self.camera
     }
 
     fn update(&mut self, _time: f32) -> Result<()> {

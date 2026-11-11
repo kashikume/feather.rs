@@ -48,6 +48,17 @@
       }
     }
   ],
+  "cameras": [
+    {
+      "name": "Camera",
+      "perspective": { "fov": 45 },
+      "eye": [1.3, 0, 40],
+      "target": [1.3, 0, 0],
+      "up": [0, 1, 0],
+      "near": 0.1,
+      "far": 100
+    }
+  ],
   "root": {
     "name": "Scene root",
     "children": [

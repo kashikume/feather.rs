@@ -2,7 +2,6 @@ use anyhow::{anyhow, Result};
 use winit::keyboard::KeyCode;
 
 use feather::assetsprovider::{create_assets_provider, AssetsProvider};
-use feather::camera::Camera;
 use feather::featherapp::FeatherApp;
 use feather::scene::Scene;
 
@@ -30,13 +29,12 @@ use super::demo_020_spider::SpiderShadowDemo;
 use super::demo_021_animation::AnimationDemo;
 use super::info_overlay::InfoOverlay;
 
-/// One demo of the test app: a scene, the camera looking at it, and its animation. A demo may
-/// have more scenes, each with its own camera, drawn one over the other (`scene_count`).
+/// One demo of the test app: a scene, seen through its active camera, and its animation. A
+/// demo may have more scenes, each with its own cameras, drawn one over the other
+/// (`scene_count`).
 pub trait Demo {
     /// The (first) scene.
     fn scene(&mut self) -> &mut Scene;
-    /// The camera of the (first) scene.
-    fn camera(&mut self) -> &mut dyn Camera;
     /// How many scenes the demo draws: scene 0 first, every next one over the previous ones.
     fn scene_count(&self) -> usize {
         1
@@ -44,10 +42,6 @@ pub trait Demo {
     /// Scene `index` (`0..scene_count()`).
     fn scene_at(&mut self, _index: usize) -> &mut Scene {
         self.scene()
-    }
-    /// The camera of scene `index`.
-    fn camera_at(&mut self, _index: usize) -> &mut dyn Camera {
-        self.camera()
     }
     /// Called every frame; `time` is in seconds since the demo started.
     fn update(&mut self, time: f32) -> Result<()>;
@@ -198,14 +192,6 @@ impl FeatherApp for TestApp {
         }
     }
 
-    fn get_camera_to_render_scene(&mut self, scene_index: usize) -> &mut dyn Camera {
-        if scene_index < self.demo.scene_count() {
-            self.demo.camera_at(scene_index)
-        } else {
-            self.overlay.camera()
-        }
-    }
-
     fn on_key_pressed(&mut self, key: KeyCode) -> Result<()> {
         let count = DEMOS.len();
         match key {
@@ -310,6 +296,21 @@ mod tests {
         for index in 0..DEMOS.len() {
             demo(index);
         }
+    }
+
+    #[test]
+    fn every_scene_has_a_camera() {
+        for index in 0..DEMOS.len() {
+            let mut demo = demo(index);
+            for scene in 0..demo.scene_count() {
+                assert!(
+                    demo.scene_at(scene).active_camera().is_some(),
+                    "demo {index}, scene {scene}"
+                );
+            }
+        }
+        let mut overlay = InfoOverlay::new(&SourceAssets).unwrap();
+        assert!(overlay.scene().active_camera().is_some());
     }
 
     #[test]
@@ -826,7 +827,7 @@ mod tests {
         assert!(demo.scene_at(0).find_node("Room").is_some());
 
         // The overlay's flat camera: no perspective, the view is the identity.
-        let camera = demo.camera_at(1);
+        let camera = demo.scene_at(1).active_camera_mut().unwrap();
         camera.set_screen_dimention(1024, 768);
         assert_eq!(camera.get_view(), <Mat4 as SquareMatrix>::identity());
 
@@ -835,7 +836,7 @@ mod tests {
         let right = demo.scene_at(1).find_node("Right").unwrap();
         let x = |demo: &mut Box<dyn Demo>| demo.scene_at(1).get_node(right).unwrap().get_transform().w.x;
         assert_eq!(x(&mut demo), 1024.0 - 20.0);
-        demo.camera_at(1).set_screen_dimention(1536, 768);
+        demo.scene_at(1).active_camera_mut().unwrap().set_screen_dimention(1536, 768);
         demo.update(0.1).unwrap();
         assert_eq!(x(&mut demo), 1536.0 - 20.0);
 
@@ -992,7 +993,7 @@ mod tests {
             nodes.iter().map(|&n| scene.get_node(n).unwrap().get_transform()).collect()
         };
         let (cars, people) = (positions(&mut demo, "Cars"), positions(&mut demo, "People"));
-        let view = demo.camera().get_view();
+        let view = demo.scene().active_camera().unwrap().get_view();
         for step in 1..=60 {
             demo.update(step as f32 * 0.05).unwrap();
         }
@@ -1000,9 +1001,31 @@ mod tests {
         let cars_after = positions(&mut demo, "Cars");
         assert!(moved(&cars, &cars_after) > cars.len() / 2, "cars don't move");
         assert_eq!(moved(&people, &positions(&mut demo, "People")), people.len());
-        assert_ne!(demo.camera().get_view(), view);
+        assert_ne!(demo.scene().active_camera().unwrap().get_view(), view);
         // The frame rate is the test app's overlay, not a scene of the demo.
         assert_eq!(demo.scene_count(), 1);
+    }
+
+    #[test]
+    fn city_demo_cuts_between_its_cameras() {
+        use super::super::demo_015_city::{INTERSECTION_SHOT, STREET_SHOT};
+        let mut demo = demo(15);
+        let scene = demo.scene();
+        let street = scene.find_camera("Street").unwrap();
+        let intersection = scene.find_camera("Intersection").unwrap();
+        let shadow_centre = |scene: &Scene| scene.get_shadow_light().unwrap().view_projection;
+
+        scene.advance_animations_to(0.0);
+        assert_eq!(scene.active_camera_handle(), Some(street));
+        let street_shadows = shadow_centre(scene);
+
+        // The cut to the intersection takes the shadows along.
+        scene.advance_animations_to(STREET_SHOT + 1.0);
+        assert_eq!(scene.active_camera_handle(), Some(intersection));
+        assert_ne!(shadow_centre(scene), street_shadows);
+
+        scene.advance_animations_to(STREET_SHOT + INTERSECTION_SHOT + 1.0);
+        assert_eq!(scene.active_camera_handle(), Some(street));
     }
 
     #[test]
@@ -1044,7 +1067,7 @@ mod tests {
                 .collect()
         };
         let cars = positions(&mut demo, "Cars");
-        let view = demo.camera().get_view();
+        let view = demo.scene().active_camera().unwrap().get_view();
         for step in 1..=60 {
             demo.update(step as f32 * 0.05).unwrap();
         }
@@ -1055,7 +1078,7 @@ mod tests {
             .filter(|(a, b)| a != b)
             .count();
         assert!(moved > cars.len() / 2, "cars don't move");
-        assert_ne!(demo.camera().get_view(), view);
+        assert_ne!(demo.scene().active_camera().unwrap().get_view(), view);
         assert_eq!(demo.scene_count(), 1);
     }
 
@@ -1142,9 +1165,12 @@ mod tests {
         assert!(scene.find_animation("Round").is_some());
         assert!(scene.find_animation("Spin").is_some());
 
-        // The linear lane: at its start, then halfway after half the slide.
+        // The linear lane: at its start, then halfway after half the slide. The camera starts
+        // far away.
         scene.advance_animations_to(0.0);
         assert!((x_of(scene, lane) + 3.0).abs() < 1e-4);
+        let eye = |scene: &Scene| scene.active_camera().unwrap().get_eye_position();
+        assert!((eye(scene).z - 40.0).abs() < 1e-4);
         scene.advance_animations_to(1.0);
         assert!(x_of(scene, lane).abs() < 1e-4);
 
@@ -1165,14 +1191,16 @@ mod tests {
         assert_ne!(faders[0], "Fader 0");
         assert!(scene.find_animation("Round").is_some());
         assert!(scene.find_animation("Spin").is_some());
-        // One slide per lane, the round timer, the spinner and the fader.
-        assert!(scene.animation_count() <= 11 + 3, "{}", scene.animation_count());
+        // One slide per lane, the round timer, the spinner, the fader and the camera's sway.
+        assert!(scene.animation_count() <= 11 + 4, "{}", scene.animation_count());
+        assert!(scene.find_animation("Sway").is_some());
 
-        // The camera dollies in.
-        demo.update(0.0).unwrap();
-        let far = demo.camera().get_view();
-        demo.update(5.0).unwrap();
-        assert_ne!(demo.camera().get_view(), far);
+        // The camera dollied in, and keeps swaying.
+        assert!(scene.find_animation("Dolly").is_none());
+        assert!((eye(scene).z - 21.0).abs() < 1e-4);
+        let x = eye(scene).x;
+        scene.advance_animations_to(time + 1.0);
+        assert_ne!(eye(scene).x, x);
     }
 
     #[test]

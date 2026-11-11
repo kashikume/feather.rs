@@ -2,10 +2,8 @@ use anyhow::{anyhow, Result};
 
 use feather::animation::SlideAnimation;
 use feather::assetsprovider::AssetsProvider;
-use feather::camera::Camera;
-use feather::math::{Mat4, Point3, Vec2, Vec3};
+use feather::math::{Mat4, Vec2, Vec3};
 use feather::mesh::Mesh;
-use feather::perspectivecamera::PerspectiveCamera;
 use feather::scene::Scene;
 use feather::text::{
     create_text_material, HorizontalAlign, Text, TextBuilder, TextPlane, VerticalAlign,
@@ -56,7 +54,6 @@ const STAR_WALL_Z: f32 = -70.0;
 /// them stays as set.
 pub struct CrawlDemo {
     scene: Scene,
-    camera: PerspectiveCamera,
     random: Random,
     font: usize,
     material: usize,
@@ -88,17 +85,10 @@ impl CrawlDemo {
         let star_mesh = scene.add_mesh(star_field(&mut random));
         scene.node_set_mesh(stars, star_mesh)?;
 
-        // Low above the floor the text lies on, looking ahead and a little down.
-        let mut camera = PerspectiveCamera::new();
-        camera.set_fov(45.0).set_near_far(0.1, 120.0).set_view(
-            Point3::new(0.0, 2.6, 11.5),
-            Point3::new(0.0, 0.0, -6.0),
-            Vec3::new(0.0, 1.0, 0.0),
-        );
-
+        // The scene file's camera: low above the floor the text lies on, looking ahead and a little
+        // down.
         let mut demo = Self {
             scene,
-            camera,
             random,
             font,
             material,
@@ -198,10 +188,6 @@ impl CrawlDemo {
 impl Demo for CrawlDemo {
     fn scene(&mut self) -> &mut Scene {
         &mut self.scene
-    }
-
-    fn camera(&mut self) -> &mut dyn Camera {
-        &mut self.camera
     }
 
     fn update(&mut self, time: f32) -> Result<()> {
