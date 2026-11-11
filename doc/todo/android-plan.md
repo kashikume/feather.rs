@@ -311,8 +311,9 @@ Every step ends with its part of `doc/android.md` (in brackets below), verified 
    (`windowsassetsprovider`, `create_assets_provider`) were already `cfg(windows)`.
    `cargo ndk -t arm64-v8a check -p feather -p feather-ui` passes (a plain
    `cargo check --target` can't build GameActivity's C++). Desktop tests unchanged. [Doc: `cargo check` for Android in *Building and running*.]
-3. **`AndroidAssetsProvider`.** Tested on the device in step 9 (it needs an APK); on the desktop
-   only that it compiles. [Doc: the assets provider in *Making an app run on Android*.]
+3. **`AndroidAssetsProvider`.** *Done, untested until step 9.* Keeps a clone of `AndroidApp`
+   and opens each asset through `asset_manager()`, so `feather` needs no `ndk` dependency.
+   Tested on the device in step 9 (it needs an APK); on the desktop only that it compiles. [Doc: the assets provider in *Making an app run on Android*.]
 4. **Surface and instance on Android**: `surface.rs`, optional validation layer on Android,
    optional `sampler_anisotropy` and `sample_rate_shading`. Desktop still runs every demo with
    validation on. [Doc: validation layers in *Logs and debugging*.]

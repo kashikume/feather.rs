@@ -4,9 +4,10 @@ use anyhow::Result;
 ///
 /// Each platform has its own implementation:
 /// - Windows: `WindowsAssetsProvider`, reading files from a directory next to the executable,
-/// - Android: not implemented yet (assets will come from the APK through `AAssetManager`).
+/// - Android: `AndroidAssetsProvider`, reading the APK's assets through `AAssetManager`.
 ///
-/// Use `create_assets_provider` to get the implementation for the current platform.
+/// On Windows, use `create_assets_provider` to get it. On Android, build an
+/// `AndroidAssetsProvider` from the `AndroidApp` that `android_main` receives.
 pub trait AssetsProvider {
     /// Reads the asset `name` and returns its contents. `name` is a path relative to the
     /// assets root, using `/` as separator, e.g. `"demo_000_viking_room_atlas.png"` or

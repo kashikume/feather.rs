@@ -240,6 +240,29 @@ has to use the same version, `androidx.games:games-activity:2.0.2`.
 the handle to the running activity that `android_main` receives. Apps use it from there and don't
 need `android-activity` in their own `Cargo.toml`.
 
+### Assets
+
+An app reads its assets (shaders, atlases, meshes, scene files) through an `AssetsProvider`, so
+the same code works on both platforms:
+
+| Platform | Provider                | Where assets are read from                                 |
+|----------|-------------------------|------------------------------------------------------------|
+| Windows  | `WindowsAssetsProvider` | files in `assets\` next to the executable                  |
+| Android  | `AndroidAssetsProvider` | the APK's `assets/` directory, through Android's `AAssetManager` |
+
+On Windows, `create_assets_provider("assets")` makes the provider. On Android, the app builds it
+in `android_main` from the `AndroidApp` it receives, and hands it to the app the same way:
+
+```rust
+let assets: Box<dyn AssetsProvider> = Box::new(AndroidAssetsProvider::new(&app));
+```
+
+Asset names are the same on both: paths relative to the assets root with `/` separators, e.g.
+`"demo_000_viking_room_shader.vert.spv"`. Inside the APK they are read-only, and the APK holds
+exactly what `build.rs` put in the `assets\` directory (how Gradle packs it: plan step 9).
+
+A missing asset fails with `asset <name> not found in the APK`.
+
 ## Troubleshooting
 
 ### `cargo check --target aarch64-linux-android` fails in `android-activity`'s build script

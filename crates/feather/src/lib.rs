@@ -1,4 +1,6 @@
 pub mod animation;
+#[cfg(target_os = "android")]
+pub mod androidassetsprovider;
 pub mod animationclip;
 pub mod animator;
 pub mod app;
