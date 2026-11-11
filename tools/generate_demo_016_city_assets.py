@@ -869,7 +869,6 @@ def make_scene_files(mesh_names):
     stems = ["glass_facade", "brick_facade", "concrete_facade", "stone_facade", "roof", "road", "intersection", "crosswalk", "sidewalk", "concrete", "grass", "bark", "leaves", "metal", "signal", "car", "person"]
     with open(ATLAS_DIR / "demo_016_city_atlas.atlist", "w", encoding="ascii", newline="\n") as f:
         f.write("\n".join(f"demo_016_city/{s}.png" for s in stems) + "\n")
-    (ATLAS_DIR / "demo_016_city_overlay_atlas.font").write_text((ATLAS_DIR / "demo_015_city_atlas.font").read_text(encoding="ascii"), encoding="ascii", newline="\n")
     mats = []
     for s in stems:
         if s == "glass_facade":
@@ -899,8 +898,6 @@ def make_scene_files(mesh_names):
         ]},
     }
     (RES_DIR / "demo_016_city_scene.json").write_text(json.dumps(scene, indent=2) + "\n", encoding="ascii")
-    overlay = {"atlases": [{"name": "Font", "bitmap": "demo_016_city_overlay_atlas.png", "metadata": "demo_016_city_overlay_atlas.atlas"}], "shaders": [{"name": "Text", "vertex": "demo_016_city_text_shader.vert.spv", "fragment": "demo_016_city_text_shader.frag.spv", "model_uniform": "model", "view_uniform": "view", "projection_uniform": "proj"}], "root": {"name": "Overlay root", "children": [{"name": "Frame rate", "transform": {"translation": [18, -14, 0]}}]}}
-    (RES_DIR / "demo_016_city_overlay_scene.json").write_text(json.dumps(overlay, indent=2) + "\n", encoding="ascii")
 
 
 def main():

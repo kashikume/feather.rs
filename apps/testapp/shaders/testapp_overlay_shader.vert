@@ -1,7 +1,7 @@
 #version 450
 
-// The city's overlay text, drawn where its nodes put it on the XY plane, seen by the
-// overlay's orthographic camera.
+// The overlay's flat things (text, images, panels), drawn where their nodes put them on the
+// XY plane, seen by the overlay's orthographic camera.
 
 layout(binding = 0) uniform Camera {
     mat4 view;

@@ -13,12 +13,11 @@ use super::testapp::Demo;
 /// The overlay's height in its units: it is laid out as if the window were this many pixels
 /// high, whatever its real size and the display scaling.
 const OVERLAY_HEIGHT: f32 = 768.0;
-/// How often the frame rate shown is updated, in seconds.
-const FPS_PERIOD: f32 = 0.5;
 
 /// Demo 12: two scenes drawn together. Behind, demo 0's spinning viking room, a 3D scene seen
 /// by a perspective camera. In front, a 2D overlay seen by a flat (orthographic) camera: a
-/// panel with text, the room's texture as an image with a caption, and the frame rate.
+/// panel with text, and the room's texture as an image with a caption. (The frame rate, in the
+/// bottom left corner, is the test app's own overlay, shown over every demo.)
 ///
 /// The overlay is `demo_012_overlay_scene.json`: its font (Segoe UI Semibold, rendered during
 /// the build from `atlases/demo_012_overlay_atlas.font`), demo 0's texture as an image, a
@@ -32,10 +31,6 @@ pub struct OverlayDemo {
     overlay: Scene,
     overlay_camera: OrthographicCamera,
     right: usize,
-    fps: Text,
-    /// The start of the current frame rate period, and the frames counted since.
-    fps_start: Option<f32>,
-    frames: u32,
 }
 
 impl OverlayDemo {
@@ -50,7 +45,6 @@ impl OverlayDemo {
         let shader = find("shader `Text`", overlay.find_shader("Text"))?;
         let info = find("node `Info`", overlay.find_node("Info"))?;
         let caption = find("node `Caption`", overlay.find_node("Caption"))?;
-        let bottom = find("node `Bottom`", overlay.find_node("Bottom"))?;
         let right = find("node `Right`", overlay.find_node("Right"))?;
         let material = create_text_material(&mut overlay, Some("Text".into()), shader, font)?;
 
@@ -88,15 +82,6 @@ impl OverlayDemo {
             (0.0, 0.0),
             grey,
         )?;
-        let fps = add(
-            bottom,
-            TextBuilder::new(font)
-                .height(26.0)
-                .align(HorizontalAlign::Left, VerticalAlign::Bottom),
-            "",
-            (20.0, -OVERLAY_HEIGHT + 16.0),
-            Vec4::new(0.55, 0.95, 0.6, 1.0),
-        )?;
 
         Ok(Self {
             room,
@@ -106,9 +91,6 @@ impl OverlayDemo {
                 ScreenUnits::Height(OVERLAY_HEIGHT),
             ),
             right,
-            fps,
-            fps_start: None,
-            frames: 0,
         })
     }
 }
@@ -149,17 +131,6 @@ impl Demo for OverlayDemo {
             .get_node_mut(self.right)
             .unwrap()
             .set_transform(Mat4::from_translation(Vec3::new(width - 20.0, 0.0, 0.0)));
-
-        // The frame rate, counted over half a second.
-        self.frames += 1;
-        let start = *self.fps_start.get_or_insert(time);
-        if time - start >= FPS_PERIOD {
-            let fps = self.frames as f32 / (time - start);
-            self.fps
-                .set_text(&mut self.overlay, &format!("{fps:.0} fps"))?;
-            self.fps_start = Some(time);
-            self.frames = 0;
-        }
         Ok(())
     }
 }

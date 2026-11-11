@@ -82,6 +82,9 @@ app (`default-members`); use `-p <package>` or `--workspace` for the others.
 The development app (`apps/testapp`) opens a 1024×768 window and shows one demo at a time. The
 only command line argument is the number of the demo to start with (default 0). **Left** and
 **right** arrows switch to the previous and next demo; after the last demo comes the first.
+Over every demo, the bottom left corner shows the demo's number and name and the frame rate: the
+app's own overlay scene (`apps/testapp/src/testapp/info_overlay.rs`), drawn after the demo's
+scenes, so it shows in full screen too. Its frame rate is a scene animation.
 
 | Demo | Name        | What it shows                                                        |
 | ---- | ----------- | -------------------------------------------------------------------- |
@@ -97,10 +100,10 @@ only command line argument is the number of the demo to start with (default 0). 
 | 9    | Spider      | A textured spider walking in a circle with the same bone system: 8 legs of 4 bones each, in the alternating tetrapod gait |
 | 10   | Text        | Text in two fonts (Segoe UI and Segoe UI Bold, made with the font creator): a title changing colour, lines aligned left, centred and right, Polish, German and Spanish letters, a clock updated ten times a second, a line whose letters (a node each) bob in a wave in their own colours, and text lying on a turning floor |
 | 11   | Crawl       | An endless crawl: made-up episodes (number, title, justified paragraphs) sliding away over a twinkling star field and fading out towards the horizon; each episode is added when there is room and removed once it is gone |
-| 12   | Overlay     | Two scenes together: demo 0's spinning room behind, and in front a 2D overlay seen by an orthographic camera, with see-through panels, text, the room's texture as an image and the frame rate |
+| 12   | Overlay     | Two scenes together: demo 0's spinning room behind, and in front a 2D overlay seen by an orthographic camera, with see-through panels, text and the room's texture as an image |
 | 13   | Simple shadow | A human figure (a generated mesh) standing on a floor, casting its shadow from a fixed light; nothing moves, the shader takes one shadow-map sample |
 | 14   | Shadows     | A sun going round the sky over a ring of stone pillars, a spinning golden cube on a pedestal and bouncing balls; their soft-edged shadows turn and stretch with it |
-| 15   | City        | A busy city the camera glides through: 5 x 5 blocks of buildings in four styles, streets with lanes, crosswalks and traffic lights, trees, lamps and a park; over 100 cars stopping at red lights and keeping their distance, over 100 people walking; everything textured (textures painted in code, no image files) and casting shadows from the afternoon sun, with sky reflections on glass and fog into a sky dome; a 2D overlay shows the frame rate |
+| 15   | City        | A busy city the camera glides through: 5 x 5 blocks of buildings in four styles, streets with lanes, crosswalks and traffic lights, trees, lamps and a park; over 100 cars stopping at red lights and keeping their distance, over 100 people walking; everything textured (textures painted in code, no image files) and casting shadows from the afternoon sun, with sky reflections on glass and fog into a sky dome |
 | 16   | City (assets) | The same city as demo 15, but every model is an OBJ and every texture is a PNG packed into an atlas at build time (`tools/generate_demo_016_city_assets.py`); denser geometry (recessed windows, richer cars, people and trees) |
 | 17   | Bouncing balls (shadows) | Demo 6 again, with real shadows: the balls cast into a shadow map instead of sitting on flat discs |
 | 18   | Vases (shadows) | Demo 7 again, with real shadows: the vases, glass included, cast onto the turning floor |

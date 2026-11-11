@@ -28,6 +28,7 @@ use super::demo_018_vases::VasesShadowDemo;
 use super::demo_019_walker::WalkerShadowDemo;
 use super::demo_020_spider::SpiderShadowDemo;
 use super::demo_021_animation::AnimationDemo;
+use super::info_overlay::InfoOverlay;
 
 /// One demo of the test app: a scene, the camera looking at it, and its animation. A demo may
 /// have more scenes, each with its own camera, drawn one over the other (`scene_count`).
@@ -151,11 +152,13 @@ pub const DEMOS: &[DemoInfo] = &[
 ];
 
 /// The development app: shows one demo at a time. Left and right arrows switch to the
-/// previous and next demo, wrapping around.
+/// previous and next demo, wrapping around. Over every demo, an overlay shows the demo's number
+/// and name and the frame rate (`InfoOverlay`).
 pub struct TestApp {
     assets: Box<dyn AssetsProvider>,
     demo_index: usize,
     demo: Box<dyn Demo>,
+    overlay: InfoOverlay,
     /// App time (as passed to `on_update`) when the current demo started; `None` until its
     /// first update.
     demo_start: Option<f32>,
@@ -182,16 +185,25 @@ impl FeatherApp for TestApp {
         log::trace!("on_destroy called");
     }
 
+    /// The demo's scenes, then the overlay.
     fn get_num_scenes_to_render(&self) -> usize {
-        self.demo.scene_count()
+        self.demo.scene_count() + 1
     }
 
     fn get_scene_to_render(&mut self, scene_index: usize) -> &mut Scene {
-        self.demo.scene_at(scene_index)
+        if scene_index < self.demo.scene_count() {
+            self.demo.scene_at(scene_index)
+        } else {
+            self.overlay.scene()
+        }
     }
 
     fn get_camera_to_render_scene(&mut self, scene_index: usize) -> &mut dyn Camera {
-        self.demo.camera_at(scene_index)
+        if scene_index < self.demo.scene_count() {
+            self.demo.camera_at(scene_index)
+        } else {
+            self.overlay.camera()
+        }
     }
 
     fn on_key_pressed(&mut self, key: KeyCode) -> Result<()> {
@@ -210,18 +222,31 @@ impl FeatherApp for TestApp {
 
 /// The window title for demo `index`: the app name, then the demo's number and name.
 pub fn demo_window_title(index: usize) -> String {
-    format!("Feather development app - {index} {}", DEMOS[index].name)
+    format!("Feather development app - {}", demo_label(index))
+}
+
+/// Demo `index`'s number and name, e.g. "21 Animation".
+pub fn demo_label(index: usize) -> String {
+    format!("{index} {}", DEMOS[index].name)
 }
 
 impl TestApp {
     /// Creates the app showing demo `demo_index` (see `DEMOS`).
     pub fn new(demo_index: usize) -> Result<Self> {
         let assets = create_assets_provider("assets")?;
+        Self::with_assets(assets, demo_index)
+    }
+
+    /// `new`, with the assets from `assets`.
+    pub fn with_assets(assets: Box<dyn AssetsProvider>, demo_index: usize) -> Result<Self> {
         let demo = create_demo(&*assets, demo_index)?;
+        let mut overlay = InfoOverlay::new(&*assets)?;
+        overlay.set_title(&demo_label(demo_index))?;
         Ok(Self {
             assets,
             demo_index,
             demo,
+            overlay,
             demo_start: None,
         })
     }
@@ -232,7 +257,7 @@ impl TestApp {
         self.demo = create_demo(&*self.assets, index)?;
         self.demo_index = index;
         self.demo_start = None;
-        Ok(())
+        self.overlay.set_title(&demo_label(index))
     }
 }
 
@@ -809,15 +834,6 @@ mod tests {
         demo.update(0.1).unwrap();
         assert_eq!(x(&mut demo), 1536.0 - 20.0);
 
-        // The frame rate is shown once half a second has passed.
-        for step in 2..=10 {
-            demo.update(step as f32 * 0.1).unwrap();
-        }
-        let scene = demo.scene_at(1);
-        let bottom = scene.get_node(scene.find_node("Bottom").unwrap()).unwrap();
-        let fps = scene.get_node(*bottom.get_children().iter().next().unwrap()).unwrap();
-        assert!(fps.get_mesh().is_some(), "no frame rate shown");
-
         // Scene 0 is demo 0's room, spinning.
         let room_node = demo.scene_at(0).find_node("Room").unwrap();
         let before = demo.scene_at(0).get_node(room_node).unwrap().get_transform();
@@ -932,15 +948,8 @@ mod tests {
         assert!(moved(&cars, &cars_after) > cars.len() / 2, "cars don't move");
         assert_eq!(moved(&people, &positions(&mut demo, "People")), people.len());
         assert_ne!(demo.camera().get_view(), view);
-
-        // The overlay shows the frame rate once half a second has passed.
-        assert_eq!(demo.scene_count(), 2);
-        let overlay = demo.scene_at(1);
-        overlay.update_nodes();
-        let anchor = overlay.find_node("Frame rate").unwrap();
-        let texts: Vec<usize> = overlay.get_node(anchor).unwrap().get_children().iter().copied().collect();
-        assert_eq!(texts.len(), 2);
-        assert!(texts.iter().all(|&t| overlay.get_node(t).unwrap().get_mesh().is_some()));
+        // The frame rate is the test app's overlay, not a scene of the demo.
+        assert_eq!(demo.scene_count(), 1);
     }
 
     #[test]
@@ -994,7 +1003,7 @@ mod tests {
             .count();
         assert!(moved > cars.len() / 2, "cars don't move");
         assert_ne!(demo.camera().get_view(), view);
-        assert_eq!(demo.scene_count(), 2);
+        assert_eq!(demo.scene_count(), 1);
     }
 
     #[test]
@@ -1111,5 +1120,57 @@ mod tests {
         let far = demo.camera().get_view();
         demo.update(5.0).unwrap();
         assert_ne!(demo.camera().get_view(), far);
+    }
+
+    #[test]
+    fn info_overlay_shows_the_title_and_the_frame_rate() {
+        let mut overlay = InfoOverlay::new(&SourceAssets).unwrap();
+        overlay.set_title("21 Animation").unwrap();
+        assert_eq!(overlay.get_title(), "21 Animation");
+
+        let scene = overlay.scene();
+        let anchor = scene.find_node("Frame rate").unwrap();
+        // The frame rate text is a node under the anchor, with a node per glyph.
+        let glyphs = |scene: &Scene| -> usize {
+            let text = *scene.get_node(anchor).unwrap().get_children().iter().next().unwrap();
+            scene.get_node(text).unwrap().get_children().len()
+        };
+        assert_eq!(glyphs(scene), "--fps".len());
+
+        // 60 frames a second for one second: the text changes to "60 fps".
+        for frame in 0..=60 {
+            scene.advance_animations_to(frame as f32 / 60.0);
+        }
+        assert_eq!(glyphs(scene), "60fps".len());
+        assert!(scene.find_animation("Frame rate").is_some());
+
+        // The panel grows with a longer title.
+        let panel = scene.find_node("Panel").unwrap();
+        let width = |overlay: &mut InfoOverlay| {
+            overlay.scene().get_node(panel).unwrap().get_transform().x.x
+        };
+        let short = width(&mut overlay);
+        overlay
+            .set_title("16 A much longer demo name than any of the real ones")
+            .unwrap();
+        assert!(width(&mut overlay) > short);
+    }
+
+    #[test]
+    fn the_overlay_is_drawn_after_the_demo_scenes() {
+        let mut app = TestApp::with_assets(Box::new(SourceAssets), 12).unwrap();
+        // Demo 12 has two scenes; the overlay is the third, with its own camera.
+        assert_eq!(app.get_num_scenes_to_render(), 3);
+        let overlay = app.get_scene_to_render(2).get_id();
+        assert_ne!(overlay, app.get_scene_to_render(0).get_id());
+        assert_ne!(overlay, app.get_scene_to_render(1).get_id());
+        assert!(app.get_scene_to_render(2).find_node("Frame rate").is_some());
+        assert_eq!(app.overlay.get_title(), "12 Overlay");
+
+        // Switching demos keeps the overlay and changes its title.
+        app.on_key_pressed(KeyCode::ArrowRight).unwrap();
+        assert_eq!(app.get_num_scenes_to_render(), 2);
+        assert_eq!(app.get_scene_to_render(1).get_id(), overlay);
+        assert_eq!(app.overlay.get_title(), "13 Simple shadow");
     }
 }

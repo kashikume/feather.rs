@@ -71,8 +71,7 @@
           },
           { "name": "Caption", "transform": { "translation": [-138, -256, 0] } }
         ]
-      },
-      { "name": "Bottom" }
+      }
     ]
   }
 }

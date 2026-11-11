@@ -12,12 +12,10 @@ use cgmath::{Deg, InnerSpace, Rad};
 use feather::assetsprovider::AssetsProvider;
 use feather::atlas::Atlas;
 use feather::camera::Camera;
-use feather::math::{Mat4, Point3, Vec2, Vec3, Vec4};
-use feather::orthographiccamera::{OrthographicCamera, ScreenOrigin, ScreenUnits};
+use feather::math::{Mat4, Point3, Vec2, Vec3};
 use feather::perspectivecamera::PerspectiveCamera;
 use feather::scene::Scene;
 use feather::shadow::ShadowLight;
-use feather::text::{create_text_material, HorizontalAlign, Text, TextBuilder, VerticalAlign};
 
 use super::random::Random;
 use super::testapp::Demo;
@@ -51,10 +49,6 @@ const CAMERA_SPEED: f32 = 7.0;
 const SHADOW_RADIUS: f32 = 75.0;
 const SHADOW_MAP_SIZE: u32 = 4096;
 
-/// The overlay is laid out as if the window were this many pixels high.
-const OVERLAY_HEIGHT: f32 = 768.0;
-/// How often the frame rate shown is updated, in seconds.
-const FPS_PERIOD: f32 = 0.5;
 
 /// Longest simulation step; slower frames are split.
 const MAX_STEP: f32 = 1.0 / 30.0;
@@ -98,10 +92,6 @@ struct Person {
 /// shimmer (`ShadowLight::directional_snapped`). The shader (`demo_015_city_shader.frag`) adds
 /// light from the sky and the ground, darker street level, sky reflections on glass and fog
 /// into the sky dome (`demo_015_city_sky_shader.frag`).
-///
-/// A second scene, an overlay seen by a flat camera, shows the frame rate
-/// (`demo_015_city_overlay_scene.json`, its font rendered during the build from
-/// `atlases/demo_015_city_atlas.font`).
 pub struct CityDemo {
     scene: Scene,
     camera: PerspectiveCamera,
@@ -114,13 +104,6 @@ pub struct CityDemo {
     /// (where the lamp goes in front of the lens of the colour shown).
     lamps: Vec<(usize, Axis, Mat4)>,
     last_time: Option<f32>,
-    /// The overlay in front of the city: the frame rate, in white over a soft shadow.
-    overlay: Scene,
-    overlay_camera: OrthographicCamera,
-    fps_texts: [Text; 2],
-    /// Frames counted since `fps_start`, for the frame rate shown.
-    frames: u32,
-    fps_start: Option<f32>,
 }
 
 /// The afternoon sun: direction towards it.
@@ -187,8 +170,6 @@ impl CityDemo {
             .uniforms_mut()
             .set("sunDirection", sun());
 
-        let (overlay, fps_texts) = Self::overlay(assets)?;
-
         let mut demo = Self {
             scene,
             camera: PerspectiveCamera::new(),
@@ -201,14 +182,6 @@ impl CityDemo {
             people: Vec::new(),
             lamps: Vec::new(),
             last_time: None,
-            overlay,
-            overlay_camera: OrthographicCamera::new(
-                ScreenOrigin::TopLeft,
-                ScreenUnits::Height(OVERLAY_HEIGHT),
-            ),
-            fps_texts,
-            frames: 0,
-            fps_start: None,
         };
         demo.build_city(city, &materials, &mut random)?;
         demo.add_traffic(city, &materials, &mut random)?;
@@ -216,36 +189,6 @@ impl CityDemo {
         demo.camera.set_fov(60.0).set_near_far(0.2, 520.0);
         demo.update(0.0)?;
         Ok(demo)
-    }
-
-    /// The overlay scene (`demo_015_city_overlay_scene.json`) with the frame rate's texts: a
-    /// dark shadow, and the white text over it.
-    fn overlay(assets: &dyn AssetsProvider) -> Result<(Scene, [Text; 2])> {
-        let mut overlay = Scene::load(assets, "demo_015_city_overlay_scene.json")?;
-        let find = |what: &str, handle: Option<usize>| {
-            handle.ok_or_else(|| anyhow!("the overlay has no {what}"))
-        };
-        let font = find("atlas `Font`", overlay.find_atlas("Font"))?;
-        let shader = find("shader `Text`", overlay.find_shader("Text"))?;
-        let anchor = find("node `Frame rate`", overlay.find_node("Frame rate"))?;
-        let material = create_text_material(&mut overlay, None, shader, font)?;
-        let builder = TextBuilder::new(font)
-            .height(30.0)
-            .align(HorizontalAlign::Left, VerticalAlign::Top);
-        // The shadow a little down and right, and behind (drawn first).
-        let mut texts = Vec::new();
-        for (offset, color) in [
-            (Vec3::new(2.0, -2.0, -1.0), Vec4::new(0.0, 0.0, 0.0, 0.6)),
-            (Vec3::new(0.0, 0.0, 0.0), Vec4::new(1.0, 1.0, 1.0, 1.0)),
-        ] {
-            let text = Text::create(&mut overlay, anchor, None, material, builder.clone(), "")?;
-            let node = overlay.get_node_mut(text.get_node()).unwrap();
-            node.set_transform(Mat4::from_translation(offset));
-            node.uniforms_mut().set("color", color);
-            texts.push(text);
-        }
-        let [shadow, text]: [Text; 2] = texts.try_into().ok().unwrap();
-        Ok((overlay, [shadow, text]))
     }
 
     /// Adds `mesh` as a node with `material`, casting shadows.
@@ -798,24 +741,6 @@ impl Demo for CityDemo {
         &mut self.camera
     }
 
-    fn scene_count(&self) -> usize {
-        2
-    }
-
-    fn scene_at(&mut self, index: usize) -> &mut Scene {
-        match index {
-            0 => &mut self.scene,
-            _ => &mut self.overlay,
-        }
-    }
-
-    fn camera_at(&mut self, index: usize) -> &mut dyn Camera {
-        match index {
-            0 => &mut self.camera,
-            _ => &mut self.overlay_camera,
-        }
-    }
-
     fn update(&mut self, time: f32) -> Result<()> {
         let mut dt = (time - self.last_time.unwrap_or(time)).clamp(0.0, 0.5);
         self.last_time = Some(time);
@@ -828,18 +753,6 @@ impl Demo for CityDemo {
         }
         self.place(time);
 
-        // The frame rate, counted over half a second.
-        let start = *self.fps_start.get_or_insert(time);
-        self.frames += 1;
-        if time - start >= FPS_PERIOD {
-            let fps = self.frames as f32 / (time - start);
-            let text = format!("{fps:.0} fps");
-            for shown in &mut self.fps_texts {
-                shown.set_text(&mut self.overlay, &text)?;
-            }
-            self.frames = 0;
-            self.fps_start = Some(time);
-        }
         Ok(())
     }
 }
