@@ -19,3 +19,6 @@ serde_json.workspace = true
 
 [build-dependencies]
 feather-build.workspace = true
+
+[target.'cfg(target_os = "android")'.dependencies]
+raw-window-handle = "0.6"

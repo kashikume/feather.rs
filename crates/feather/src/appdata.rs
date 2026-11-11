@@ -6,6 +6,7 @@ use super::buffers::FrameUniformBuffer;
 use super::featherapp::FeatherApp;
 use super::gpuimage::GpuImage;
 use super::gpumeshbuffer::GpuMeshBuffer;
+use super::physicaldevice::DeviceFeatures;
 use super::pipeline::{PipelineKey, ShaderPipeline};
 use super::shadowpass::{ShadowMap, ShadowRenderer};
 use super::uniformdata::UniformIssue;
@@ -15,12 +16,16 @@ use super::swapchain::Swapchain;
 pub struct AppData {
     pub app: Box<dyn FeatherApp>,
     // Debug
+    /// Whether the validation layers are on (debug builds, when installed).
+    pub validation: bool,
     pub messenger: vk::DebugUtilsMessengerEXT,
     // Surface
     pub surface: vk::SurfaceKHR,
     // Physical Device / Logical Device
     pub physical_device: vk::PhysicalDevice,
     pub msaa_samples: vk::SampleCountFlags,
+    /// The optional features the device has, and which are enabled.
+    pub features: DeviceFeatures,
     pub graphics_queue: vk::Queue,
     pub present_queue: vk::Queue,
     // Swapchain

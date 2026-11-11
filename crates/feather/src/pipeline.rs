@@ -116,6 +116,8 @@ pub unsafe fn create_render_pass(
 pub struct PipelineTarget {
     pub render_pass: vk::RenderPass,
     pub msaa_samples: vk::SampleCountFlags,
+    /// Whether to shade per sample (`DeviceFeatures::sample_rate_shading`).
+    pub sample_shading: bool,
     pub extent: vk::Extent2D,
 }
 
@@ -512,7 +514,7 @@ unsafe fn create_graphics_pipeline(
     // Multisample State
 
     let multisample_state = vk::PipelineMultisampleStateCreateInfo::builder()
-        .sample_shading_enable(true)
+        .sample_shading_enable(target.sample_shading)
         .min_sample_shading(0.2)
         .rasterization_samples(target.msaa_samples);
 

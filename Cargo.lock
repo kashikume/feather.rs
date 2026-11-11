@@ -429,6 +429,7 @@ dependencies = [
  "feather-build",
  "log",
  "png",
+ "raw-window-handle",
  "serde",
  "serde_json",
  "spirq",

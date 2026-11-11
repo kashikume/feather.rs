@@ -45,6 +45,7 @@ pub mod shaderlayout;
 pub mod shadow;
 pub mod shadowpass;
 pub mod skeleton;
+pub mod surface;
 pub mod swapchain;
 pub mod swapchainsupport;
 pub mod syncobjects;

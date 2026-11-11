@@ -314,9 +314,12 @@ Every step ends with its part of `doc/android.md` (in brackets below), verified 
 3. **`AndroidAssetsProvider`.** *Done, untested until step 9.* Keeps a clone of `AndroidApp`
    and opens each asset through `asset_manager()`, so `feather` needs no `ndk` dependency.
    Tested on the device in step 9 (it needs an APK); on the desktop only that it compiles. [Doc: the assets provider in *Making an app run on Android*.]
-4. **Surface and instance on Android**: `surface.rs`, optional validation layer on Android,
-   optional `sampler_anisotropy` and `sample_rate_shading`. Desktop still runs every demo with
-   validation on. [Doc: validation layers in *Logs and debugging*.]
+4. **Surface and instance on Android**: *Done, untested on a device until step 9.* `surface.rs`,
+   optional validation layer on Android (`AppData::validation`, decided at start-up, replacing
+   three `VALIDATION_ENABLED` constants), optional `sampler_anisotropy` and
+   `sample_rate_shading` (`DeviceFeatures` in `AppData`, used by the device, the texture sampler
+   and `PipelineTarget::sample_shading`). Desktop: demo 16 runs with validation on and no
+   errors. [Doc: validation layers in *Logs and debugging*.]
 5. **Lifecycle**: `App::run` with a factory, engine created on the first `Resumed`, surface and
    swapchain dropped on `Suspended` and rebuilt on `Resumed`, `destroy()` on `LoopExiting`. On
    Windows, minimizing and restoring and closing the window still work; `Suspended` / `Resumed`

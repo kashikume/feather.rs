@@ -218,7 +218,46 @@ Android builds go to `target\aarch64-linux-android\`, next to the Windows ones i
 
 ## Logs and debugging
 
-*Not written yet (plan steps 4, 6, 8 and 9).*
+*Reading logs from the device: not written yet (plan steps 6, 8 and 9).*
+
+### Validation layers
+
+Debug builds turn on Vulkan's validation layers (`VK_LAYER_KHRONOS_validation`), which check
+every Vulkan call and log what is wrong (see `feather::instance` lines in the log). Release
+builds never use them.
+
+| Build   | Windows                                              | Android                                   |
+|---------|------------------------------------------------------|-------------------------------------------|
+| debug   | **required**: from the Vulkan SDK; start-up fails without them (`Validation layer requested but not supported.`) | used if the APK carries them; otherwise a warning, and the app runs without them |
+| release | off                                                  | off                                       |
+
+Android devices don't have the validation layers, and the APK doesn't carry them yet, so a debug
+build on a device logs at start-up:
+
+```
+Validation layer VK_LAYER_KHRONOS_validation not found; running without validation.
+```
+
+Problems in Vulkan use are therefore found on Windows: run the same demo there in a debug build
+first. (Packing the layers into debug APKs is planned: see the plan's *Later*.)
+
+### Device features
+
+Some Vulkan features the engine uses are optional on Android GPUs. The engine turns each on only
+when the device has it, and logs what it found at start-up:
+
+```
+Selected physical device (`Qualcomm(R) Adreno(TM) X1-85 GPU`).
+Device features: DeviceFeatures { sampler_anisotropy: true, max_sampler_anisotropy: 16.0, sample_rate_shading: true }
+```
+
+(That is this Windows machine's GPU.) Without a feature, rendering still works, slightly less
+smooth:
+
+- `sampler_anisotropy`: textures seen at a slant are blurrier (no anisotropic filtering);
+  `max_sampler_anisotropy` caps how much is used (at most 16).
+- `sample_rate_shading`: with MSAA, the inside of textured surfaces is less smooth; edges are
+  still antialiased.
 
 ## Making an app run on Android
 
@@ -239,6 +278,11 @@ has to use the same version, `androidx.games:games-activity:2.0.2`.
 `feather` re-exports `android-activity`'s `AndroidApp` as `feather::AndroidApp` (Android only):
 the handle to the running activity that `android_main` receives. Apps use it from there and don't
 need `android-activity` in their own `Cargo.toml`.
+
+The Vulkan surface (what the engine draws into) is made from the window by `feather::surface`.
+`vulkanalia`, the Vulkan bindings, makes surfaces for Windows, Linux and macOS windows but not
+Android ones, so on Android the engine makes it itself from the window's `ANativeWindow`, with
+the `VK_KHR_android_surface` extension.
 
 ### Assets
 

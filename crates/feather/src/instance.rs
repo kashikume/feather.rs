@@ -5,18 +5,19 @@ use std::os::raw::c_void;
 use anyhow::{anyhow, Result};
 use log::*;
 use vulkanalia::prelude::v1_0::*;
-use vulkanalia::window as vk_window;
 use vulkanalia::Version;
 use winit::window::Window;
 
 use vulkanalia::vk::ExtDebugUtilsExtension;
 
 use super::appdata::AppData;
+use super::surface;
 
-/// Whether the validation layers should be enabled.
-const VALIDATION_ENABLED: bool = cfg!(debug_assertions);
+/// Whether the validation layers are wanted: in debug builds. Whether they are actually on is
+/// `AppData::validation`.
+const VALIDATION_REQUESTED: bool = cfg!(debug_assertions);
 /// The name of the validation layers.
-const VALIDATION_LAYER: vk::ExtensionName =
+pub const VALIDATION_LAYER: vk::ExtensionName =
     vk::ExtensionName::from_bytes(b"VK_LAYER_KHRONOS_validation");
 
 /// The Vulkan SDK version that started requiring the portability subset extension for macOS.
@@ -48,11 +49,9 @@ pub unsafe fn create_instance(
         .map(|l| l.layer_name)
         .collect::<HashSet<_>>();
 
-    if VALIDATION_ENABLED && !available_layers.contains(&VALIDATION_LAYER) {
-        return Err(anyhow!("Validation layer requested but not supported."));
-    }
+    data.validation = use_validation(VALIDATION_REQUESTED, available_layers.contains(&VALIDATION_LAYER))?;
 
-    let layers = if VALIDATION_ENABLED {
+    let layers = if data.validation {
         vec![VALIDATION_LAYER.as_ptr()]
     } else {
         Vec::new()
@@ -60,7 +59,7 @@ pub unsafe fn create_instance(
 
     // Extensions
 
-    let mut extensions = vk_window::get_required_instance_extensions(window)
+    let mut extensions = surface::required_instance_extensions(window)
         .iter()
         .map(|e| e.as_ptr())
         .collect::<Vec<_>>();
@@ -79,7 +78,7 @@ pub unsafe fn create_instance(
         vk::InstanceCreateFlags::empty()
     };
 
-    if VALIDATION_ENABLED {
+    if data.validation {
         extensions.push(vk::EXT_DEBUG_UTILS_EXTENSION.name.as_ptr());
     }
 
@@ -100,7 +99,7 @@ pub unsafe fn create_instance(
         )
         .user_callback(Some(debug_callback));
 
-    if VALIDATION_ENABLED {
+    if data.validation {
         info = info.push_next(&mut debug_info);
     }
 
@@ -108,11 +107,27 @@ pub unsafe fn create_instance(
 
     // Messenger
 
-    if VALIDATION_ENABLED {
+    if data.validation {
         data.messenger = instance.create_debug_utils_messenger_ext(&debug_info, None)?;
     }
 
     Ok(instance)
+}
+
+/// Whether to turn the validation layers on, when they are `requested` (debug builds) and
+/// `available` (installed: the Vulkan SDK on Windows). Debug builds on Windows require them; on
+/// Android, where devices don't have them unless the APK carries them, a debug build goes on
+/// without them, with a warning.
+fn use_validation(requested: bool, available: bool) -> Result<bool> {
+    match (requested, available) {
+        (false, _) => Ok(false),
+        (true, true) => Ok(true),
+        (true, false) if cfg!(target_os = "android") => {
+            warn!("Validation layer {VALIDATION_LAYER} not found; running without validation.");
+            Ok(false)
+        }
+        (true, false) => Err(anyhow!("Validation layer requested but not supported.")),
+    }
 }
 
 extern "system" fn debug_callback(
@@ -135,4 +150,23 @@ extern "system" fn debug_callback(
     }
 
     vk::FALSE
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validation_follows_request_and_availability() {
+        assert!(!use_validation(false, true).unwrap());
+        assert!(!use_validation(false, false).unwrap());
+        assert!(use_validation(true, true).unwrap());
+    }
+
+    #[test]
+    #[cfg(not(target_os = "android"))]
+    fn missing_validation_layer_fails_on_desktop() {
+        let err = use_validation(true, false).unwrap_err();
+        assert!(err.to_string().contains("Validation layer requested but not supported."));
+    }
 }

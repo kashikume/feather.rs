@@ -8,6 +8,7 @@ use vulkanalia::prelude::v1_0::*;
 use super::buffers::create_buffer;
 use super::images::{copy_buffer_to_image, create_image, create_image_view, transition_image_layout};
 use super::other::{begin_single_time_commands, end_single_time_commands};
+use super::physicaldevice::DeviceFeatures;
 
 /// Format of every sampled image: 8-bit RGBA with sRGB-encoded colors (as PNG files store them).
 const FORMAT: vk::Format = vk::Format::R8G8B8A8_SRGB;
@@ -286,16 +287,20 @@ unsafe fn generate_mipmaps(
 }
 
 /// The sampler used for every texture: linear filtering with mipmaps, anisotropic filtering,
-/// repeating texture coordinates.
-pub unsafe fn create_texture_sampler(device: &Device) -> Result<vk::Sampler> {
+/// repeating texture coordinates. Anisotropic filtering (up to 16x) only when the device has it
+/// (`features`).
+pub unsafe fn create_texture_sampler(
+    device: &Device,
+    features: &DeviceFeatures,
+) -> Result<vk::Sampler> {
     let info = vk::SamplerCreateInfo::builder()
         .mag_filter(vk::Filter::LINEAR)
         .min_filter(vk::Filter::LINEAR)
         .address_mode_u(vk::SamplerAddressMode::REPEAT)
         .address_mode_v(vk::SamplerAddressMode::REPEAT)
         .address_mode_w(vk::SamplerAddressMode::REPEAT)
-        .anisotropy_enable(true)
-        .max_anisotropy(16.0)
+        .anisotropy_enable(features.sampler_anisotropy)
+        .max_anisotropy(features.max_sampler_anisotropy.min(16.0))
         .border_color(vk::BorderColor::INT_OPAQUE_BLACK)
         .unnormalized_coordinates(false)
         .compare_enable(false)

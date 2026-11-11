@@ -4,7 +4,6 @@ use std::time::Instant;
 use anyhow::{anyhow, Result};
 use vulkanalia::loader::{LibloadingLoader, LIBRARY};
 use vulkanalia::prelude::v1_0::*;
-use vulkanalia::window as vk_window;
 use winit::event::{ElementState, Event, KeyEvent, MouseScrollDelta, WindowEvent};
 use winit::keyboard::PhysicalKey;
 use winit::event_loop::EventLoop;
@@ -13,9 +12,6 @@ use winit::window::Window;
 use vulkanalia::vk::ExtDebugUtilsExtension;
 use vulkanalia::vk::KhrSurfaceExtension;
 use vulkanalia::vk::KhrSwapchainExtension;
-
-/// Whether the validation layers should be enabled.
-const VALIDATION_ENABLED: bool = cfg!(debug_assertions);
 
 /// The maximum number of frames that can be processed concurrently.
 const MAX_FRAMES_IN_FLIGHT: usize = 2;
@@ -31,10 +27,11 @@ use super::object::Object;
 use super::framebuffers::create_framebuffers;
 use super::instance::create_instance;
 use super::logicaldevice::create_logical_device;
-use super::physicaldevice::pick_physical_device;
+use super::physicaldevice::{pick_physical_device, DeviceFeatures};
 use super::pipeline::{create_render_pass, PipelineKey, PipelineTarget, ShaderPipeline};
 use super::scene::sort_for_rendering;
 use super::swapchain::Swapchain;
+use super::surface;
 use super::syncobjects::create_sync_objects;
 use super::gpuimage::{create_texture_sampler, GpuImage, UploadContext};
 use super::gpumeshbuffer::GpuMeshBuffer;
@@ -63,10 +60,12 @@ impl App {
         let entry = Entry::new(loader).map_err(|b| anyhow!("{}", b))?;
         let mut data = AppData {
             app,
+            validation: false,
             messenger: vk::DebugUtilsMessengerEXT::default(),
             surface: vk::SurfaceKHR::default(),
             physical_device: vk::PhysicalDevice::default(),
             msaa_samples: vk::SampleCountFlags::default(),
+            features: DeviceFeatures::default(),
             graphics_queue: vk::Queue::default(),
             present_queue: vk::Queue::default(),
             swapchain: Swapchain::default(),
@@ -93,7 +92,7 @@ impl App {
             images_in_flight: Vec::new(),
         };
         let instance = create_instance(window, &entry, &mut data)?;
-        data.surface = vk_window::create_surface(&instance, &window, &window)?;
+        data.surface = surface::create_surface(&instance, window)?;
         pick_physical_device(&instance, &mut data)?;
         data.min_uniform_alignment = instance
             .get_physical_device_properties(data.physical_device)
@@ -107,7 +106,7 @@ impl App {
         create_color_objects(&instance, &device, &mut data)?;
         create_depth_objects(&instance, &device, &mut data)?;
         create_framebuffers(&device, &mut data)?;
-        data.texture_sampler = create_texture_sampler(&device)?;
+        data.texture_sampler = create_texture_sampler(&device, &data.features)?;
         let upload = UploadContext {
             instance: &instance,
             device: &device,
@@ -240,6 +239,7 @@ impl App {
         let target = PipelineTarget {
             render_pass: data.render_pass,
             msaa_samples: data.msaa_samples,
+            sample_shading: data.features.sample_rate_shading,
             extent,
         };
         let fallback_view = data.fallback_texture.as_ref().unwrap().view;
@@ -666,7 +666,7 @@ impl App {
         self.device.destroy_device(None);
         self.instance.destroy_surface_khr(self.data.surface, None);
 
-        if VALIDATION_ENABLED {
+        if self.data.validation {
             self.instance.destroy_debug_utils_messenger_ext(self.data.messenger, None);
         }
 

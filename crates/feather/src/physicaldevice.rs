@@ -16,6 +16,31 @@ const DEVICE_EXTENSIONS: &[vk::ExtensionName] = &[vk::KHR_SWAPCHAIN_EXTENSION.na
 // Physical Device
 //================================================
 
+/// The optional device features the engine uses when the device has them. Desktop GPUs have
+/// all of them; Android GPUs usually do, but not always.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct DeviceFeatures {
+    /// Anisotropic texture filtering, on the texture sampler.
+    pub sampler_anisotropy: bool,
+    /// The largest anisotropy the sampler may use (`maxSamplerAnisotropy`).
+    pub max_sampler_anisotropy: f32,
+    /// Sample-rate shading: with MSAA, the fragment shader runs per sample, smoothing the
+    /// inside of textured surfaces as well as their edges.
+    pub sample_rate_shading: bool,
+}
+
+impl DeviceFeatures {
+    pub unsafe fn get(instance: &Instance, physical_device: vk::PhysicalDevice) -> Self {
+        let features = instance.get_physical_device_features(physical_device);
+        let limits = instance.get_physical_device_properties(physical_device).limits;
+        Self {
+            sampler_anisotropy: features.sampler_anisotropy == vk::TRUE,
+            max_sampler_anisotropy: limits.max_sampler_anisotropy,
+            sample_rate_shading: features.sample_rate_shading == vk::TRUE,
+        }
+    }
+}
+
 #[derive(Debug, Error)]
 #[error("{0}")]
 pub struct SuitabilityError(pub &'static str);
@@ -33,6 +58,8 @@ pub unsafe fn pick_physical_device(instance: &Instance, data: &mut AppData) -> R
             info!("Selected physical device (`{}`).", properties.device_name);
             data.physical_device = physical_device;
             data.msaa_samples = get_max_msaa_samples(instance, data);
+            data.features = DeviceFeatures::get(instance, physical_device);
+            info!("Device features: {:?}", data.features);
             return Ok(());
         }
     }
@@ -51,11 +78,6 @@ unsafe fn check_physical_device(
     let support = SwapchainSupport::get(instance, data.surface, physical_device)?;
     if support.formats.is_empty() || support.present_modes.is_empty() {
         return Err(anyhow!(SuitabilityError("Insufficient swapchain support.")));
-    }
-
-    let features = instance.get_physical_device_features(physical_device);
-    if features.sampler_anisotropy != vk::TRUE {
-        return Err(anyhow!(SuitabilityError("No sampler anisotropy.")));
     }
 
     Ok(())

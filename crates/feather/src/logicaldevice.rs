@@ -5,13 +5,8 @@ use vulkanalia::prelude::v1_0::*;
 use vulkanalia::Version;
 
 use super::appdata::AppData;
+use super::instance::VALIDATION_LAYER;
 use super::queuefamilyindices::QueueFamilyIndices;
-
-/// Whether the validation layers should be enabled.
-const VALIDATION_ENABLED: bool = cfg!(debug_assertions);
-/// The name of the validation layers.
-const VALIDATION_LAYER: vk::ExtensionName =
-    vk::ExtensionName::from_bytes(b"VK_LAYER_KHRONOS_validation");
 
 /// The required device extensions.
 const DEVICE_EXTENSIONS: &[vk::ExtensionName] = &[vk::KHR_SWAPCHAIN_EXTENSION.name];
@@ -47,7 +42,7 @@ pub unsafe fn create_logical_device(
 
     // Layers
 
-    let layers = if VALIDATION_ENABLED {
+    let layers = if data.validation {
         vec![VALIDATION_LAYER.as_ptr()]
     } else {
         vec![]
@@ -68,8 +63,8 @@ pub unsafe fn create_logical_device(
     // Features
 
     let features = vk::PhysicalDeviceFeatures::builder()
-        .sampler_anisotropy(true)
-        .sample_rate_shading(true);
+        .sampler_anisotropy(data.features.sampler_anisotropy)
+        .sample_rate_shading(data.features.sample_rate_shading);
 
     // Create
 
