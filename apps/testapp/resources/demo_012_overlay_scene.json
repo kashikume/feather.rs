@@ -44,32 +44,44 @@
     "name": "Overlay root",
     "children": [
       {
-        "name": "Info panel",
-        "mesh": "Square",
-        "material": "Panel",
-        "transparent": true,
-        "transform": { "translation": [20, -20, -1], "scale": [500, 196, 1] },
-        "uniforms": { "color": { "vec4": [0.04, 0.06, 0.12, 0.72] } }
+        "name": "Left",
+        "children": [
+          {
+            "name": "Info panel",
+            "mesh": "Square",
+            "material": "Panel",
+            "transparent": true,
+            "transform": { "translation": [20, -20, -1], "scale": [500, 196, 1] },
+            "uniforms": { "color": { "vec4": [0.04, 0.06, 0.12, 0.72] } }
+          },
+          { "name": "Info", "transform": { "translation": [40, -34, 0] } }
+        ]
       },
-      { "name": "Info", "transform": { "translation": [40, -34, 0] } },
       {
         "name": "Right",
         "children": [
           {
-            "name": "Image frame",
-            "mesh": "Square",
-            "material": "Panel",
-            "transparent": true,
-            "transform": { "translation": [-256, -20, -1], "scale": [236, 278, 1] },
-            "uniforms": { "color": { "vec4": [0.04, 0.06, 0.12, 0.72] } }
-          },
-          {
-            "name": "Image",
-            "mesh": "Square",
-            "material": "Room texture",
-            "transform": { "translation": [-248, -28, 0], "scale": [220, 220, 1] }
-          },
-          { "name": "Caption", "transform": { "translation": [-138, -256, 0] } }
+            "name": "Right slide",
+            "children": [
+              {
+                "name": "Image frame",
+                "mesh": "Square",
+                "material": "Panel",
+                "transparent": true,
+                "transform": { "translation": [-256, -20, -1], "scale": [236, 278, 1] },
+                "uniforms": { "color": { "vec4": [0.04, 0.06, 0.12, 0.72] } }
+              },
+              {
+                "name": "Image",
+                "mesh": "Square",
+                "material": "Room texture",
+                "transparent": true,
+                "transform": { "translation": [-248, -28, 0], "scale": [220, 220, 1] },
+                "uniforms": { "opacity": { "float": 1 } }
+              },
+              { "name": "Caption", "transform": { "translation": [-138, -256, 0] } }
+            ]
+          }
         ]
       }
     ]

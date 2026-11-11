@@ -228,3 +228,8 @@ the few non-scene uses.
   don't fight over one node (GuitarPrompter avoids this by hand with separate animators).
 - Generation counters in handles, so stale handles are detected (would apply to every `ObjDB`).
 - Animations declared in scene files (target node, uniform or transform, duration, easing).
+- Reaching app state from scene animations: their callbacks only get `&mut Scene`, so anything
+  else must be moved into the closure (like the `Text`s of demos 11 and 12) or handled by a
+  standalone `Animator` with its own context. Demo 11's episode spawning stays in `update`
+  because it needs the demo's random generator and counter. If this comes up often, consider
+  storing `Text`s in the scene, or letting scenes hold user data.

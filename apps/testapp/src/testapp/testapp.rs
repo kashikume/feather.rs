@@ -847,6 +847,54 @@ mod tests {
     }
 
     #[test]
+    fn overlay_demo_slides_and_fades_its_panels_in() {
+        use super::super::demo_012_overlay::{
+            INTRO_DURATION, INTRO_OFFSET, INTRO_RIGHT_DELAY,
+        };
+        let mut demo = demo(12);
+        let overlay = demo.scene_at(1);
+        let node = |scene: &Scene, name: &str| scene.find_node(name).unwrap();
+        let (left, right) = (node(overlay, "Left"), node(overlay, "Right slide"));
+        let (panel, image) = (node(overlay, "Info panel"), node(overlay, "Image"));
+        let x = |scene: &Scene, n| scene.get_node(n).unwrap().get_transform().w.x;
+        let alpha = |scene: &Scene| match scene.get_node(panel).unwrap().uniforms().get("color") {
+            Some(feather::uniform::UniformValue::Vec4(c)) => c.w,
+            other => panic!("{other:?}"),
+        };
+        let opacity = |scene: &Scene| match scene.get_node(image).unwrap().uniforms().get("opacity") {
+            Some(feather::uniform::UniformValue::Float(o)) => *o,
+            other => panic!("{other:?}"),
+        };
+
+        // Both sides start hidden, off their places.
+        overlay.advance_animations_to(0.0);
+        assert_eq!(x(overlay, left), -INTRO_OFFSET);
+        assert_eq!(x(overlay, right), INTRO_OFFSET);
+        assert_eq!(alpha(overlay), 0.0);
+        assert_eq!(opacity(overlay), 0.0);
+
+        // Halfway through the left's intro, eased out: more than half of the way. The right
+        // side hasn't started.
+        overlay.advance_animations_to(INTRO_DURATION / 2.0);
+        let left_x = x(overlay, left);
+        assert!(-INTRO_OFFSET / 2.0 < left_x && left_x < 0.0, "{left_x}");
+        assert!(alpha(overlay) > 0.72 / 2.0 && alpha(overlay) < 0.72);
+        assert_eq!(x(overlay, right), INTRO_OFFSET);
+
+        // At the end, everything is in place and as loaded, and the animations are gone.
+        let mut time = INTRO_DURATION / 2.0;
+        while time < INTRO_RIGHT_DELAY + INTRO_DURATION + 0.1 {
+            time += 1.0 / 60.0;
+            overlay.advance_animations_to(time);
+        }
+        assert_eq!(x(overlay, left), 0.0);
+        assert_eq!(x(overlay, right), 0.0);
+        assert!((alpha(overlay) - 0.72).abs() < 1e-6);
+        assert_eq!(opacity(overlay), 1.0);
+        assert_eq!(overlay.animation_count(), 0);
+    }
+
+    #[test]
     fn shadows_demo_has_casters_and_a_moving_sun() {
         let mut demo = demo(14);
         let scene = demo.scene();
