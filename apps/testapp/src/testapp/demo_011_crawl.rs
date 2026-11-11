@@ -1,7 +1,6 @@
-use std::collections::VecDeque;
-
 use anyhow::{anyhow, Result};
 
+use feather::animation::SlideAnimation;
 use feather::assetsprovider::AssetsProvider;
 use feather::camera::Camera;
 use feather::math::{Mat4, Point3, Vec2, Vec3};
@@ -46,9 +45,15 @@ const STAR_WALL_Z: f32 = -70.0;
 /// The scene file has the font atlas (Segoe UI Bold, rendered during the build from
 /// `atlases/demo_011_crawl_atlas.font`), the shaders, the stars' material and the `Stars` and
 /// `Crawl` nodes. This demo builds the star field (one mesh of tiny squares) and adds a node per
-/// episode under `Crawl`, with a `Text` per part (one mesh each, in the XZ plane); it moves the
-/// episodes and removes those that have faded out. The text shader fades the text with its
-/// distance, between the `fadeStart` and `fadeEnd` uniforms of `Crawl`.
+/// episode under `Crawl`, with a `Text` per part (one mesh each, in the XZ plane). The text
+/// shader fades the text with its distance, between the `fadeStart` and `fadeEnd` uniforms of
+/// `Crawl`.
+///
+/// Each episode moves by a scene animation (`SlideAnimation`, linear) from where it starts to
+/// where it has faded out, and its `on_finish` removes it, texts included (they are moved into
+/// the callback). The demo only adds episodes: it remembers the newest one and adds the next once
+/// that one has moved far enough. Both move in the same animation update, so the gap between
+/// them stays as set.
 pub struct CrawlDemo {
     scene: Scene,
     camera: PerspectiveCamera,
@@ -57,32 +62,10 @@ pub struct CrawlDemo {
     material: usize,
     crawl: usize,
     stars: usize,
-    /// Episodes on screen, the oldest (farthest) first.
-    episodes: VecDeque<Episode>,
+    /// The newest episode: its node and its length, from its top to its bottom along +Z.
+    newest: Option<(usize, f32)>,
     /// The number of the next episode.
     next_number: u32,
-}
-
-/// One episode of the crawl.
-struct Episode {
-    node: usize,
-    texts: Vec<Text>,
-    /// Where its top was, and when.
-    start_z: f32,
-    start_time: f32,
-    /// From its top to its bottom, along +Z.
-    length: f32,
-}
-
-impl Episode {
-    /// The world Z of its top at `time`.
-    fn top(&self, time: f32) -> f32 {
-        self.start_z - SPEED * (time - self.start_time)
-    }
-
-    fn bottom(&self, time: f32) -> f32 {
-        self.top(time) + self.length
-    }
 }
 
 impl CrawlDemo {
@@ -121,15 +104,16 @@ impl CrawlDemo {
             material,
             crawl,
             stars,
-            episodes: VecDeque::new(),
+            newest: None,
             next_number: 1,
         };
         demo.update(0.0)?;
         Ok(demo)
     }
 
-    /// Adds the next episode with its top at `z`, at `time`.
-    fn add_episode(&mut self, z: f32, time: f32) -> Result<()> {
+    /// Adds the next episode with its top at `z`, and the animation moving it away until it has
+    /// faded out, then removing it.
+    fn add_episode(&mut self, z: f32) -> Result<()> {
         let number = self.next_number;
         self.next_number += 1;
         let story = Story::make(&mut self.random, number);
@@ -174,25 +158,40 @@ impl CrawlDemo {
             texts.push(text);
         }
 
-        self.episodes.push_back(Episode {
-            node,
-            texts,
-            start_z: z,
-            start_time: time,
-            length,
-        });
+        // Its top goes from `z` to where its bottom reaches `REMOVE_Z`, at `SPEED`.
+        let end = REMOVE_Z - length;
+        let place = move |scene: &mut Scene, top: f32| {
+            if let Some(n) = scene.get_node_mut(node) {
+                n.set_transform(Mat4::from_translation(Vec3::new(0.0, 0.0, top)));
+            }
+        };
+        place(&mut self.scene, z);
+        self.scene.add_animation(
+            None,
+            SlideAnimation::new((z - end) / SPEED, move |scene: &mut Scene, p| {
+                place(scene, z + (end - z) * p)
+            })
+            .on_finish(move |scene: &mut Scene| {
+                // The texts' meshes go with them; removing the node also cancels this
+                // animation's entry.
+                for text in texts {
+                    if let Err(e) = text.remove(scene) {
+                        log::error!("Cannot remove episode {number}'s text: {e:#}");
+                    }
+                }
+                let _ = scene.remove_node(node);
+            })
+            .target(node),
+        );
+        self.newest = Some((node, length));
         Ok(())
     }
 
-    /// Removes the oldest episode.
-    fn remove_episode(&mut self) -> Result<()> {
-        if let Some(episode) = self.episodes.pop_front() {
-            for text in episode.texts {
-                text.remove(&mut self.scene)?;
-            }
-            self.scene.remove_node(episode.node)?;
-        }
-        Ok(())
+    /// Where the newest episode's bottom is now, if it is still there.
+    fn newest_bottom(&self) -> Option<f32> {
+        let (node, length) = self.newest?;
+        let top = self.scene.get_node(node)?.get_transform().w.z;
+        Some(top + length)
     }
 }
 
@@ -206,32 +205,14 @@ impl Demo for CrawlDemo {
     }
 
     fn update(&mut self, time: f32) -> Result<()> {
-        // The first episode starts a little way up the screen, so there is something to read.
-        if self.episodes.is_empty() {
-            self.add_episode(START_Z - 4.0, time)?;
-        }
-        // A new episode follows when the last one has moved far enough.
-        while let Some(last) = self.episodes.back() {
-            let next = last.bottom(time) + EPISODE_GAP;
-            if next > START_Z {
-                break;
+        // A new episode follows when the newest one has moved far enough. The first starts a
+        // little way up the screen, so there is something to read.
+        match self.newest_bottom() {
+            None => self.add_episode(START_Z - 4.0)?,
+            Some(bottom) if bottom + EPISODE_GAP <= START_Z => {
+                self.add_episode(bottom + EPISODE_GAP)?
             }
-            self.add_episode(next, time)?;
-        }
-        while self
-            .episodes
-            .front()
-            .is_some_and(|first| first.bottom(time) < REMOVE_Z)
-        {
-            self.remove_episode()?;
-        }
-
-        for episode in &self.episodes {
-            let top = episode.top(time);
-            self.scene
-                .get_node_mut(episode.node)
-                .unwrap()
-                .set_transform(Mat4::from_translation(Vec3::new(0.0, 0.0, top)));
+            Some(_) => {}
         }
         self.scene
             .get_node_mut(self.stars)

@@ -787,11 +787,14 @@ mod tests {
         let stars = demo.scene().find_node("Stars").unwrap();
         assert!(demo.scene().get_node(stars).unwrap().get_mesh().is_some());
 
-        // Ten minutes, two updates a second (building mesh buffers as the renderer would).
+        // Ten minutes, two updates a second (advancing animations and building mesh buffers as
+        // the engine would).
         let mut most = (0, 0, 0);
         for step in 1..=1200 {
-            demo.update(step as f32 * 0.5).unwrap();
+            let time = step as f32 * 0.5;
+            demo.update(time).unwrap();
             let scene = demo.scene();
+            scene.advance_animations_to(time);
             scene.build_missing_mesh_buffers().unwrap();
             let counts = (
                 scene.nodes.iter().count(),
@@ -810,6 +813,8 @@ mod tests {
         assert!(newest > 10, "only {newest} episodes in ten minutes");
         // Old episodes are removed: a few episodes' worth of objects at most.
         assert!(most.0 < 40 && most.1 < 20 && most.2 < 20, "{most:?}");
+        // One animation per episode on screen.
+        assert_eq!(demo.scene().animation_count(), names.len());
     }
 
     #[test]

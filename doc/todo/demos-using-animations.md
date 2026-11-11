@@ -1,7 +1,7 @@
 # Demos that could use animations
 
 Review of demos 0–20 after animations were added (see [animation-plan.md](animation-plan.md)).
-Item 1 is done; the rest is not.
+Items 1 and 2 are done; item 3 is not.
 
 ## Worth converting
 
@@ -24,6 +24,9 @@ numbers and strings, so they are `Send + Sync` and can be moved into the closure
 and animations shown running on a second (overlay) scene.
 
 ### 2. Crawl episodes (demo 11)
+
+**Done** as proposed. The demo keeps only its newest episode (node and length) to know when to
+add the next; the crawl test advances the scene's animations as the engine does.
 
 Each episode moves at a constant speed until it has faded out, then is removed with its texts.
 The demo does this by hand: a `VecDeque<Episode>` with `start_z` / `start_time` per episode, a
