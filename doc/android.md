@@ -196,7 +196,25 @@ Vulkan support.*
 
 ## Building and running
 
-*Not written yet (plan steps 2, 8 and 9).*
+*Building the APK and running it on a device: not written yet (plan steps 8 and 9).*
+
+### Checking that the code compiles for Android
+
+From the workspace root:
+
+```powershell
+cargo ndk -t arm64-v8a check -p feather -p feather-ui
+```
+
+It ends with `Finished`. This is the quick check that a change didn't break the Android build,
+without a device or Gradle.
+
+Always go through `cargo ndk`: a plain `cargo check --target aarch64-linux-android` fails (see
+*Troubleshooting*), because building for Android compiles some C++ (GameActivity's native part,
+inside the `android-activity` crate) with the NDK's compiler, which only `cargo ndk` sets up.
+
+Android builds go to `target\aarch64-linux-android\`, next to the Windows ones in
+`target\debug\` and `target\release\`, so switching between the two doesn't rebuild everything.
 
 ## Logs and debugging
 
@@ -204,8 +222,45 @@ Vulkan support.*
 
 ## Making an app run on Android
 
-*Not written yet (plan steps 3, 7, 8 and 9).*
+*Mostly not written yet (plan steps 3, 7, 8 and 9).*
+
+### How the engine runs on Android
+
+The engine uses [winit](https://github.com/rust-windowing/winit) for the window and events on
+every platform. On Android, winit runs on top of the
+[`android-activity`](https://github.com/rust-mobile/android-activity) crate, with its
+**GameActivity** backend: the workspace's `Cargo.toml` turns it on with winit's
+`android-game-activity` feature. The feature only matters when building for Android; Windows
+builds are unchanged.
+
+`android-activity` contains GameActivity's native code (version 2.0.2), so the app's Java side
+has to use the same version, `androidx.games:games-activity:2.0.2`.
+
+`feather` re-exports `android-activity`'s `AndroidApp` as `feather::AndroidApp` (Android only):
+the handle to the running activity that `android_main` receives. Apps use it from there and don't
+need `android-activity` in their own `Cargo.toml`.
 
 ## Troubleshooting
 
-*Not written yet: problems met during the plan's steps, with their symptoms and fixes.*
+### `cargo check --target aarch64-linux-android` fails in `android-activity`'s build script
+
+```
+error: failed to run custom build command for `android-activity v0.5.2`
+...
+  cargo:rerun-if-changed=game-activity-csrc/game-activity/GameActivity.h
+  cargo:rerun-if-changed=game-activity-csrc/game-activity/GameActivity.cpp
+```
+
+The build script compiles GameActivity's C++ code and finds no compiler for Android. Use
+`cargo ndk -t arm64-v8a check` (or `build`) instead: it points the build at the NDK's `clang`.
+
+### `Either "game-activity" or "native-activity" must be enabled as features`
+
+```
+error: Either "game-activity" or "native-activity" must be enabled as features
+   --> ...\android-activity-0.5.2\src\lib.rs:140:1
+error[E0583]: file not found for module `activity_impl`
+```
+
+winit is used without an Android backend. The workspace's `Cargo.toml` must have
+`winit = { version = "0.29", features = ["android-game-activity"] }`.

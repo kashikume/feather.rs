@@ -55,3 +55,9 @@ pub mod uniforms;
 pub mod vertex;
 #[cfg(windows)]
 pub mod windowsassetsprovider;
+
+/// The Android activity the app runs in, passed to `android_main`: what the event loop is built
+/// with, and where the APK's assets come from. Re-exported so that apps don't depend on
+/// `android-activity` themselves.
+#[cfg(target_os = "android")]
+pub use winit::platform::android::activity::AndroidApp;

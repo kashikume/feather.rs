@@ -306,10 +306,11 @@ Every step ends with its part of `doc/android.md` (in brackets below), verified 
 1. **Toolchain.** *Done.* Install the `aarch64-linux-android` target and `cargo-ndk`; check the
    JDK and the NDK are found. No code changes. [Doc: *Overview* skeleton, the whole *Setup* section
    except the device, done tool by tool as each is installed and checked.]
-2. **The engine compiles for Android.** `winit` with `android-game-activity`; `feather` re-exports
-   `AndroidApp`; `cfg` the Windows-only pieces so that
-   `cargo check --target aarch64-linux-android -p feather -p feather-ui` passes. Desktop tests
-   unchanged. [Doc: `cargo check` for Android in *Building and running*.]
+2. **The engine compiles for Android.** *Done.* `winit` with `android-game-activity`; `feather`
+   re-exports `AndroidApp`. Nothing else needed a `cfg`: the Windows-only pieces
+   (`windowsassetsprovider`, `create_assets_provider`) were already `cfg(windows)`.
+   `cargo ndk -t arm64-v8a check -p feather -p feather-ui` passes (a plain
+   `cargo check --target` can't build GameActivity's C++). Desktop tests unchanged. [Doc: `cargo check` for Android in *Building and running*.]
 3. **`AndroidAssetsProvider`.** Tested on the device in step 9 (it needs an APK); on the desktop
    only that it compiles. [Doc: the assets provider in *Making an app run on Android*.]
 4. **Surface and instance on Android**: `surface.rs`, optional validation layer on Android,
