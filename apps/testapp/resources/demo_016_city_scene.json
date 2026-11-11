@@ -68,22 +68,6 @@
       "file": "demo_016_city_traffic_lights_mesh.obj"
     },
     {
-      "name": "sedan_mesh",
-      "file": "demo_016_city_sedan_mesh.obj"
-    },
-    {
-      "name": "hatchback_mesh",
-      "file": "demo_016_city_hatchback_mesh.obj"
-    },
-    {
-      "name": "suv_mesh",
-      "file": "demo_016_city_suv_mesh.obj"
-    },
-    {
-      "name": "taxi_mesh",
-      "file": "demo_016_city_taxi_mesh.obj"
-    },
-    {
       "name": "person_mesh",
       "file": "demo_016_city_person_mesh.obj"
     },
@@ -98,6 +82,38 @@
     {
       "name": "sky_dome_mesh",
       "file": "demo_016_city_sky_dome_mesh.obj"
+    },
+    {
+      "name": "truck_mesh",
+      "file": "demo_016_city_truck_mesh.obj"
+    },
+    {
+      "name": "bus_mesh",
+      "file": "demo_016_city_bus_mesh.obj"
+    },
+    {
+      "name": "van_mesh",
+      "file": "demo_016_city_van_mesh.obj"
+    },
+    {
+      "name": "sedan_mesh",
+      "file": "demo_016_city_sedan_mesh.obj"
+    },
+    {
+      "name": "pickup_mesh",
+      "file": "demo_016_city_pickup_mesh.obj"
+    },
+    {
+      "name": "suv_mesh",
+      "file": "demo_016_city_suv_mesh.obj"
+    },
+    {
+      "name": "delivery_mesh",
+      "file": "demo_016_city_delivery_mesh.obj"
+    },
+    {
+      "name": "hatchback_mesh",
+      "file": "demo_016_city_hatchback_mesh.obj"
     }
   ],
   "shaders": [
@@ -415,11 +431,11 @@
       }
     },
     {
-      "name": "car",
+      "name": "vehicles",
       "shader": "Lit",
       "texture": {
         "atlas": "City",
-        "name": "car"
+        "name": "vehicles"
       },
       "uniforms": {
         "shininess": {
@@ -475,6 +491,75 @@
         1.0
       ],
       "near": 0.2,
+      "far": 520.0
+    },
+    {
+      "name": "Crossroads",
+      "perspective": {
+        "fov": 50.0
+      },
+      "eye": [
+        52.0,
+        -58.0,
+        38.0
+      ],
+      "target": [
+        25.0,
+        -25.0,
+        0.0
+      ],
+      "up": [
+        0.0,
+        0.0,
+        1.0
+      ],
+      "near": 0.5,
+      "far": 520.0
+    },
+    {
+      "name": "Chase",
+      "perspective": {
+        "fov": 60.0
+      },
+      "eye": [
+        0.0,
+        -90.0,
+        4.0
+      ],
+      "target": [
+        10.0,
+        -90.0,
+        1.2
+      ],
+      "up": [
+        0.0,
+        0.0,
+        1.0
+      ],
+      "near": 0.2,
+      "far": 520.0
+    },
+    {
+      "name": "Above",
+      "perspective": {
+        "fov": 55.0
+      },
+      "eye": [
+        95.0,
+        0.0,
+        60.0
+      ],
+      "target": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "up": [
+        0.0,
+        0.0,
+        1.0
+      ],
+      "near": 1.0,
       "far": 520.0
     }
   ],

@@ -50,6 +50,12 @@ pub trait Demo {
     /// Called every frame; `time` is in seconds since the demo started.
     fn update(&mut self, time: f32) -> Result<()>;
 
+    /// What the demo shows now, for demos that switch between views (e.g. the camera's name):
+    /// the HUD shows it after the demo's number and name.
+    fn caption(&self) -> Option<&str> {
+        None
+    }
+
     /// The size of the window's drawing area in pixels: when the demo starts (once the window
     /// exists) and whenever it changes.
     fn on_resized(&mut self, _width: u32, _height: u32) -> Result<()> {
@@ -189,6 +195,8 @@ pub struct TestApp {
     /// App time (as passed to `on_update`) when the current demo started; `None` until its
     /// first update.
     demo_start: Option<f32>,
+    /// The title the HUD shows: the demo's label and caption.
+    title: String,
 }
 
 impl FeatherApp for TestApp {
@@ -206,6 +214,7 @@ impl FeatherApp for TestApp {
         log::trace!("on_update called with time: {}", time);
         let start = *self.demo_start.get_or_insert(time);
         self.demo.update(time - start)?;
+        self.update_title();
         self.hud.update(time)
     }
 
@@ -258,6 +267,7 @@ impl FeatherApp for TestApp {
         let taken = button == MouseButton::Left && self.hud.mouse_button(pressed, x, y)?;
         if !taken {
             self.demo.on_mouse_button(button, pressed, x, y)?;
+            self.update_title();
         }
         for action in self.hud.take_actions() {
             match action {
@@ -301,16 +311,31 @@ impl TestApp {
     /// `new`, with the assets from `assets`.
     pub fn with_assets(assets: Box<dyn AssetsProvider>, demo_index: usize) -> Result<Self> {
         let demo = create_demo(&*assets, demo_index)?;
-        let mut hud = TestHud::new(&*assets)?;
-        hud.set_title(&demo_label(demo_index));
-        Ok(Self {
+        let hud = TestHud::new(&*assets)?;
+        let mut app = Self {
             assets,
             demo_index,
             demo,
             hud,
             window: None,
             demo_start: None,
-        })
+            title: String::new(),
+        };
+        app.update_title();
+        Ok(app)
+    }
+
+    /// Shows the demo's label and caption in the HUD, when they changed.
+    fn update_title(&mut self) {
+        let label = demo_label(self.demo_index);
+        let title = match self.demo.caption() {
+            Some(caption) => format!("{label} - {caption}"),
+            None => label,
+        };
+        if title != self.title {
+            self.hud.set_title(&title);
+            self.title = title;
+        }
     }
 
     /// Replaces the current demo with demo `index`. If it can't be created, the current demo
@@ -323,7 +348,7 @@ impl TestApp {
         self.demo = demo;
         self.demo_index = index;
         self.demo_start = None;
-        self.hud.set_title(&demo_label(index));
+        self.update_title();
         Ok(())
     }
 
@@ -1117,6 +1142,43 @@ mod tests {
 
         scene.advance_animations_to(STREET_SHOT + INTERSECTION_SHOT + 1.0);
         assert_eq!(scene.active_camera_handle(), Some(street));
+    }
+
+    #[test]
+    fn city_assets_demo_switches_cameras_on_taps() {
+        let mut demo = demo(16);
+        demo.on_resized(1000, 800).unwrap();
+        demo.update(0.5).unwrap();
+        let active = |demo: &mut Box<dyn Demo>| demo.scene().active_camera_handle().unwrap();
+        let camera = |demo: &mut Box<dyn Demo>, name: &str| demo.scene().find_camera(name).unwrap();
+        assert_eq!(active(&mut demo), camera(&mut demo, "Street"));
+        assert_eq!(demo.caption(), Some("Street"));
+
+        let tap = |demo: &mut Box<dyn Demo>, from: (f32, f32), to: (f32, f32)| {
+            demo.on_mouse_button(MouseButton::Left, true, from.0, from.1).unwrap();
+            demo.on_mouse_button(MouseButton::Left, false, to.0, to.1).unwrap();
+        };
+        // A drag isn't a tap; a slightly moving finger is.
+        tap(&mut demo, (500.0, 400.0), (700.0, 400.0));
+        assert_eq!(demo.caption(), Some("Street"));
+        for name in ["Crossroads", "Chase", "Above", "Street", "Crossroads"] {
+            tap(&mut demo, (500.0, 400.0), (505.0, 402.0));
+            assert_eq!(demo.caption(), Some(name));
+            assert_eq!(active(&mut demo), camera(&mut demo, name));
+        }
+
+        // The chase camera stays behind its car, in the city, as it drives.
+        tap(&mut demo, (10.0, 10.0), (10.0, 10.0));
+        assert_eq!(demo.caption(), Some("Chase"));
+        let mut time = 0.5;
+        while time < 60.0 {
+            time += 1.0 / 30.0;
+            demo.update(time).unwrap();
+            let scene = demo.scene();
+            let eye = scene.active_camera().unwrap().get_eye_position();
+            assert!(eye.x.abs().max(eye.y.abs()) < 125.0 + 20.0, "{time}: {eye:?}");
+            assert!((eye.z - 4.0).abs() < 1e-3);
+        }
     }
 
     #[test]

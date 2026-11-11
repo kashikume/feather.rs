@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Generate demo 016 city textures, OBJ meshes, scenes and atlas lists."""
+"""Generate demo 016 city textures, OBJ meshes, scenes and atlas lists.
+
+The vehicles aren't generated: they are imported from a low-poly model, with their texture;
+this only lists them in the scene and the atlas.
+"""
 
 from __future__ import annotations
 
@@ -28,18 +32,10 @@ FLOOR = 3.5
 PARK = (3, 1)
 LANE_LENGTH = 360.0
 
-CAR = {
-    "SIDE": (0.0, 0.0, 1.0, 0.25),
-    "SIDE_WINDOWS": (0.0, 0.25, 1.0, 0.5),
-    "PAINT": (0.0, 0.5, 0.25, 0.75),
-    "WINDSHIELD": (0.25, 0.5, 0.5, 0.75),
-    "FRONT": (0.5, 0.5, 0.75, 0.75),
-    "REAR": (0.75, 0.5, 1.0, 0.75),
-    "TIRE": (0.0, 0.75, 0.25, 1.0),
-    "RIM": (0.25, 0.75, 0.5, 1.0),
-    "PLASTIC": (0.5, 0.75, 0.75, 1.0),
-    "TAXI_SIGN": (0.75, 0.75, 1.0, 1.0),
-}
+# Demo 016's vehicles, imported from a model: meshes `demo_016_city_<name>_mesh.obj` and the
+# texture `vehicles.png`. Not generated here.
+VEHICLES = ["truck", "bus", "van", "sedan", "pickup", "suv", "delivery", "hatchback"]
+
 PERSON = {
     "SKIN": (0.02, 0.02, 0.48, 0.48),
     "HAIR": (0.52, 0.02, 0.98, 0.48),
@@ -225,7 +221,6 @@ def make_textures():
     n = Noise(23)
     image("metal", 256, lambda _x, _y, u, v: grain((0.25, 0.27, 0.28, 1.0), n.fbm(u * 4, v * 4, 4, 4), 0.2))
 
-    make_car_texture()
     make_person_texture()
     make_signal_texture()
 
@@ -240,50 +235,6 @@ def fill_region(px, size, r, fn):
             xx = min(1, max(0, (u - r[0]) / (r[2] - r[0])))
             yy = min(1, max(0, (v - r[1]) / (r[3] - r[1])))
             px[x, y] = tuple(clamp8(c) for c in fn(xx, yy))
-
-
-def make_car_texture():
-    size = 512
-    img = Image.new("RGBA", (size, size), (25, 25, 25, 255))
-    px = img.load()
-    n = Noise(24)
-    paint = lambda s: (s, s, s, 1.0)
-    dark = lambda k: (k, k, k, 0.0)
-    wheels = (0.19, 0.8)
-
-    def side(x, y):
-        for w in wheels:
-            dx, dy = (x - w) / 0.1, (y - 1.05) / 0.72
-            if dx * dx + dy * dy < 1.0:
-                return dark(0.03)
-        if y > 0.88:
-            return dark(0.07)
-        if any(abs(x - s) < 0.002 for s in (0.3, 0.52, 0.72)) and y < 0.86:
-            return paint(0.45)
-        if any(abs(x - h) < 0.018 for h in (0.36, 0.58)) and 0.16 < y < 0.24:
-            return (0.75, 0.76, 0.78, 0.0)
-        return paint(1.0 if abs(y - 0.3) < 0.012 else 0.93 - 0.18 * y)
-
-    fill_region(px, size, CAR["SIDE"], side)
-    fill_region(px, size, CAR["SIDE_WINDOWS"], lambda x, y: dark(0.04) if y < 0.06 or y > 0.94 or x < 0.012 or x > 0.988 or abs(x - 0.49) < 0.02 else tuple([glass(x * 3, y, n)[i] * (0.55, 0.6, 0.68, 1)[i] for i in range(4)]))
-    fill_region(px, size, CAR["PAINT"], lambda _x, _y: paint(0.92))
-    fill_region(px, size, CAR["WINDSHIELD"], lambda x, y: dark(0.04) if x < 0.06 or x > 0.94 or y < 0.07 or y > 0.93 else tuple([glass(x, y, n)[i] * (0.6, 0.65, 0.72, 1)[i] for i in range(4)]))
-    fill_region(px, size, CAR["FRONT"], lambda x, y: (0.95, 0.96, 1.0, 0.0) if min(((x - 0.15) / 0.15) ** 2 + ((y - 0.3) / 0.16) ** 2, ((x - 0.85) / 0.15) ** 2 + ((y - 0.3) / 0.16) ** 2) < 0.55 else dark(0.05) if (0.3 < x < 0.7 and 0.18 < y < 0.5) or (y > 0.78 and 0.15 < x < 0.85) else (0.92, 0.92, 0.88, 0.0) if 0.4 < x < 0.6 and 0.58 < y < 0.72 else paint(0.88))
-    fill_region(px, size, CAR["REAR"], lambda x, y: (0.75, 0.04, 0.04, 0.0) if (x < 0.3 or x > 0.7) and 0.12 < y < 0.42 else (0.93, 0.92, 0.85, 0.0) if 0.37 < x < 0.63 and 0.45 < y < 0.66 else dark(0.06) if y > 0.78 else paint(0.86))
-    fill_region(px, size, CAR["TIRE"], lambda _x, y: dark(0.05 + 0.025 * (((y * 40) % 1.0) < 0.5)))
-    def rim(x, y):
-        dx, dy = x - 0.5, y - 0.5
-        r = (dx * dx + dy * dy) ** 0.5 * 2
-        if r > 0.92:
-            return dark(0.06)
-        if r > 0.8 or r < 0.22:
-            return (0.72, 0.73, 0.76, 0.0)
-        spoke = abs(((math.atan2(dy, dx) / (2 * math.pi) * 8) % 1.0) - 0.5) < 0.12
-        return (0.78, 0.79, 0.82, 0.0) if spoke else dark(0.1)
-    fill_region(px, size, CAR["RIM"], rim)
-    fill_region(px, size, CAR["PLASTIC"], lambda _x, _y: dark(0.07))
-    fill_region(px, size, CAR["TAXI_SIGN"], lambda x, y: dark(0.05) if 0.12 < x < 0.88 and (abs(y - 0.5) < 0.07 or abs(x - 0.2) < 0.03 or abs(x - 0.8) < 0.03) else (0.98, 0.80, 0.10, 0.0))
-    img.save(TEX_DIR / "car.png")
 
 
 def make_person_texture():
@@ -750,82 +701,6 @@ def make_city_meshes():
     }
 
 
-SHAPES = {
-    "sedan": ([(2.35,0.34),(2.42,0.48),(2.40,0.63),(2.32,0.78),(1.68,0.89),(0.7,0.94),(-0.7,0.96),(-1.6,0.95),(-2.18,0.86),(-2.34,0.66),(-2.32,0.46),(-2.26,0.34)], 0.89, [(1.45,0.9),(0.82,1.28),(0.35,1.42),(-0.72,1.44),(-1.34,1.18),(-1.58,0.95)], (0.8,0.66), 0.33),
-    "hatchback": ([(2.05,0.33),(2.13,0.50),(2.10,0.66),(1.92,0.78),(1.15,0.89),(-0.25,0.94),(-1.65,0.95),(-1.95,0.86),(-2.05,0.62),(-2.02,0.44),(-1.96,0.33)], 0.85, [(1.18,0.9),(0.48,1.3),(0.10,1.42),(-1.42,1.45),(-1.88,0.96)], (0.78,0.65), 0.31),
-    "suv": ([(2.38,0.42),(2.48,0.62),(2.45,0.82),(2.34,1.00),(1.48,1.11),(0.25,1.15),(-1.4,1.15),(-2.18,1.10),(-2.42,0.92),(-2.40,0.62),(-2.32,0.42)], 0.95, [(1.48,1.1),(0.75,1.58),(0.48,1.73),(-1.85,1.75),(-2.28,1.14)], (0.88,0.78), 0.39),
-}
-
-
-def xz_range(profile):
-    xs, zs = [p[0] for p in profile], [p[1] for p in profile]
-    return max(xs), min(xs), min(zs), max(zs)
-
-
-def extrude_car(m, profile, half_width_fn, part):
-    front, rear, low, high = xz_range(profile)
-    centre = (sum(x for x, _ in profile) / len(profile), sum(z for _, z in profile) / len(profile))
-    side_region = CAR["SIDE"] if part == "body" else CAR["SIDE_WINDOWS"]
-    for side in (-1, 1):
-        pts = [V(x, side * half_width_fn(z), z) for x, z in profile]
-        uvs = [within(side_region, (front - x) / (front - rear), (high - z) / (high - low)) for x, z in profile]
-        m.polygon(pts, uvs, V(0, side, 0))
-    edges = []
-    for i, a in enumerate(profile):
-        b = profile[(i + 1) % len(profile)]
-        nx, nz = b[1] - a[1], -(b[0] - a[0])
-        l = max(1e-6, (nx * nx + nz * nz) ** 0.5)
-        nx, nz = nx / l, nz / l
-        mid = ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)
-        if nx * (mid[0] - centre[0]) + nz * (mid[1] - centre[1]) < 0:
-            nx, nz = -nx, -nz
-        edges.append((a, b, nx, nz))
-    for a, b, nx, nz in edges:
-        corners = [V(a[0], -half_width_fn(a[1]), a[1]), V(b[0], -half_width_fn(b[1]), b[1]), V(b[0], half_width_fn(b[1]), b[1]), V(a[0], half_width_fn(a[1]), a[1])]
-        outward = V(nx, 0, nz)
-        if nz < -0.6:
-            if part == "body":
-                m.polygon(corners, [within(CAR["PLASTIC"], 0.5, 0.5)] * 4, outward)
-            continue
-        if part == "body" and abs(nx) > 0.6:
-            region = CAR["FRONT"] if nx > 0 else CAR["REAR"]
-            flip = 1 if nx > 0 else -1
-            uvs = [within(region, 0.5 - flip * p.y / (2 * half_width_fn(p.z)), (high - p.z) / max(1e-3, high - low)) for p in corners]
-        elif part == "cabin" and abs(nx) > 0.35:
-            uvs = [within(CAR["WINDSHIELD"], 0.5 + p.y / (2 * half_width_fn(p.z)), k) for p, k in zip(corners, (0, 0, 1, 1))]
-        else:
-            uvs = [within(CAR["PAINT"], 0.5, 0.5)] * 4
-        m.polygon(corners, uvs, outward)
-
-
-def car_mesh(kind):
-    base_kind = "sedan" if kind == "taxi" else kind
-    body, w, cabin, cw, r = SHAPES[base_kind]
-    m = Mesh()
-    extrude_car(m, body, lambda _z: w, "body")
-    z0, z1 = min(z for _, z in cabin), max(z for _, z in cabin)
-    extrude_car(m, cabin, lambda z: cw[0] + (cw[1] - cw[0]) * (z - z0) / (z1 - z0), "cabin")
-    front, rear, low, _high = xz_range(body)
-    m.box(mat_identity(), V(front - 0.14, -w - 0.03, low + 0.04), V(front + 0.07, w + 0.03, low + 0.21), CAR["PLASTIC"])
-    m.box(mat_identity(), V(rear - 0.07, -w - 0.03, low + 0.04), V(rear + 0.14, w + 0.03, low + 0.21), CAR["PLASTIC"])
-    mx, mz = cabin[0]
-    for side in (-1, 1):
-        y0, y1 = side * (cw[0] + 0.02), side * (cw[0] + 0.22)
-        m.box(mat_identity(), V(mx - 0.34, min(y0, y1), mz + 0.08), V(mx - 0.17, max(y0, y1), mz + 0.21), CAR["PAINT"])
-    length = front - rear
-    for frac in (0.19, 0.8):
-        x = front - frac * length
-        for side in (-1, 1):
-            out = rx(math.radians(-90 * side))
-            m.cylinder(mat_mul(tr(V(x, side * (w - 0.2), r)), out), r, 0.23, 32, CAR["TIRE"], CAR["PLASTIC"])
-            m.cylinder(mat_mul(tr(V(x, side * (w + 0.035), r)), out), r * 0.7, 0.018, 32, CAR["PLASTIC"], CAR["RIM"])
-    if kind == "taxi":
-        roof = max(z for _, z in cabin)
-        x = (cabin[1][0] + cabin[2][0]) / 2
-        m.box(mat_identity(), V(x - 0.14, -0.34, roof), V(x + 0.14, 0.34, roof + 0.22), CAR["TAXI_SIGN"])
-    return m
-
-
 def person_body():
     m = Mesh()
     def at(x, y, z): return tr(V(x, y, z))
@@ -854,8 +729,11 @@ def leg_mesh():
 
 
 def lamp_mesh():
+    """The lit lens, placed by the demo where `traffic_light` puts the painted one (0.025 deep,
+    0.11 wide): smaller and deeper, so it stands 1 cm proud of it instead of z-fighting with it,
+    the painted lens showing around it as a rim."""
     m = Mesh()
-    m.cylinder(ry(math.pi / 2), 0.11, 0.025, 24)
+    m.cylinder(ry(math.pi / 2), 0.1, 0.035, 24)
     return m
 
 
@@ -866,14 +744,14 @@ def sky_dome():
 
 
 def make_scene_files(mesh_names):
-    stems = ["glass_facade", "brick_facade", "concrete_facade", "stone_facade", "roof", "road", "intersection", "crosswalk", "sidewalk", "concrete", "grass", "bark", "leaves", "metal", "signal", "car", "person"]
+    stems = ["glass_facade", "brick_facade", "concrete_facade", "stone_facade", "roof", "road", "intersection", "crosswalk", "sidewalk", "concrete", "grass", "bark", "leaves", "metal", "signal", "vehicles", "person"]
     with open(ATLAS_DIR / "demo_016_city_atlas.atlist", "w", encoding="ascii", newline="\n") as f:
         f.write("\n".join(f"demo_016_city/{s}.png" for s in stems) + "\n")
     mats = []
     for s in stems:
         if s == "glass_facade":
             vals = (90.0, 0.9, 0.55)
-        elif s == "car":
+        elif s == "vehicles":
             vals = (60.0, 0.7, 0.25)
         elif s in ("concrete_facade", "stone_facade", "brick_facade"):
             vals = (40.0, 0.25, 0.12)
@@ -892,8 +770,15 @@ def make_scene_files(mesh_names):
             {"name": "Sky", "vertex": "demo_016_city_sky_shader.vert.spv", "fragment": "demo_016_city_sky_shader.frag.spv", "model_uniform": "model", "view_uniform": "view", "projection_uniform": "proj"},
         ],
         "materials": [{"name": "Sky", "shader": "Sky"}] + mats,
-        # Moved along its route through the streets every frame by the demo.
-        "cameras": [{"name": "Street", "perspective": {"fov": 60.0}, "eye": [0.0, -75.0, 4.5], "target": [18.0, -75.0, 3.3], "up": [0.0, 0.0, 1.0], "near": 0.2, "far": 520.0}],
+        # A tap switches between them, in this order. `Street` moves along its route through the
+        # streets, `Chase` follows a car and `Above` circles over the city, every frame, moved
+        # by the demo; `Crossroads` stays above the intersection at the park.
+        "cameras": [
+            {"name": "Street", "perspective": {"fov": 60.0}, "eye": [0.0, -75.0, 4.5], "target": [18.0, -75.0, 3.3], "up": [0.0, 0.0, 1.0], "near": 0.2, "far": 520.0},
+            {"name": "Crossroads", "perspective": {"fov": 50.0}, "eye": [52.0, -58.0, 38.0], "target": [25.0, -25.0, 0.0], "up": [0.0, 0.0, 1.0], "near": 0.5, "far": 520.0},
+            {"name": "Chase", "perspective": {"fov": 60.0}, "eye": [0.0, -90.0, 4.0], "target": [10.0, -90.0, 1.2], "up": [0.0, 0.0, 1.0], "near": 0.2, "far": 520.0},
+            {"name": "Above", "perspective": {"fov": 55.0}, "eye": [95.0, 0.0, 60.0], "target": [0.0, 0.0, 0.0], "up": [0.0, 0.0, 1.0], "near": 1.0, "far": 520.0},
+        ],
         "root": {"name": "Scene root", "children": [
             {"name": "Sky", "mesh": "sky_dome_mesh", "material": "Sky", "uniforms": {"sunColor": {"vec3": [1.6, 1.45, 1.2]}, "skyColor": {"vec3": [0.14, 0.32, 0.72]}, "horizonColor": {"vec3": [0.62, 0.7, 0.8]}, "groundColor": {"vec3": [0.28, 0.27, 0.26]}}},
             {"name": "City", "uniforms": {"sunColor": {"vec3": [1.6, 1.45, 1.2]}, "skyColor": {"vec3": [0.14, 0.32, 0.72]}, "horizonColor": {"vec3": [0.62, 0.7, 0.8]}, "groundColor": {"vec3": [0.28, 0.27, 0.26]}, "fogDensity": {"float": 0.0055}, "tint": {"vec3": [1.0, 1.0, 1.0]}, "emissive": {"vec3": [0.0, 0.0, 0.0]}}, "children": [{"name": "Static"}]},
@@ -907,10 +792,6 @@ def main():
     make_textures()
     meshes = make_city_meshes()
     meshes.update({
-        "sedan_mesh": car_mesh("sedan"),
-        "hatchback_mesh": car_mesh("hatchback"),
-        "suv_mesh": car_mesh("suv"),
-        "taxi_mesh": car_mesh("taxi"),
         "person_mesh": person_body(),
         "leg_mesh": leg_mesh(),
         "lamp_mesh": lamp_mesh(),
@@ -918,7 +799,7 @@ def main():
     })
     for name, mesh in meshes.items():
         mesh.write(RES_DIR / f"demo_016_city_{name}.obj")
-    make_scene_files(list(meshes.keys()))
+    make_scene_files(list(meshes.keys()) + [f"{name}_mesh" for name in VEHICLES])
     total = 0
     for name, mesh in meshes.items():
         path = RES_DIR / f"demo_016_city_{name}.obj"

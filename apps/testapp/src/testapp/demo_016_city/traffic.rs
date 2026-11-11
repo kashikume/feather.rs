@@ -49,7 +49,6 @@ pub struct Lane {
 
 /// The length of every lane; cars leave at one end and come back at the other.
 pub const LANE_LENGTH: f32 = 360.0;
-pub const CAR_LENGTH: f32 = 4.6;
 /// Space kept to the car ahead when stopped.
 const GAP: f32 = 2.5;
 const ACCELERATION: f32 = 2.5;
@@ -112,6 +111,8 @@ pub struct Car {
     pub lane: usize,
     /// Front bumper, along the lane.
     pub distance: f32,
+    /// Bumper to bumper.
+    pub length: f32,
     pub speed: f32,
     pub cruise: f32,
 }
@@ -138,7 +139,7 @@ impl Traffic {
                     let ahead = cars[(k + 1) % cars.len()];
                     let gap = (self.cars[ahead].distance - self.cars[car].distance)
                         .rem_euclid(LANE_LENGTH);
-                    free[car] = free[car].min(gap - CAR_LENGTH - GAP);
+                    free[car] = free[car].min(gap - self.cars[ahead].length - GAP);
                 }
                 let state = signal(lane.axis, time);
                 if let (Some(stop), true) = (
@@ -203,12 +204,14 @@ mod tests {
                 Car {
                     lane: 0,
                     distance: stop - 60.0,
+                    length: 9.6,
                     speed: 10.0,
                     cruise: 12.0,
                 },
                 Car {
                     lane: 0,
                     distance: stop - 80.0,
+                    length: 4.6,
                     speed: 10.0,
                     cruise: 12.0,
                 },
@@ -220,7 +223,8 @@ mod tests {
             traffic.step(time, 1.0 / 60.0);
             time += 1.0 / 60.0;
             let gap = traffic.cars[0].distance - traffic.cars[1].distance;
-            assert!(gap > CAR_LENGTH + 0.5, "cars collided at {time}: {gap}");
+            // The truck in front is 9.6 m long.
+            assert!(gap > 9.6 + 0.5, "cars collided at {time}: {gap}");
         }
         let first = &traffic.cars[0];
         assert!(

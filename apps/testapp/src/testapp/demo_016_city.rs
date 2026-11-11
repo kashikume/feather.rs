@@ -1,6 +1,7 @@
 //! Demo 16: the city again, but every model is an OBJ and every texture is a PNG packed into
 //! an atlas at build time (`tools/generate_demo_016_city_assets.py`). Geometry is denser than
-//! demo 15 (recessed windows, richer cars/people/trees).
+//! demo 15 (recessed windows, richer people/trees). The vehicles are low-poly models imported
+//! from an OBJ, with a texture of their own (`vehicles.png`).
 
 mod traffic;
 
@@ -8,6 +9,7 @@ use std::f32::consts::{FRAC_PI_2, PI, TAU};
 
 use anyhow::{anyhow, Result};
 use cgmath::{InnerSpace, Rad};
+use winit::event::MouseButton;
 
 use feather::assetsprovider::AssetsProvider;
 use feather::math::{Mat4, Point3, Vec2, Vec3};
@@ -46,38 +48,82 @@ fn block_centre(i: usize) -> f32 {
     (i as f32 + 0.5 - BLOCKS as f32 / 2.0) * PITCH
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum CarModel {
-    Sedan,
-    Hatchback,
-    Suv,
-    Taxi,
+/// A vehicle model: its mesh, its length (as the importer prints it), how often it comes up
+/// (the weights add up to 1) and the colours its body is painted in (sRGB; the first is the
+/// model's own).
+struct CarModel {
+    mesh: &'static str,
+    length: f32,
+    weight: f32,
+    paints: &'static [[f32; 3]],
 }
 
-impl CarModel {
-    const ALL: [CarModel; 4] = [
-        CarModel::Sedan,
-        CarModel::Hatchback,
-        CarModel::Suv,
-        CarModel::Taxi,
-    ];
+const MILK_WHITE: [f32; 3] = [0.94, 0.92, 0.88];
+const SILVER: [f32; 3] = [0.74, 0.76, 0.79];
+const NAVY: [f32; 3] = [0.08, 0.13, 0.36];
+const SKY_BLUE: [f32; 3] = [0.60, 0.80, 0.93];
+const RED_ORANGE: [f32; 3] = [0.93, 0.32, 0.17];
+const PINK: [f32; 3] = [0.95, 0.68, 0.72];
+const MINT: [f32; 3] = [0.52, 0.80, 0.66];
+const YELLOW: [f32; 3] = [0.97, 0.82, 0.30];
+const RED: [f32; 3] = [0.78, 0.12, 0.16];
+const GREEN: [f32; 3] = [0.16, 0.42, 0.30];
+const CHARCOAL: [f32; 3] = [0.16, 0.16, 0.18];
 
-    fn mesh_name(self) -> &'static str {
-        match self {
-            CarModel::Sedan => "sedan_mesh",
-            CarModel::Hatchback => "hatchback_mesh",
-            CarModel::Suv => "suv_mesh",
-            CarModel::Taxi => "taxi_mesh",
-        }
-    }
+const CAR_MODELS: [CarModel; 8] = [
+    CarModel {
+        mesh: "hatchback_mesh",
+        length: 3.82,
+        weight: 0.2,
+        paints: &[SKY_BLUE, PINK, YELLOW, MINT, RED_ORANGE],
+    },
+    CarModel {
+        mesh: "sedan_mesh",
+        length: 5.10,
+        weight: 0.2,
+        paints: &[NAVY, RED, CHARCOAL, GREEN, SILVER],
+    },
+    CarModel {
+        mesh: "suv_mesh",
+        length: 4.65,
+        weight: 0.14,
+        paints: &[RED_ORANGE, MINT, YELLOW, NAVY, MILK_WHITE],
+    },
+    CarModel {
+        mesh: "van_mesh",
+        length: 5.05,
+        weight: 0.12,
+        paints: &[MILK_WHITE, SILVER, SKY_BLUE],
+    },
+    CarModel {
+        mesh: "delivery_mesh",
+        length: 4.76,
+        weight: 0.1,
+        paints: &[PINK, MINT, YELLOW, SKY_BLUE],
+    },
+    CarModel {
+        mesh: "truck_mesh",
+        length: 9.59,
+        weight: 0.1,
+        paints: &[[0.20, 0.20, 0.36], RED, GREEN, MILK_WHITE],
+    },
+    CarModel {
+        mesh: "pickup_mesh",
+        length: 4.81,
+        weight: 0.08,
+        paints: &[MILK_WHITE, SILVER],
+    },
+    CarModel {
+        mesh: "bus_mesh",
+        length: 7.67,
+        weight: 0.06,
+        paints: &[[0.97, 0.63, 0.12]],
+    },
+];
 
-    fn length(self) -> f32 {
-        match self {
-            CarModel::Sedan | CarModel::Taxi => 4.76,
-            CarModel::Hatchback => 4.18,
-            CarModel::Suv => 4.90,
-        }
-    }
+/// An sRGB colour as the linear `tint` the shader multiplies the texture with.
+fn linear(srgb: [f32; 3]) -> Vec3 {
+    Vec3::new(srgb[0].powf(2.2), srgb[1].powf(2.2), srgb[2].powf(2.2))
 }
 
 struct Person {
@@ -94,15 +140,66 @@ struct Person {
 /// Demo 16: same busy city as demo 15, loaded from OBJ meshes and a PNG atlas.
 pub struct CityAssetsDemo {
     scene: Scene,
-    /// The camera moving through the streets (`Street` in the scene file).
-    street_camera: usize,
+    /// The cameras, in `View` order (named as the views in the scene file).
+    cameras: [usize; View::ALL.len()],
+    /// What the active camera shows.
+    view: View,
+    /// The car the `Chase` camera follows (an index into `traffic.cars`).
+    chased: usize,
+    /// Where the left button (or a finger) went down, while it is down.
+    press: Option<(f32, f32)>,
+    /// The shorter side of the window, in pixels: how far a tap may move is a part of it.
+    window_side: f32,
     sky: usize,
     traffic: Traffic,
-    car_nodes: Vec<(usize, CarModel)>,
+    car_nodes: Vec<usize>,
     people: Vec<Person>,
     lamps: Vec<(usize, Axis, Mat4)>,
     last_time: Option<f32>,
 }
+
+/// The demo's cameras. A tap (or a click) switches to the next one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum View {
+    /// Gliding through the streets, along `route`.
+    Street,
+    /// Fixed, above the intersection at the park.
+    Crossroads,
+    /// Behind a car, following it; another car each time.
+    Chase,
+    /// Circling high over the city.
+    Above,
+}
+
+impl View {
+    const ALL: [View; 4] = [View::Street, View::Crossroads, View::Chase, View::Above];
+
+    /// Also the camera's name in the scene file.
+    fn name(self) -> &'static str {
+        match self {
+            View::Street => "Street",
+            View::Crossroads => "Crossroads",
+            View::Chase => "Chase",
+            View::Above => "Above",
+        }
+    }
+
+    fn next(self) -> View {
+        View::ALL[(self as usize + 1) % View::ALL.len()]
+    }
+}
+
+/// How far a finger or the mouse may move between press and release for a tap, as a part of
+/// the window's shorter side.
+const TAP_SLOP: f32 = 0.04;
+/// The `Chase` camera picks cars this near the middle of the city (along both axes), and
+/// moves to another one when its car is past the edge of the city.
+const CHASE_PICK: f32 = 80.0;
+const CHASE_LEAVE: f32 = 125.0;
+/// The `Above` camera's circle: radius, height and speed (radians per second).
+const ABOVE_RADIUS: f32 = 95.0;
+const ABOVE_HEIGHT: f32 = 60.0;
+const ABOVE_SPEED: f32 = 0.05;
 
 fn sun() -> Vec3 {
     Vec3::new(-0.52, -0.38, 0.62).normalize()
@@ -120,7 +217,13 @@ impl CityAssetsDemo {
         };
         let city = find("node `City`", scene.find_node("City"))?;
         let sky = find("node `Sky`", scene.find_node("Sky"))?;
-        let street_camera = find("camera `Street`", scene.find_camera("Street"))?;
+        let mut cameras = [0; View::ALL.len()];
+        for (camera, view) in cameras.iter_mut().zip(View::ALL) {
+            *camera = scene
+                .find_camera(view.name())
+                .ok_or_else(|| anyhow!("the scene has no camera `{}`", view.name()))?;
+        }
+        scene.set_active_camera(cameras[View::Street as usize])?;
         let statics = find("node `Static`", scene.find_node("Static"))?;
 
         scene
@@ -183,7 +286,11 @@ impl CityAssetsDemo {
 
         let mut demo = Self {
             scene,
-            street_camera,
+            cameras,
+            view: View::Street,
+            chased: 0,
+            press: None,
+            window_side: 768.0,
             sky,
             traffic: Traffic {
                 lanes: Vec::new(),
@@ -276,63 +383,52 @@ impl CityAssetsDemo {
             ));
         }
 
-        let meshes: Result<Vec<(CarModel, usize)>> = CarModel::ALL
+        let meshes: Result<Vec<usize>> = CAR_MODELS
             .iter()
-            .map(|&model| {
-                let handle = self
-                    .scene
-                    .find_mesh(model.mesh_name())
-                    .ok_or_else(|| anyhow!("the scene has no mesh `{}`", model.mesh_name()))?;
-                Ok((model, handle))
+            .map(|model| {
+                self.scene
+                    .find_mesh(model.mesh)
+                    .ok_or_else(|| anyhow!("the scene has no mesh `{}`", model.mesh))
             })
             .collect();
         let meshes = meshes?;
         let car_material = self
             .scene
-            .find_material("car")
-            .ok_or_else(|| anyhow!("the scene has no material `car`"))?;
+            .find_material("vehicles")
+            .ok_or_else(|| anyhow!("the scene has no material `vehicles`"))?;
         let cars = self.scene.create_node(Some("Cars".into()), city)?;
-        let colours = [
-            Vec3::new(0.7, 0.05, 0.05),
-            Vec3::new(0.05, 0.12, 0.45),
-            Vec3::new(0.85, 0.85, 0.85),
-            Vec3::new(0.08, 0.08, 0.09),
-            Vec3::new(0.5, 0.52, 0.55),
-            Vec3::new(0.9, 0.6, 0.05),
-            Vec3::new(0.1, 0.35, 0.18),
-            Vec3::new(0.35, 0.05, 0.25),
-        ];
         for lane in 0..self.traffic.lanes.len() {
             let count = 6;
             let spacing = LANE_LENGTH / count as f32;
             for c in 0..count {
                 let distance = c as f32 * spacing + random.range(0.0, spacing - 15.0);
-                let cruise = random.range(8.0, 13.0);
+                let mut pick = random.next();
+                let kind = CAR_MODELS
+                    .iter()
+                    .position(|model| {
+                        pick -= model.weight;
+                        pick < 0.0
+                    })
+                    .unwrap_or(0);
+                let model = &CAR_MODELS[kind];
+                // Buses and trucks drive slower.
+                let cruise = random.range(8.0, 13.0) * if model.length > 7.0 { 0.8 } else { 1.0 };
                 self.traffic.cars.push(Car {
                     lane,
                     distance,
+                    length: model.length,
                     speed: cruise * 0.5,
                     cruise,
                 });
-                let pick = random.next();
-                let (model, mesh) = meshes[match pick {
-                    p if p < 0.45 => 0,
-                    p if p < 0.7 => 1,
-                    p if p < 0.9 => 2,
-                    _ => 3,
-                }];
                 let node = self.scene.create_node(None, cars)?;
-                self.scene.node_set_mesh(node, mesh)?;
+                self.scene.node_set_mesh(node, meshes[kind])?;
                 self.scene.node_set_material(node, car_material)?;
-                let colour = if model == CarModel::Taxi {
-                    Vec3::new(0.95, 0.72, 0.05)
-                } else {
-                    colours[(random.next() * colours.len() as f32) as usize % colours.len()]
-                };
+                let paint = model.paints
+                    [(random.next() * model.paints.len() as f32) as usize % model.paints.len()];
                 let n = self.scene.get_node_mut(node).unwrap();
                 n.set_casts_shadow(true);
-                n.uniforms_mut().set("tint", colour);
-                self.car_nodes.push((node, model));
+                n.uniforms_mut().set("tint", linear(paint));
+                self.car_nodes.push(node);
             }
         }
         Ok(())
@@ -411,9 +507,9 @@ impl CityAssetsDemo {
     }
 
     fn place(&mut self, time: f32) {
-        for (car, &(node, model)) in self.traffic.cars.iter().zip(&self.car_nodes) {
+        for (car, &node) in self.traffic.cars.iter().zip(&self.car_nodes) {
             let lane = &self.traffic.lanes[car.lane];
-            let (x, y, heading) = lane.place(car.distance - model.length() / 2.0);
+            let (x, y, heading) = lane.place(car.distance - car.length / 2.0);
             self.scene.get_node_mut(node).unwrap().set_transform(
                 Mat4::from_translation(Vec3::new(x, y, 0.0)) * Mat4::from_angle_z(Rad(heading)),
             );
@@ -462,11 +558,73 @@ impl CityAssetsDemo {
         let (ahead, _) = route(distance + 18.0);
         let eye = Point3::new(eye.x, eye.y, CAMERA_HEIGHT);
         let target = Point3::new(ahead.x, ahead.y, CAMERA_HEIGHT - 1.2);
+        self.set_view(View::Street, eye, target);
+
+        // Behind the chased car, a little above it, looking ahead of it.
+        let (x, y, _) = self.car_place(self.chased);
+        if x.abs().max(y.abs()) > CHASE_LEAVE {
+            self.chased = self.pick_chased(self.chased);
+        }
+        let (x, y, heading) = self.car_place(self.chased);
+        let forward = Vec3::new(heading.cos(), heading.sin(), 0.0);
+        let back = self.traffic.cars[self.chased].length / 2.0 + 8.0;
+        let car = Point3::new(x, y, 0.0);
+        self.set_view(
+            View::Chase,
+            car - forward * back + Vec3::new(0.0, 0.0, 4.0),
+            car + forward * 8.0 + Vec3::new(0.0, 0.0, 1.0),
+        );
+
+        let angle = time * ABOVE_SPEED;
+        self.set_view(
+            View::Above,
+            Point3::new(
+                ABOVE_RADIUS * angle.cos(),
+                ABOVE_RADIUS * angle.sin(),
+                ABOVE_HEIGHT,
+            ),
+            Point3::new(0.0, 0.0, 0.0),
+        );
+
+        follow_active_camera(&mut self.scene, self.sky);
+    }
+
+    fn set_view(&mut self, view: View, eye: Point3, target: Point3) {
         self.scene
-            .get_camera_mut(self.street_camera)
+            .get_camera_mut(self.cameras[view as usize])
             .unwrap()
             .set_view(eye, target, Vec3::new(0.0, 0.0, 1.0));
-        follow_active_camera(&mut self.scene, self.sky);
+    }
+
+    /// The middle of car `index` on the ground, and its heading.
+    fn car_place(&self, index: usize) -> (f32, f32, f32) {
+        let car = &self.traffic.cars[index];
+        self.traffic.lanes[car.lane].place(car.distance - car.length / 2.0)
+    }
+
+    /// The first car after `after` (going round) that is near the middle of the city.
+    fn pick_chased(&self, after: usize) -> usize {
+        let count = self.traffic.cars.len();
+        (1..=count)
+            .map(|k| (after + k) % count)
+            .find(|&index| {
+                let (x, y, _) = self.car_place(index);
+                x.abs().max(y.abs()) < CHASE_PICK
+            })
+            .unwrap_or(after)
+    }
+
+    /// Switches to the next camera; the `Chase` camera follows another car each time.
+    fn next_view(&mut self) -> Result<()> {
+        self.view = self.view.next();
+        if self.view == View::Chase {
+            self.chased = self.pick_chased(self.chased);
+        }
+        self.scene.set_active_camera(self.cameras[self.view as usize])?;
+        if let Some(time) = self.last_time {
+            self.place(time);
+        }
+        Ok(())
     }
 }
 
@@ -481,9 +639,13 @@ fn follow_active_camera(scene: &mut Scene, sky: usize) {
         Mat4::from_translation(Vec3::new(eye.x, eye.y, eye.z)) * Mat4::from_scale(480.0),
     );
 
+    // Low cameras see the streets ahead of them; high ones the ground around their target.
     let forward = target - eye;
-    let centre =
-        eye + Vec3::new(forward.x, forward.y, 0.0).normalize() * (SHADOW_RADIUS * 0.45);
+    let centre = if eye.z > 20.0 {
+        target
+    } else {
+        eye + Vec3::new(forward.x, forward.y, 0.0).normalize() * (SHADOW_RADIUS * 0.45)
+    };
     let centre = Point3::new(centre.x, centre.y, 6.0);
     scene.set_shadow_light(Some(ShadowLight::directional_snapped(
         -sun(),
@@ -510,6 +672,37 @@ impl Demo for CityAssetsDemo {
         }
         self.place(time);
 
+        Ok(())
+    }
+
+    fn caption(&self) -> Option<&str> {
+        Some(self.view.name())
+    }
+
+    fn on_resized(&mut self, width: u32, height: u32) -> Result<()> {
+        self.window_side = width.min(height).max(1) as f32;
+        Ok(())
+    }
+
+    /// A tap (or a click): press and release without moving far. Drags don't count.
+    fn on_mouse_button(&mut self, button: MouseButton, pressed: bool, x: f32, y: f32) -> Result<()> {
+        if button != MouseButton::Left {
+            return Ok(());
+        }
+        if pressed {
+            self.press = Some((x, y));
+        } else if let Some((px, py)) = self.press.take() {
+            if (x - px).hypot(y - py) <= TAP_SLOP * self.window_side {
+                self.next_view()?;
+            }
+        }
+        Ok(())
+    }
+
+    fn on_mouse_left(&mut self) -> Result<()> {
+        // Touches end with the pointer leaving, after the release; a mouse leaving the window
+        // while pressed shouldn't count as a tap later.
+        self.press = None;
         Ok(())
     }
 }
