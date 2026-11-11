@@ -9,6 +9,7 @@ use spirq::spirv::{Dim, ExecutionModel};
 use spirq::ty::{MatrixAxisOrder, ScalarType, Type};
 
 use super::uniform::UniformValue;
+use super::uniformname::{UniformKey, UniformName};
 
 /// Type of a uniform as declared in a shader. Each variant matches a `UniformValue` variant.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -122,7 +123,7 @@ impl ShaderStages {
 /// A member of a uniform block or of the push constant block.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct UniformMember {
-    pub name: String,
+    pub name: UniformName,
     /// Byte offset in the block.
     pub offset: u32,
     pub ty: UniformType,
@@ -153,7 +154,7 @@ pub struct PushConstantBlock {
 /// A combined image sampler (`layout(set = S, binding = B) uniform sampler2D name;`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SamplerBinding {
-    pub name: String,
+    pub name: UniformName,
     pub set: u32,
     pub binding: u32,
     pub stages: ShaderStages,
@@ -203,7 +204,8 @@ impl ShaderLayout {
     }
 
     /// Finds where the uniform `name` goes.
-    pub fn find(&self, name: &str) -> Option<UniformLocation<'_>> {
+    pub fn find(&self, name: impl UniformKey) -> Option<UniformLocation<'_>> {
+        let name = name.uniform_name()?;
         for block in &self.uniform_blocks {
             if let Some(member) = block.members.iter().find(|m| m.name == name) {
                 return Some(UniformLocation::Block { block, member });
@@ -305,7 +307,7 @@ impl LayoutBuilder {
                                 anyhow!("{}: sampler has no name (debug info stripped?)", what())
                             })?;
                             let sampler = SamplerBinding {
-                                name,
+                                name: name.into(),
                                 set,
                                 binding,
                                 stages: stage,
@@ -376,7 +378,7 @@ fn struct_members(ty: &Type) -> Result<(u32, Vec<UniformMember>)> {
                 _ => None,
             };
             Ok(UniformMember {
-                name,
+                name: name.into(),
                 offset,
                 ty: ty_,
                 matrix_stride,
@@ -454,7 +456,7 @@ mod tests {
 
     fn mat4(name: &str, offset: u32) -> UniformMember {
         UniformMember {
-            name: name.to_string(),
+            name: name.into(),
             offset,
             ty: UniformType::Mat4,
             matrix_stride: Some(16),
@@ -486,7 +488,7 @@ mod tests {
         assert_eq!(
             layout.samplers,
             [SamplerBinding {
-                name: "texSampler".to_string(),
+                name: "texSampler".into(),
                 set: 0,
                 binding: 1,
                 stages: ShaderStages::FRAGMENT,
@@ -547,7 +549,7 @@ mod tests {
         let matrix_stride = matches!(ty, UniformType::Mat2 | UniformType::Mat3 | UniformType::Mat4)
             .then_some(16);
         UniformMember {
-            name: name.to_string(),
+            name: name.into(),
             offset,
             ty,
             matrix_stride,
@@ -615,7 +617,7 @@ mod tests {
         assert_eq!(
             layout.samplers,
             [SamplerBinding {
-                name: "albedo".to_string(),
+                name: "albedo".into(),
                 set: 1,
                 binding: 1,
                 stages: ShaderStages::FRAGMENT,

@@ -2,22 +2,24 @@
 //! slice per block in a per-frame buffer) and push constants, and an atlas for each sampler.
 
 use super::math::Mat4;
-use super::shader::ShaderUniformNames;
+use super::shader::ShaderUniformIds;
 use super::shaderlayout::{ShaderLayout, UniformMember, UniformType};
 use super::texture::Texture;
 use super::uniform::UniformValue;
+use super::uniformname::{UniformKey, UniformName};
 use super::uniforms::Uniforms;
 
 /// The values available to one draw. `engine` values (the matrices and the texture rectangle
 /// under the shader's names, see `engine_uniforms`) take precedence over the node's dynamic
 /// uniforms.
 pub struct UniformValues<'a> {
-    pub engine: &'a [(&'a str, UniformValue)],
+    pub engine: &'a [(UniformName, UniformValue)],
     pub node: &'a Uniforms,
 }
 
 impl UniformValues<'_> {
-    pub fn get(&self, name: &str) -> Option<&UniformValue> {
+    pub fn get(&self, name: impl UniformKey) -> Option<&UniformValue> {
+        let name = name.uniform_name()?;
         self.engine
             .iter()
             .find(|(n, _)| *n == name)
@@ -74,10 +76,10 @@ pub fn fill_members(
     issues: &mut Vec<UniformIssue>,
 ) {
     for member in members {
-        match values.get(&member.name) {
-            None => issues.push(UniformIssue::Missing(member.name.clone())),
+        match values.get(member.name) {
+            None => issues.push(UniformIssue::Missing(member.name.to_string())),
             Some(value) if !member.ty.accepts(value) => issues.push(UniformIssue::WrongType {
-                name: member.name.clone(),
+                name: member.name.to_string(),
                 expected: member.ty,
                 found: value.glsl_type(),
             }),
@@ -160,17 +162,17 @@ pub fn pack_draw(
 }
 
 /// The values the engine provides for a draw, under the names the shader gave them (see
-/// `ShaderUniformNames`): the model, view and projection matrices, the shadow light's matrix
+/// `ShaderUniformNames`, here as `ShaderUniformIds`): the model, view and projection matrices, the shadow light's matrix
 /// and, when the material has a texture, the edges of its rectangle. Names the shader doesn't
 /// use are left out.
-pub fn engine_uniforms<'a>(
-    names: &'a ShaderUniformNames,
+pub fn engine_uniforms(
+    names: &ShaderUniformIds,
     model: Mat4,
     view: Mat4,
     projection: Mat4,
     shadow_matrix: Mat4,
     texture: Option<&Texture>,
-) -> Vec<(&'a str, UniformValue)> {
+) -> Vec<(UniformName, UniformValue)> {
     let matrices = [
         (&names.model, model),
         (&names.view, view),
@@ -191,7 +193,7 @@ pub fn engine_uniforms<'a>(
     });
     matrices
         .chain(rect)
-        .filter_map(|(name, value)| Some((name.as_deref()?, value)))
+        .filter_map(|(name, value)| Some(((*name)?, value)))
         .collect()
 }
 
@@ -210,13 +212,13 @@ pub enum SamplerSource {
 /// its atlas doesn't exist (`atlas_exists`).
 pub fn sampler_sources(
     layout: &ShaderLayout,
-    shadow_map: Option<&str>,
+    shadow_map: Option<UniformName>,
     texture: Option<&Texture>,
     atlas_exists: impl Fn(usize) -> bool,
     issues: &mut Vec<UniformIssue>,
 ) -> Vec<SamplerSource> {
-    let is_shadow = |name: &str| shadow_map == Some(name);
-    if layout.samplers.iter().all(|s| is_shadow(&s.name)) {
+    let is_shadow = |name: UniformName| shadow_map == Some(name);
+    if layout.samplers.iter().all(|s| is_shadow(s.name)) {
         return vec![SamplerSource::ShadowMap; layout.samplers.len()];
     }
     let atlas = match texture {
@@ -233,7 +235,7 @@ pub fn sampler_sources(
     layout
         .samplers
         .iter()
-        .map(|s| match is_shadow(&s.name) {
+        .map(|s| match is_shadow(s.name) {
             true => SamplerSource::ShadowMap,
             false => SamplerSource::Atlas(atlas),
         })
@@ -244,8 +246,8 @@ pub fn sampler_sources(
 pub fn unused_uniforms(layout: &ShaderLayout, uniforms: &Uniforms) -> Vec<UniformIssue> {
     uniforms
         .iter()
-        .filter(|u| layout.find(&u.name).is_none())
-        .map(|u| UniformIssue::Unused(u.name.clone()))
+        .filter(|u| layout.find(u.name).is_none())
+        .map(|u| UniformIssue::Unused(u.name.to_string()))
         .collect()
 }
 
@@ -254,12 +256,18 @@ mod tests {
     use super::*;
     use crate::math::{Mat4, Vec4};
     use crate::shader::tests::{FRAG, VERT};
+    use crate::shader::ShaderUniformNames;
     use cgmath::SquareMatrix;
 
     fn mat_bytes(m: Mat4) -> Vec<u8> {
         let mut buf = vec![0; 64];
         UniformValue::Mat4(m).write_bytes(&mut buf, 0, 16);
         buf
+    }
+
+    /// Engine values with their names interned, as `engine_uniforms` returns them.
+    fn named<const N: usize>(values: [(&str, UniformValue); N]) -> Vec<(UniformName, UniformValue)> {
+        values.into_iter().map(|(n, v)| (UniformName::new(n), v)).collect()
     }
 
     fn translation(x: f32) -> Mat4 {
@@ -270,7 +278,7 @@ mod tests {
     fn engine_values_override_node_values() {
         let mut node = Uniforms::new();
         node.set("view", Mat4::identity()).set("tint", 1.0f32);
-        let engine = [("view", UniformValue::Mat4(translation(1.0)))];
+        let engine = named([("view", UniformValue::Mat4(translation(1.0)))]);
         let values = UniformValues {
             engine: &engine,
             node: &node,
@@ -294,11 +302,11 @@ mod tests {
     fn pack_basic_shader() {
         let layout = ShaderLayout::reflect(VERT, FRAG).unwrap();
         let node = Uniforms::new();
-        let engine = [
+        let engine = named([
             ("model", UniformValue::Mat4(translation(1.0))),
             ("view", UniformValue::Mat4(translation(2.0))),
             ("proj", UniformValue::Mat4(translation(3.0))),
-        ];
+        ]);
         let values = UniformValues {
             engine: &engine,
             node: &node,
@@ -321,7 +329,8 @@ mod tests {
     fn engine_uniforms_use_the_shader_names() {
         let names = ShaderUniformNames::matrices("model", "view", "proj")
             .with_texture_rect("umin", "umax", "vmin", "vmax")
-            .with_shadow("light", "shadows");
+            .with_shadow("light", "shadows")
+            .ids();
         let texture = Texture::new(3, 0.25, 0.5, 0.125, 1.0);
         let values = engine_uniforms(
             &names,
@@ -333,7 +342,7 @@ mod tests {
         );
         assert_eq!(
             values,
-            [
+            named([
                 ("model", UniformValue::Mat4(translation(1.0))),
                 ("view", UniformValue::Mat4(translation(2.0))),
                 ("proj", UniformValue::Mat4(translation(3.0))),
@@ -342,7 +351,7 @@ mod tests {
                 ("umax", UniformValue::Float(0.5)),
                 ("vmin", UniformValue::Float(0.125)),
                 ("vmax", UniformValue::Float(1.0)),
-            ]
+            ])
         );
     }
 
@@ -352,17 +361,18 @@ mod tests {
             view: Some("v".to_string()),
             umax: Some("right".to_string()),
             ..ShaderUniformNames::default()
-        };
+        }
+        .ids();
         let m = Mat4::identity();
         let texture = Texture::full(0);
         assert_eq!(
             engine_uniforms(&names, m, m, m, m, Some(&texture)),
-            [("v", UniformValue::Mat4(m)), ("right", UniformValue::Float(1.0))]
+            named([("v", UniformValue::Mat4(m)), ("right", UniformValue::Float(1.0))])
         );
         // Without a texture there is no rectangle; packing reports the uniform as missing.
         assert_eq!(
             engine_uniforms(&names, m, m, m, m, None),
-            [("v", UniformValue::Mat4(m))]
+            named([("v", UniformValue::Mat4(m))])
         );
     }
 
@@ -408,11 +418,11 @@ mod tests {
     #[test]
     fn the_shadow_map_sampler_samples_the_shadow_map() {
         let layout = ShaderLayout::reflect(VERT, FRAG).unwrap();
-        let name = layout.samplers[0].name.clone();
+        let name = layout.samplers[0].name;
         let mut issues = Vec::new();
         // The shader's only sampler is the shadow map: no texture needed.
         assert_eq!(
-            sampler_sources(&layout, Some(&name), None, |_| true, &mut issues),
+            sampler_sources(&layout, Some(name), None, |_| true, &mut issues),
             [SamplerSource::ShadowMap]
         );
         assert_eq!(issues, []);

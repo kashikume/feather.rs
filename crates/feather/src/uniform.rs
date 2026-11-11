@@ -1,3 +1,4 @@
+use super::uniformname::UniformName;
 use super::math::{IVec2, IVec3, IVec4, Mat2, Mat3, Mat4, UVec2, UVec3, UVec4, Vec2, Vec3, Vec4};
 
 /// A value of any type that can be passed to a shader as a uniform.
@@ -128,9 +129,9 @@ impl_from_for_uniform_value!(
 );
 
 /// A named uniform value.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Uniform {
-    pub name: String,
+    pub name: UniformName,
     pub value: UniformValue,
 }
 

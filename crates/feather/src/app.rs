@@ -321,7 +321,7 @@ impl App {
             issues.clear();
             let sources = sampler_sources(
                 shader.get_layout(),
-                shader.get_shadow_map_sampler_name(),
+                shader.get_uniform_ids().shadow_map,
                 texture,
                 |a| scene.get_atlas(a).is_some(),
                 &mut issues,
@@ -342,7 +342,7 @@ impl App {
             // Uniforms: the node's dynamic uniforms, plus the matrices and the texture
             // rectangle the engine provides under the names the shader gave them.
             let engine = engine_uniforms(
-                shader.get_uniform_names(),
+                shader.get_uniform_ids(),
                 item.model,
                 view,
                 proj,

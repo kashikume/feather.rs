@@ -276,8 +276,8 @@ crates/
     shader.rs, material.rs
                      SPIR-V shaders and materials
     shaderlayout.rs  uniform blocks, push constants and samplers read from a shader's SPIR-V
-    uniform.rs, uniforms.rs
-                     uniform values and named uniform lists
+    uniform.rs, uniforms.rs, uniformname.rs
+                     uniform values, named uniform lists and interned uniform names
     uniformdata.rs   packing uniform values into the bytes a shader reads
     assetsprovider.rs, windowsassetsprovider.rs
                      platform-independent asset access and its Windows implementation
@@ -533,6 +533,12 @@ node's final (dynamic) uniforms in three layers, each overriding the previous on
 3. the node's own uniforms.
 
 A node's own uniforms are passed down to its children; its material's uniforms are not.
+
+Uniform names are interned: each name gets a small id (`UniformName`) the first time it is
+used, and uniform lists, shader layouts and draw packing compare ids, not strings. Set and look
+up uniforms by `&str` as usual (`uniforms_mut().set("tint", 0.5)`); code that sets the same
+uniforms often, like a text's glyph nodes, can keep `UniformName::new("tint")` and pass that
+instead.
 
 ### Textures
 

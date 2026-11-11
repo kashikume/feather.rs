@@ -19,6 +19,8 @@
 //!
 //! Both are drawn with a material whose texture is the whole atlas (`create_text_material`).
 
+use std::sync::OnceLock;
+
 use anyhow::{anyhow, Result};
 
 use super::atlas::Atlas;
@@ -27,6 +29,7 @@ use super::mesh::Mesh;
 use super::meshbuilderplane::MeshBuilderPlane;
 use super::object::Object;
 use super::scene::Scene;
+use super::uniformname::UniformName;
 use super::vertex::Vertex;
 
 /// Where text is put horizontally relative to its origin.
@@ -383,6 +386,12 @@ impl TextBuilder {
 /// coordinates with `mix(vec2(umin, vmin), vec2(umax, vmax), uv)`.
 pub const GLYPH_RECT_UNIFORMS: [&str; 4] = ["umin", "umax", "vmin", "vmax"];
 
+/// `GLYPH_RECT_UNIFORMS` as ids, interned once: glyph nodes set them on every text change.
+fn glyph_rect_ids() -> [UniformName; 4] {
+    static IDS: OnceLock<[UniformName; 4]> = OnceLock::new();
+    *IDS.get_or_init(|| GLYPH_RECT_UNIFORMS.map(UniformName::new))
+}
+
 /// The name of the mesh shared by the glyph nodes of `TextMethod::NodePerGlyph`: a 1x1 square
 /// from (0, -1) to (1, 0) in the XY plane, so its top left corner is at the origin.
 pub const GLYPH_MESH_NAME: &str = "Text glyph quad";
@@ -407,7 +416,7 @@ pub fn create_text_material(
     let layout = scene.get_shader(shader).unwrap().get_layout();
     if GLYPH_RECT_UNIFORMS.iter().all(|u| layout.find(u).is_some()) {
         let uniforms = scene.get_material_mut(material).unwrap().uniforms_mut();
-        for (name, value) in GLYPH_RECT_UNIFORMS.into_iter().zip([0.0f32, 1.0, 0.0, 1.0]) {
+        for (name, value) in glyph_rect_ids().into_iter().zip([0.0f32, 1.0, 0.0, 1.0]) {
             uniforms.set(name, value);
         }
     }
@@ -541,7 +550,7 @@ impl Text {
                     let node = scene.get_node_mut(glyph).unwrap();
                     node.set_transform(self.builder.glyph_transform(quad));
                     let rect = [quad.u.0, quad.u.1, quad.v.0, quad.v.1];
-                    for (name, value) in GLYPH_RECT_UNIFORMS.into_iter().zip(rect) {
+                    for (name, value) in glyph_rect_ids().into_iter().zip(rect) {
                         node.uniforms_mut().set(name, value);
                     }
                 }
@@ -1084,5 +1093,98 @@ mod tests {
         assert!(glyph_nodes.iter().all(|&g| scene.get_node(g).is_none()));
         assert!(scene.find_mesh(GLYPH_MESH_NAME).is_some());
         assert_eq!(scene.get_node(root).unwrap().get_children().len(), 0);
+    }
+
+    /// Not a test: times the per-node uniform work for 2,000 glyph nodes (40 texts of 50
+    /// characters with `NodePerGlyph`), without a GPU. Run it in release:
+    /// `cargo test --release -p feather -- --ignored uniform_benchmark --nocapture`.
+    #[test]
+    #[ignore]
+    fn uniform_benchmark() {
+        use crate::math::Mat4;
+        use crate::uniformdata::{engine_uniforms, pack_draw, UniformArena, UniformValues};
+        use std::time::Instant;
+
+        const LINES: usize = 40;
+        const ROUNDS: u32 = 50;
+        let mut scene = Scene::new();
+        let atlas = font(&mut scene);
+        let root = scene.create_root_node(None);
+        scene
+            .get_node_mut(root)
+            .unwrap()
+            .uniforms_mut()
+            .set("color", crate::math::Vec4::new(1.0, 1.0, 1.0, 1.0));
+        let shader = scene
+            .create_shader(
+                Some("Text".into()),
+                VERT,
+                crate::shader::tests::TEXT_FRAG,
+                ShaderUniformNames::matrices("model", "view", "proj"),
+            )
+            .unwrap();
+        let material = create_text_material(&mut scene, None, shader, atlas).unwrap();
+        let builder = TextBuilder::new(atlas).method(TextMethod::NodePerGlyph);
+        // 50 characters (spaces have no node), each different from the other round's.
+        let line = |round: u32| if round % 2 == 0 { "Ai" } else { "iA" }.repeat(25);
+        let mut texts: Vec<Text> = (0..LINES)
+            .map(|_| {
+                Text::create(&mut scene, root, None, material, builder.clone(), &line(0)).unwrap()
+            })
+            .collect();
+        scene.build_missing_mesh_buffers().unwrap();
+        scene.update_nodes();
+        assert_eq!(scene.draw_items().len(), LINES * 50);
+
+        let ms = |start: Instant| start.elapsed().as_secs_f64() * 1000.0 / ROUNDS as f64;
+
+        // Setting the glyphs' rectangle uniforms (and transforms), every character changing.
+        let start = Instant::now();
+        for round in 1..=ROUNDS {
+            let text = line(round);
+            for t in &mut texts {
+                t.set_text(&mut scene, &text).unwrap();
+            }
+        }
+        let set_text = ms(start);
+
+        // Uniform inheritance and global transforms.
+        let start = Instant::now();
+        for _ in 0..ROUNDS {
+            scene.update_nodes();
+        }
+        let update_nodes = ms(start);
+
+        // Packing every draw's uniforms, as `collect_draws` does.
+        let shader = scene.get_shader(shader).unwrap();
+        let items = scene.draw_items();
+        let identity = Mat4::from_scale(1.0);
+        let mut issues = Vec::new();
+        let start = Instant::now();
+        for _ in 0..ROUNDS {
+            let mut arena = UniformArena::new(256);
+            for item in &items {
+                let node = scene.get_node(item.node).unwrap();
+                let texture = scene.get_material(item.material).unwrap().get_texture();
+                let engine = engine_uniforms(
+                    shader.get_uniform_ids(),
+                    item.model,
+                    identity,
+                    identity,
+                    identity,
+                    texture,
+                );
+                let values = UniformValues { engine: &engine, node: node.dynamic_uniforms() };
+                pack_draw(shader.get_layout(), &values, &mut arena, &mut issues);
+                issues.clear();
+            }
+        }
+        let pack = ms(start);
+
+        println!(
+            "{} glyph nodes, ms per frame: set_text {set_text:.3}, update_nodes {update_nodes:.3}, \
+             pack {pack:.3}",
+            items.len()
+        );
     }
 }

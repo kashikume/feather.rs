@@ -1,16 +1,18 @@
-use std::collections::HashMap;
-
 use super::uniform::{Uniform, UniformValue};
+use super::uniformname::{UniformKey, UniformName};
 
 /// A list of uniforms with unique names, kept in the order they were first set.
 ///
-/// Lookups by name go through a hash map, so `get`, `get_mut`, `set` and `contains` are O(1).
-/// `remove` is O(n) because it keeps the order of the remaining uniforms.
-#[derive(Clone, Debug, Default)]
+/// Names are interned (`UniformName`), and lists are short, so lookups scan the list comparing
+/// ids: no hashing and no allocation. Cloning a list copies plain data. `remove` keeps the
+/// order of the remaining uniforms.
+///
+/// Uniforms are set by name (`&str`, `String`) or by `UniformName`, and looked up by either
+/// (`UniformKey`); looking up a name never used anywhere finds nothing without adding it.
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Uniforms {
+    /// Equal lists hold the same uniforms in the same order.
     items: Vec<Uniform>,
-    /// Name -> index in `items`.
-    index: HashMap<String, usize>,
 }
 
 impl Uniforms {
@@ -20,42 +22,34 @@ impl Uniforms {
 
     /// Sets a uniform. If one with this name exists its value is replaced (the type may
     /// change), otherwise it is added at the end.
-    pub fn set(&mut self, name: impl Into<String>, value: impl Into<UniformValue>) -> &mut Self {
+    pub fn set(&mut self, name: impl Into<UniformName>, value: impl Into<UniformValue>) -> &mut Self {
         let name = name.into();
         let value = value.into();
-        match self.index.get(&name) {
-            Some(&i) => self.items[i].value = value,
-            None => {
-                self.index.insert(name.clone(), self.items.len());
-                self.items.push(Uniform { name, value });
-            }
+        match self.position(name) {
+            Some(i) => self.items[i].value = value,
+            None => self.items.push(Uniform { name, value }),
         }
         self
     }
 
-    pub fn get(&self, name: &str) -> Option<&UniformValue> {
-        self.index.get(name).map(|&i| &self.items[i].value)
+    pub fn get(&self, name: impl UniformKey) -> Option<&UniformValue> {
+        let i = self.position(name.uniform_name()?)?;
+        Some(&self.items[i].value)
     }
 
-    pub fn get_mut(&mut self, name: &str) -> Option<&mut UniformValue> {
-        self.index.get(name).map(|&i| &mut self.items[i].value)
+    pub fn get_mut(&mut self, name: impl UniformKey) -> Option<&mut UniformValue> {
+        let i = self.position(name.uniform_name()?)?;
+        Some(&mut self.items[i].value)
     }
 
     /// Removes a uniform and returns its value, if it existed.
-    pub fn remove(&mut self, name: &str) -> Option<UniformValue> {
-        let removed = self.index.remove(name)?;
-        let uniform = self.items.remove(removed);
-        // Uniforms after the removed one moved one place to the left.
-        for i in self.index.values_mut() {
-            if *i > removed {
-                *i -= 1;
-            }
-        }
-        Some(uniform.value)
+    pub fn remove(&mut self, name: impl UniformKey) -> Option<UniformValue> {
+        let i = self.position(name.uniform_name()?)?;
+        Some(self.items.remove(i).value)
     }
 
-    pub fn contains(&self, name: &str) -> bool {
-        self.index.contains_key(name)
+    pub fn contains(&self, name: impl UniformKey) -> bool {
+        name.uniform_name().is_some_and(|name| self.position(name).is_some())
     }
 
     pub fn iter(&self) -> impl Iterator<Item = &Uniform> {
@@ -72,14 +66,16 @@ impl Uniforms {
 
     pub fn clear(&mut self) {
         self.items.clear();
-        self.index.clear();
     }
-}
 
-impl PartialEq for Uniforms {
-    /// Equal when they hold the same uniforms in the same order.
-    fn eq(&self, other: &Self) -> bool {
-        self.items == other.items
+    /// Makes this list a copy of `other`, reusing its storage.
+    pub fn clone_from_uniforms(&mut self, other: &Uniforms) {
+        self.items.clear();
+        self.items.extend_from_slice(&other.items);
+    }
+
+    fn position(&self, name: UniformName) -> Option<usize> {
+        self.items.iter().position(|u| u.name == name)
     }
 }
 
@@ -97,12 +93,10 @@ mod tests {
     use super::*;
     use crate::math::Vec4;
 
-    /// Checks that the name index points at the right items.
+    /// Checks that no name is in the list twice.
     fn assert_index_consistent(uniforms: &Uniforms) {
-        assert_eq!(uniforms.index.len(), uniforms.items.len());
-        for (i, uniform) in uniforms.items.iter().enumerate() {
-            assert_eq!(uniforms.index.get(&uniform.name), Some(&i));
-        }
+        let unique: std::collections::HashSet<_> = uniforms.iter().map(|u| u.name).collect();
+        assert_eq!(unique.len(), uniforms.len());
     }
 
     fn names(uniforms: &Uniforms) -> Vec<&str> {
@@ -223,5 +217,36 @@ mod tests {
 
         assert_eq!(a, b);
         assert_ne!(a, c);
+    }
+
+    #[test]
+    fn names_and_ids_find_the_same_uniform() {
+        let mut uniforms = Uniforms::new();
+        let id = UniformName::new("uniforms_test_by_id");
+        uniforms.set(id, 1.0f32);
+        assert_eq!(uniforms.get("uniforms_test_by_id"), Some(&UniformValue::Float(1.0)));
+        uniforms.set("uniforms_test_by_id", 2.0f32);
+        assert_eq!(uniforms.len(), 1);
+        assert_eq!(uniforms.get(id), Some(&UniformValue::Float(2.0)));
+        let name = "uniforms_test_by_id".to_string();
+        assert!(uniforms.contains(&name));
+    }
+
+    #[test]
+    fn looking_up_unknown_names_does_not_add_them() {
+        let uniforms = Uniforms::new();
+        assert_eq!(uniforms.get("uniforms_test_never_set"), None);
+        assert!(!uniforms.contains("uniforms_test_never_set"));
+        assert_eq!(UniformName::find("uniforms_test_never_set"), None);
+    }
+
+    #[test]
+    fn clone_from_uniforms_copies() {
+        let mut a = Uniforms::new();
+        a.set("x", 1u32);
+        let mut b = Uniforms::new();
+        b.set("y", 2u32).set("z", 3u32);
+        b.clone_from_uniforms(&a);
+        assert_eq!(a, b);
     }
 }

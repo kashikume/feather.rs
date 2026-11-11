@@ -50,6 +50,7 @@ pub mod text;
 pub mod texture;
 pub mod uniform;
 pub mod uniformdata;
+pub mod uniformname;
 pub mod uniforms;
 pub mod vertex;
 #[cfg(windows)]

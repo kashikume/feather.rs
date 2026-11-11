@@ -2,6 +2,7 @@ use anyhow::{bail, Context, Result};
 
 use super::object::Object;
 use super::shaderlayout::{ShaderLayout, UniformLocation, UniformType};
+use super::uniformname::UniformName;
 
 /// SPIR-V magic number (first word of every SPIR-V module).
 const SPIRV_MAGIC: u32 = 0x0723_0203;
@@ -78,12 +79,43 @@ impl ShaderUniformNames {
             }
         }
         if let Some(map) = &self.shadow_map {
-            if !layout.samplers.iter().any(|s| &s.name == map) {
+            if !layout.samplers.iter().any(|s| s.name == map.as_str()) {
                 bail!("the shader has no sampler `{map}` for the shadow map");
             }
         }
         Ok(())
     }
+
+    /// The names as ids, for the per-draw work.
+    pub fn ids(&self) -> ShaderUniformIds {
+        let id = |name: &Option<String>| name.as_deref().map(UniformName::new);
+        ShaderUniformIds {
+            model: id(&self.model),
+            view: id(&self.view),
+            projection: id(&self.projection),
+            umin: id(&self.umin),
+            umax: id(&self.umax),
+            vmin: id(&self.vmin),
+            vmax: id(&self.vmax),
+            shadow_matrix: id(&self.shadow_matrix),
+            shadow_map: id(&self.shadow_map),
+        }
+    }
+}
+
+/// `ShaderUniformNames` as interned ids (`ShaderUniformNames::ids`), so packing a draw doesn't
+/// compare strings.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ShaderUniformIds {
+    pub model: Option<UniformName>,
+    pub view: Option<UniformName>,
+    pub projection: Option<UniformName>,
+    pub umin: Option<UniformName>,
+    pub umax: Option<UniformName>,
+    pub vmin: Option<UniformName>,
+    pub vmax: Option<UniformName>,
+    pub shadow_matrix: Option<UniformName>,
+    pub shadow_map: Option<UniformName>,
 }
 
 /// A shader program: compiled SPIR-V for the vertex and fragment stages.
@@ -95,6 +127,8 @@ pub struct Shader {
     /// Resources the shader uses, reflected from the SPIR-V.
     layout: ShaderLayout,
     uniform_names: ShaderUniformNames,
+    /// `uniform_names` as ids.
+    uniform_ids: ShaderUniformIds,
 }
 
 impl Object for Shader {
@@ -140,6 +174,7 @@ impl Shader {
             vertex: vertex.to_vec(),
             fragment: fragment.to_vec(),
             layout,
+            uniform_ids: uniform_names.ids(),
             uniform_names,
         })
     }
@@ -162,10 +197,16 @@ impl Shader {
         &self.uniform_names
     }
 
+    /// Ids of the uniforms the engine fills.
+    pub fn get_uniform_ids(&self) -> &ShaderUniformIds {
+        &self.uniform_ids
+    }
+
     /// Changes the names of the uniforms the engine fills. Fails, keeping the old names, if a
     /// name doesn't exist in the shader or has the wrong type.
     pub fn set_uniform_names(&mut self, uniform_names: ShaderUniformNames) -> Result<()> {
         uniform_names.check(&self.layout)?;
+        self.uniform_ids = uniform_names.ids();
         self.uniform_names = uniform_names;
         Ok(())
     }

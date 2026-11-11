@@ -202,13 +202,15 @@ impl Node {
         inherited: &Uniforms,
         material: Option<&Uniforms>,
     ) {
-        self.inherited_uniforms = inherited.clone();
-
-        let mut dynamic = material.cloned().unwrap_or_default();
-        for uniform in inherited.iter().chain(self.uniforms.iter()) {
-            dynamic.set(uniform.name.clone(), uniform.value);
+        // Refilled in place: unchanged lists allocate nothing.
+        self.inherited_uniforms.clone_from_uniforms(inherited);
+        match material {
+            Some(material) => self.dynamic_uniforms.clone_from_uniforms(material),
+            None => self.dynamic_uniforms.clear(),
         }
-        self.dynamic_uniforms = dynamic;
+        for uniform in inherited.iter().chain(self.uniforms.iter()) {
+            self.dynamic_uniforms.set(uniform.name, uniform.value);
+        }
     }
 
     /// Recomputes the global transform from the parent's global transform (`None` for a root).
@@ -224,7 +226,7 @@ impl Node {
     pub(crate) fn uniforms_for_children(&self) -> Uniforms {
         let mut result = self.inherited_uniforms.clone();
         for uniform in &self.uniforms {
-            result.set(uniform.name.clone(), uniform.value);
+            result.set(uniform.name, uniform.value);
         }
         result
     }
