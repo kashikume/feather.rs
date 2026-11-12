@@ -8,7 +8,7 @@
 //! {
 //!   "atlases":  [{ "name": "Room", "bitmap": "demo_000_viking_room_atlas.png" },
 //!                { "name": "Icons", "bitmap": "icons.png", "metadata": "icons.atlas" }],
-//!   "meshes":   [{ "name": "Room", "file": "demo_000_viking_room_mesh.obj" },
+//!   "meshes":   [{ "name": "Room", "file": "demo_000_viking_room_mesh.fmesh" },
 //!                { "name": "Box", "cuboid": { "x": [-1, 1], "y": [-1, 1], "z": [0, 2] } },
 //!                { "name": "Flag", "plane": { "x": [0, 2], "y": [-1, 0], "segments": [8, 4] } },
 //!                { "name": "Ball", "sphere": { "radius": 1, "segments": 64, "rings": 32 } }],
@@ -46,7 +46,9 @@
 //!   the bitmap, see `atlas::parse_metadata`).
 //! - A material's `texture` is a texture of an atlas: the rectangle `name` from the atlas's
 //!   metadata, or the whole atlas when `name` is missing.
-//! - A mesh is an OBJ `file`, a `cuboid` with optional `x`, `y`, `z` ranges (default
+//! - A mesh is a `file`, an `.fmesh` (`MeshBuilderFmeshFile`, made from an OBJ by the
+//!   `mesh-converter` tool) or a Wavefront `.obj` (`MeshBuilderObjFile`), chosen by the
+//!   extension; or a `cuboid` with optional `x`, `y`, `z` ranges (default
 //!   `[-0.5, 0.5]`, so `"cuboid": {}` is a 1x1x1 cube centred on the origin) and optional
 //!   per-wall `u`, `v` texture ranges, a `plane` (`MeshBuilderPlane`) with optional `x`,
 //!   `y` ranges (default `[-0.5, 0.5]`) and `segments` (default `[1, 1]`), or a `sphere`
@@ -80,6 +82,7 @@ use super::assetsprovider::AssetsProvider;
 use super::camera::{Camera, ScreenOrigin, ScreenUnits};
 use super::math::{IVec2, IVec3, IVec4, Mat4, Point3, UVec2, UVec3, UVec4, Vec2, Vec3, Vec4};
 use super::meshbuildercuboid::MeshBuilderCuboid;
+use super::meshbuilderfmeshfile::MeshBuilderFmeshFile;
 use super::meshbuilderobjfile::MeshBuilderObjFile;
 use super::meshbuilderplane::MeshBuilderPlane;
 use super::meshbuildersphere::{self, MeshBuilderSphere};
@@ -172,7 +175,8 @@ struct AtlasEntry {
 #[serde(deny_unknown_fields)]
 struct MeshEntry {
     name: String,
-    /// OBJ asset. Exactly one of `file`, `cuboid`, `plane` and `sphere` must be given.
+    /// An `.fmesh` or `.obj` asset. Exactly one of `file`, `cuboid`, `plane` and `sphere` must
+    /// be given.
     file: Option<String>,
     cuboid: Option<CuboidEntry>,
     plane: Option<PlaneEntry>,
@@ -354,10 +358,18 @@ impl Scene {
         }
 
         let mut meshes = HashMap::new();
+        let start = std::time::Instant::now();
         for entry in &file.meshes {
             let handle = build_mesh(&mut scene, assets, entry)
                 .with_context(|| format!("mesh `{}`", entry.name))?;
             meshes.insert(entry.name.as_str(), handle);
+        }
+        if !file.meshes.is_empty() {
+            log::info!(
+                "{} meshes built in {:.1} ms",
+                file.meshes.len(),
+                start.elapsed().as_secs_f64() * 1000.0
+            );
         }
 
         let mut shaders = HashMap::new();
@@ -453,7 +465,14 @@ fn build_mesh(scene: &mut Scene, assets: &dyn AssetsProvider, entry: &MeshEntry)
         (min, max)
     };
     match (&entry.file, &entry.cuboid, &entry.plane, &entry.sphere) {
-        (Some(file), None, None, None) => MeshBuilderObjFile::new(assets, file)?.build(scene, name),
+        (Some(file), None, None, None) => {
+            let extension = std::path::Path::new(file).extension().and_then(|e| e.to_str());
+            match extension.map(str::to_ascii_lowercase).as_deref() {
+                Some("fmesh") => MeshBuilderFmeshFile::new(assets, file)?.build(scene, name),
+                Some("obj") => MeshBuilderObjFile::new(assets, file)?.build(scene, name),
+                _ => bail!("mesh {}: unknown file type {file} (.fmesh or .obj expected)", entry.name),
+            }
+        }
         (None, Some(c), None, None) => {
             let is_default =
                 c.x.is_none() && c.y.is_none() && c.z.is_none() && c.u.is_empty() && c.v.is_empty();
@@ -708,6 +727,7 @@ mod tests {
             ("atlas.png", png_4x2()),
             ("atlas.atlas", b"left 0 0 2 2\nright 2 0 2 2\n".to_vec()),
             ("triangle.obj", TRIANGLE.as_bytes().to_vec()),
+            ("triangle.fmesh", include_bytes!("../testdata/triangle.fmesh").to_vec()),
             ("basic.vert.spv", VERT.to_vec()),
             ("basic.frag.spv", FRAG.to_vec()),
         ] {
@@ -877,6 +897,18 @@ mod tests {
 
     fn load_error(json: &str) -> String {
         format!("{:#}", Scene::from_json(&assets(), json).err().unwrap())
+    }
+
+    #[test]
+    fn mesh_files_by_extension() {
+        let json = |file: &str| format!(r#"{{ "meshes": [{{ "name": "M", "file": "{file}" }}], "root": {{}} }}"#);
+        let scene = Scene::from_json(&assets(), &json("triangle.fmesh")).unwrap();
+        // testdata/triangle.fmesh's second vertex is (1.5, 0, 0), TRIANGLE's (1, 0, 0).
+        assert_eq!(scene.meshes.get_by_name("M").unwrap().get_vertices()[1].pos.x, 1.5);
+        let scene = Scene::from_json(&assets(), &json("triangle.obj")).unwrap();
+        assert_eq!(scene.meshes.get_by_name("M").unwrap().get_vertices()[1].pos.x, 1.0);
+        assert!(load_error(&json("triangle.ply")).contains("unknown file type"));
+        assert!(load_error(&json("triangle")).contains("unknown file type"));
     }
 
     #[test]

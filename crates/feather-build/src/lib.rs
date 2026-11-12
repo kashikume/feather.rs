@@ -3,7 +3,9 @@
 //! - [`compile_shaders`] compiles GLSL shaders to SPIR-V with `glslc`.
 //! - [`build_atlases`] packs the images listed in `.atlist` files into atlases, and renders
 //!   the fonts described in `.font` files into atlases of their characters.
-//! - [`copy_dir`], [`copy_file`] and [`assets_dir`] put an app's assets next to its executable.
+//! - [`build_meshes`] converts Wavefront OBJ files into `.fmesh` files with the mesh converter.
+//! - [`copy_dir`], [`copy_dir_filtered`], [`copy_file`] and [`assets_dir`] put an app's assets
+//!   next to its executable.
 //!
 //! `glslc` is looked up in this order (see [`find_glslc`]):
 //! 1. the `GLSLC` environment variable (full path to the executable),
@@ -105,11 +107,17 @@ pub fn assets_dir(out_dir: &Path) -> PathBuf {
 /// Copies the directory `source` into `target` recursively, creating `target` if needed.
 /// Prints `cargo:rerun-if-changed` for `source`.
 pub fn copy_dir(source: &Path, target: &Path) {
-    println!("cargo:rerun-if-changed={}", source.display());
-    copy_dir_inner(source, target);
+    copy_dir_filtered(source, target, |_| true);
 }
 
-fn copy_dir_inner(source: &Path, target: &Path) {
+/// Like [`copy_dir`], but copies only the files for which `keep` is true (e.g. not the OBJ
+/// files [`build_meshes`] converts).
+pub fn copy_dir_filtered(source: &Path, target: &Path, keep: impl Fn(&Path) -> bool) {
+    println!("cargo:rerun-if-changed={}", source.display());
+    copy_dir_inner(source, target, &keep);
+}
+
+fn copy_dir_inner(source: &Path, target: &Path, keep: &dyn Fn(&Path) -> bool) {
     fs::create_dir_all(target)
         .unwrap_or_else(|e| panic!("failed to create {}: {e}", target.display()));
 
@@ -120,8 +128,8 @@ fn copy_dir_inner(source: &Path, target: &Path) {
         let path = entry.expect("failed to read dir entry").path();
         let destination = target.join(path.file_name().unwrap());
         if path.is_dir() {
-            copy_dir_inner(&path, &destination);
-        } else {
+            copy_dir_inner(&path, &destination, keep);
+        } else if keep(&path) {
             copy_file(&path, &destination);
         }
     }
@@ -138,6 +146,62 @@ pub fn copy_file(source: &Path, target: &Path) {
             target.display()
         )
     });
+}
+
+/// A mesh converted by [`build_meshes`].
+pub struct BuiltMesh {
+    /// The OBJ file, e.g. `resources/car_mesh.obj`.
+    pub source: PathBuf,
+    /// The `.fmesh` file, e.g. `$OUT_DIR/meshes/car_mesh.fmesh`.
+    pub output: PathBuf,
+}
+
+/// Whether `path` is a Wavefront OBJ file (`.obj`), which [`build_meshes`] converts.
+pub fn is_obj(path: &Path) -> bool {
+    path.extension().is_some_and(|e| e.eq_ignore_ascii_case("obj"))
+}
+
+/// Converts every OBJ file directly in `source_dir` into an `.fmesh` file in `out_dir` with
+/// the mesh converter's default settings: `source_dir/<name>.obj` -> `out_dir/<name>.fmesh`.
+///
+/// The data is deflated (when that saves 10% or more), except when building for Android: the
+/// APK deflates its assets already, so a second compression would gain next to nothing and
+/// make the device inflate every mesh twice.
+///
+/// Prints `cargo:rerun-if-changed` for `source_dir`. Panics (failing the build) if an OBJ
+/// can't be converted.
+pub fn build_meshes(source_dir: &Path, out_dir: &Path) -> Vec<BuiltMesh> {
+    println!("cargo:rerun-if-changed={}", source_dir.display());
+    let android = env::var("CARGO_CFG_TARGET_OS").is_ok_and(|os| os == "android");
+    let settings = mesh_converter::Settings {
+        compression: if android {
+            mesh_converter::Compression::Off
+        } else {
+            mesh_converter::Compression::Auto
+        },
+        ..Default::default()
+    };
+
+    let mut sources: Vec<PathBuf> = fs::read_dir(source_dir)
+        .unwrap_or_else(|e| panic!("failed to read dir {}: {e}", source_dir.display()))
+        .map(|entry| entry.expect("failed to read dir entry").path())
+        .filter(|path| path.is_file() && is_obj(path))
+        .collect();
+    sources.sort();
+
+    sources
+        .into_iter()
+        .map(|source| {
+            let name = Path::new(source.file_name().unwrap());
+            let output = out_dir.join(name.with_extension("fmesh"));
+            let (conversion, _) = mesh_converter::convert_file(&source, &output, &settings, false)
+                .unwrap_or_else(|e| panic!("failed to convert {}: {e:#}", source.display()));
+            for warning in conversion.meshes.iter().flat_map(|m| &m.warnings) {
+                println!("cargo:warning={}: {warning}", source.display());
+            }
+            BuiltMesh { source, output }
+        })
+        .collect()
 }
 
 /// An atlas created by [`build_atlases`].

@@ -383,8 +383,8 @@ mod tests {
 
     use super::*;
 
-    /// The assets the app gets at runtime: `resources/` plus the shaders and atlases built by
-    /// `build.rs`.
+    /// The assets the app gets at runtime: `resources/` plus the shaders, atlases and meshes
+    /// built by `build.rs`.
     struct SourceAssets;
 
     impl AssetsProvider for SourceAssets {
@@ -393,6 +393,7 @@ mod tests {
                 concat!(env!("CARGO_MANIFEST_DIR"), "/resources"),
                 concat!(env!("OUT_DIR"), "/shaders"),
                 concat!(env!("OUT_DIR"), "/atlases"),
+                concat!(env!("OUT_DIR"), "/meshes"),
             ];
             let path = dirs
                 .iter()

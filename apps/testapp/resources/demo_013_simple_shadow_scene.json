@@ -1,7 +1,7 @@
 {
   "meshes": [
     { "name": "Floor", "cuboid": { "x": [-3, 3], "y": [-3, 3], "z": [-0.1, 0] } },
-    { "name": "Human", "file": "demo_013_simple_shadow_human_mesh.obj" }
+    { "name": "Human", "file": "demo_013_simple_shadow_human_mesh.fmesh" }
   ],
   "shaders": [
     {

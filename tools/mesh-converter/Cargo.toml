@@ -1,0 +1,16 @@
+[package]
+name = "mesh-converter"
+version = "0.1.0"
+edition.workspace = true
+publish = false
+
+[dependencies]
+anyhow.workspace = true
+feather-fmesh.workspace = true
+
+# Only for `examples/measure.rs`, the measurements in doc/fmesh-format.md.
+[dev-dependencies]
+lz4_flex = "0.11"
+miniz_oxide.workspace = true
+tobj.workspace = true
+zstd = "0.13"

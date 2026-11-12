@@ -10,9 +10,9 @@
     { "name": "Plate", "cuboid": { "x": [-4, 4], "y": [-4, 4], "z": [-0.25, 0] } },
     { "name": "Shadow disc", "plane": {} },
     { "name": "Ball", "sphere": { "radius": 1.0, "segments": 32, "rings": 16 } },
-    { "name": "Femur", "file": "demo_009_spider_femur_mesh.obj" },
-    { "name": "Tibia", "file": "demo_009_spider_tibia_mesh.obj" },
-    { "name": "Tarsus", "file": "demo_009_spider_tarsus_mesh.obj" }
+    { "name": "Femur", "file": "demo_009_spider_femur_mesh.fmesh" },
+    { "name": "Tibia", "file": "demo_009_spider_tibia_mesh.fmesh" },
+    { "name": "Tarsus", "file": "demo_009_spider_tarsus_mesh.fmesh" }
   ],
   "shaders": [
     {

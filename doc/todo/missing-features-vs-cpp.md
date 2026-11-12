@@ -13,8 +13,10 @@ functions), mouse input, the `featherui` UI library (`feather-ui`: hud, NSWE lay
 scrollbars; plus labels and buttons, which C++ didn't have), Android (assets read from the APK,
 logging to logcat, the app's lifecycle: with Vulkan only the window's surface and swapchain are
 lost when the app goes to the background, not every GPU resource as with the C++ engine's
-OpenGL context; touch as the mouse; see [../android.md](../android.md)), the atlas creator and
-font creator tools.
+OpenGL context; touch as the mouse; see [../android.md](../android.md)), binary meshes (`.fmesh`
+files, made from OBJs by the mesh converter, which replaces `ObjMeshConverter`, loaded with the
+loader picked by the file's extension; see [../fmesh-format.md](../fmesh-format.md)), the atlas
+creator and font creator tools.
 feather.rs also has things C++ never had (Vulkan, SPIR-V reflection, sphere builder, skeletons
 and animation clips, JSON scene files, cameras as scene objects (perspective or orthographic,
 several per scene with an active one, defined in scene files), several scenes per frame).
@@ -94,22 +96,15 @@ several per scene with an active one, defined in scene files), several scenes pe
 28. **Plane builder variants** (`feather-MeshBuilderPlane`): planes in the XZ plane, centered unit
     planes (`unitCXY`, `unitCXZ`), planes with custom UV ranges, and the **9-patch plane**
     (`build9pInXY`) for scalable UI panels.
-29. **Binary `.mesh` file loader** (`feather-MeshLoaderMeshFile`) and the generic
-    **`MeshLoader`** that picks the loader by file extension.
-30. **Coordinate system preview** (`CreateCoordinateSystemPreview`): a helper that adds X/Y/Z axes
+29. **Coordinate system preview** (`CreateCoordinateSystemPreview`): a helper that adds X/Y/Z axes
     gizmo nodes under a parent, for debugging.
 
 ## Input and application
 
-31. **Thread-safe scene objects** (`ThreadsafeObject`, `FEATHER_THREADSAFE`): optional locking so
+30. **Thread-safe scene objects** (`ThreadsafeObject`, `FEATHER_THREADSAFE`): optional locking so
     the scene can be modified from a thread other than the render thread, and a debug check that
     catches access from the wrong thread.
-32. **Profiler integration** (Tracy `ZoneScoped` in `types.h`).
-
-## Tools
-
-33. **ObjMeshConverter** (`tools/ObjMeshConverter`): converts OBJ files (with axis order and
-    fixed-point factor options) into the binary `.mesh` format, one file per object.
+31. **Profiler integration** (Tracy `ZoneScoped` in `types.h`).
 
 ## Animation ideas (not in C++ either)
 
@@ -125,7 +120,7 @@ several per scene with an active one, defined in scene files), several scenes pe
 
 ## UI ideas (not in C++ either)
 
-- **9-patch track and knob** (item 30): rounded knobs and buttons that don't stretch their
+- **9-patch track and knob** (item 28): rounded knobs and buttons that don't stretch their
   corners.
 - **Clipping**: a scissor rectangle per scene or per node, so a scrolled list is cut at the
   view's edges. Today widgets must stay in their rectangle themselves (demo 22's list hides the

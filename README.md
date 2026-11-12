@@ -17,8 +17,10 @@ What works today:
   with a mesh and a material is drawn
 - Scene objects (meshes, nodes, atlases, shaders, materials) stored in the scene and referenced
   by handle
-- Mesh builders: Wavefront `.obj` loading (via `tobj`), procedural cuboids, subdivided planes and
-  balls (UV spheres)
+- Mesh builders: binary `.fmesh` meshes (made from OBJ files at build time by the mesh converter,
+  every number kept exactly; about ten times faster to load than the OBJ and a tenth or less of
+  its size, see [doc/fmesh-format.md](doc/fmesh-format.md)), Wavefront `.obj` loading (via
+  `tobj`), procedural cuboids, subdivided planes and balls (UV spheres)
 - Atlases loaded from PNG (any color type, converted to 8-bit RGBA) with optional `.atlas`
   metadata naming their textures, or made from pixels generated in code (`Atlas::from_rgba`);
   textures are plain values taken from an atlas
@@ -208,11 +210,32 @@ cargo run -p font-creator -- --list    # installed fonts
 cargo run -p font-creator -- -f "Segoe UI Bold" -h 32 -o font -a font.atlist
 ```
 
+### Meshes
+
+The test app's `build.rs` converts every `apps/testapp/resources/<name>.obj` into
+`$OUT_DIR/meshes/<name>.fmesh` with the mesh converter (`tools/mesh-converter`, used as a library
+through `feather_build::build_meshes`), copied to `assets/`; the scene files load the `.fmesh`
+files, and the OBJs aren't copied. Only the OBJs are in the repository. The converter keeps
+every number of the OBJ exactly (each stream as integers with as many decimals as its most
+precise number), merges identical vertices and flips V, so the mesh is the one
+`MeshBuilderObjFile` would make. The data is deflated, except in Android builds (the APK
+compresses its assets already). The format and the measurements behind these choices are in
+[doc/fmesh-format.md](doc/fmesh-format.md).
+
+The converter is also a command line tool, e.g. to look at a mesh's precision and sizes or to
+compute normals for an OBJ without them:
+
+```powershell
+cargo run --release -p mesh-converter -- --help
+cargo run --release -p mesh-converter -- apps/testapp/resources/demo_016_city_sedan_mesh.obj out.fmesh --stats --check
+cargo run --release -p mesh-converter -- model.obj --soft-normals --split --out-dir meshes
+```
+
 ## Assets
 
-The test app's `build.rs` copies everything in `apps/testapp/resources/` to an `assets/`
-directory next to the executable (e.g. `target/debug/assets/`), together with the compiled
-shaders and the generated atlases. It copies again whenever anything in `resources/` changes.
+The test app's `build.rs` copies everything in `apps/testapp/resources/` but the OBJ files to an
+`assets/` directory next to the executable (e.g. `target/debug/assets/`), together with the
+compiled shaders, the generated atlases and the meshes converted from the OBJs. It copies again whenever anything in `resources/` changes.
 
 At runtime assets are read through the `AssetsProvider` trait, which has one implementation per
 platform:
@@ -229,7 +252,7 @@ the assets root and use `/`, e.g. `"textures/wall.png"`.
 let assets = create_assets_provider("assets")?;
 
 let bytes = assets.get_asset("demo_000_viking_room_shader.vert.spv")?;
-let mesh = MeshBuilderObjFile::new(&*assets, "demo_000_viking_room_mesh.obj")?
+let mesh = MeshBuilderFmeshFile::new(&*assets, "demo_000_viking_room_mesh.fmesh")?
     .build(&mut scene, Some("Room".to_string()))?;
 let atlas = scene.create_atlas_from_png(&*assets, "demo_000_viking_room_atlas.png", None, None)?;
 let plates = scene.create_atlas_from_png(
@@ -240,7 +263,8 @@ let plates = scene.create_atlas_from_png(
 )?;
 ```
 
-Atlases and meshes can also be built from bytes already in memory (`Atlas::new_from_png_bytes`,
+`MeshBuilderObjFile` reads an OBJ the same way. Atlases and meshes can also be built from bytes
+already in memory (`Atlas::new_from_png_bytes`, `MeshBuilderFmeshFile::from_bytes`,
 `MeshBuilderObjFile::from_bytes`).
 
 ## Logging
@@ -294,7 +318,7 @@ crates/
     scenefile.rs     loading a scene from a JSON file
     objdb.rs         handle-based object storage used by the scene
     node.rs          scene graph node (mesh, material, uniforms)
-    mesh*.rs         meshes and mesh builders (.obj file, cuboid, plane, sphere)
+    mesh*.rs         meshes and mesh builders (.fmesh file, .obj file, cuboid, plane, sphere)
     atlas.rs, texture.rs
                      images loaded from PNG with their .atlas metadata, and textures cut from them
     text.rs          text laid out with a font atlas into meshes, and nodes showing it
@@ -315,7 +339,9 @@ crates/
   feather-ui/        the UI library (crate `feather_ui`): Hud, widgets (layouts, labels, buttons,
                      scrollbars); testdata/ holds the shaders its unit tests use
   feather-build/     build script helpers: compiling shaders with glslc, creating atlases,
-                     copying assets
+                     converting meshes, copying assets
+  feather-fmesh/     reading and writing .fmesh files (no Vulkan: used by the engine and the
+                     mesh converter); testdata/ holds the format document's example
 apps/
   testapp/           development application (binary `testapp`)
     src/main.rs      entry point: creates the window and starts the engine with TestApp
@@ -324,13 +350,17 @@ apps/
     shaders/         GLSL sources, compiled by build.rs
     atlases/         .atlist image lists and their images, and .font font descriptions, made
                      into atlases by build.rs
-    resources/       scene files, models and textures, copied to assets/ by build.rs
-    build.rs         compiles shaders, builds atlases and copies assets next to the executable
+    resources/       scene files, models (OBJ, converted into .fmesh) and textures, copied to
+                     assets/ by build.rs
+    build.rs         compiles shaders, builds atlases, converts meshes and copies assets next
+                     to the executable
 tools/
   atlas-creator/     packs PNG images into an atlas: command line tool and library
   font-creator/      renders a Windows font's characters to PNG images and an .atlist: command
                      line tool and library
-doc/                 scene file format and plans
+  mesh-converter/    converts OBJ files into .fmesh files: command line tool and library;
+                     examples/measure.rs measures sizes and load times
+doc/                 scene file and .fmesh formats, Android, and plans
 ```
 
 To add a tool, create `tools/<name>/` with its own `Cargo.toml` (use `edition.workspace = true`
@@ -383,7 +413,7 @@ let room_node = scene.find_node("Room").unwrap();
 ```
 
 Scenes can also be built in code, with `create_root_node`, `create_node`, `MeshBuilderCuboid`,
-`MeshBuilderPlane`, `MeshBuilderSphere`, `MeshBuilderObjFile`, `create_shader`, `create_atlas_from_png`,
+`MeshBuilderPlane`, `MeshBuilderSphere`, `MeshBuilderFmeshFile`, `MeshBuilderObjFile`, `create_shader`, `create_atlas_from_png`,
 `create_material`, `material_set_texture` and the other `Scene` methods. Demos 2 and 3
 (`demo_002_atlas.rs`, `demo_003_waving_atlas.rs`) load their atlas, mesh and shader from a scene
 file and create a material and a node for every texture of the atlas in code.

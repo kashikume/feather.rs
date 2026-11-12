@@ -3,6 +3,9 @@
 
 The vehicles aren't generated: they are imported from a low-poly model, with their texture;
 this only lists them in the scene and the atlas.
+
+The OBJ files go to `apps/testapp/resources/`; the test app's build converts each into an
+`.fmesh` file (see doc/fmesh-format.md), which is what the scene names.
 """
 
 from __future__ import annotations
@@ -764,7 +767,7 @@ def make_scene_files(mesh_names):
         mats.append({"name": s, "shader": "Lit", "texture": {"atlas": "City", "name": s}, "uniforms": {"shininess": {"float": vals[0]}, "specularStrength": {"float": vals[1]}, "reflectivity": {"float": vals[2]}}})
     scene = {
         "atlases": [{"name": "City", "bitmap": "demo_016_city_atlas.png", "metadata": "demo_016_city_atlas.atlas"}],
-        "meshes": [{"name": name, "file": f"demo_016_city_{name}.obj"} for name in mesh_names],
+        "meshes": [{"name": name, "file": f"demo_016_city_{name}.fmesh"} for name in mesh_names],
         "shaders": [
             {"name": "Lit", "vertex": "demo_016_city_shader.vert.spv", "fragment": "demo_016_city_shader.frag.spv", "model_uniform": "model", "view_uniform": "view", "projection_uniform": "proj", "umin_uniform": "umin", "umax_uniform": "umax", "vmin_uniform": "vmin", "vmax_uniform": "vmax", "shadow_matrix_uniform": "lightViewProj", "shadow_map_sampler": "shadowMap"},
             {"name": "Sky", "vertex": "demo_016_city_sky_shader.vert.spv", "fragment": "demo_016_city_sky_shader.frag.spv", "model_uniform": "model", "view_uniform": "view", "projection_uniform": "proj"},

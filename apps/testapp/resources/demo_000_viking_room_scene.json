@@ -3,7 +3,7 @@
     { "name": "Room atlas", "bitmap": "demo_000_viking_room_atlas.png" }
   ],
   "meshes": [
-    { "name": "Room", "file": "demo_000_viking_room_mesh.obj" }
+    { "name": "Room", "file": "demo_000_viking_room_mesh.fmesh" }
   ],
   "shaders": [
     {
