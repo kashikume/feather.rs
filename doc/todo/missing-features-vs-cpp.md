@@ -32,79 +32,77 @@ several per scene with an active one, defined in scene files), several scenes pe
 4. **Set material on a whole subtree** (`Node::set_material(material, passToChildren)`).
 5. **Per-node textures** (`Node::set_texture`, `get_texture`): a node can override or add texture
    slots on top of its material's.
-6. **"Receives shadow" flag** (`Node::Flags::DisplaysShadow`): a per-node switch for whether the
-    node shows shadows cast on it; Rust only has `casts_shadow`.
-7. **Effective visibility query** (`Node::isEffectivelyVisible`): whether a node is visible
-    taking its ancestors into account.
-8. **Transform convenience API** (`Node::setPos`, `setScale`, `x`/`y`/`z` and
-    `global_x`/`global_y`/`global_z` properties): set or read position and scale without building
-    a whole matrix.
-9. **Shader override per node** (`Node::shader`): a node can use a different shader than its
-    material's.
+6. **Effective visibility query** (`Node::isEffectivelyVisible`): whether a node is visible
+   taking its ancestors into account.
+7. **Transform convenience API** (`Node::setPos`, `setScale`, `x`/`y`/`z` and
+   `global_x`/`global_y`/`global_z` properties): set or read position and scale without building
+   a whole matrix.
+8. **Shader override per node** (`Node::shader`): a node can use a different shader than its
+   material's.
 
 ## Rendering
 
-10. **Camera sort modes** (`CameraType` in `feather-RenderingState`): sort transparent (and opaque)
+9. **Camera sort modes** (`CameraType` in `feather-RenderingState`): sort transparent (and opaque)
     nodes along X, Y or Z, ascending or descending, for 2D and 3D cameras, as alternatives to
     sorting by camera distance.
-11. **Opaque nodes sorted front to back** (`RenderingBatcher::sortOpaqueNodes`): Rust groups
+10. **Opaque nodes sorted front to back** (`RenderingBatcher::sortOpaqueNodes`): Rust groups
     opaque draws by shader only.
-12. **Configurable clear mode and clear color** (`RenderingState::setClearMode`,
+11. **Configurable clear mode and clear color** (`RenderingState::setClearMode`,
     `setClearColor`): Rust always clears to black and only chooses whether to clear depth between
     scenes.
-13. **Rendering statistics** (`RenderingState::m_stats.nodesRendered`,
+12. **Rendering statistics** (`RenderingState::m_stats.nodesRendered`,
     `RenderingBatcher::getNodesCount`): number of nodes drawn in a frame.
-14. **Built-in shader generator** (`ShaderProgram::Create(flags)`): GLSL generated at runtime from
+13. **Built-in shader generator** (`ShaderProgram::Create(flags)`): GLSL generated at runtime from
     flags `SpecLight`, `Shadow`, `Transparency`, `Glow`, `SingleColor`, so simple materials need no
     hand-written shaders. Rust needs every shader written and compiled to SPIR-V by the app.
-15. **Multiple textures per material** (`Material::get_textures`, `texture` lines in the material
+14. **Multiple textures per material** (`Material::get_textures`, `texture` lines in the material
     file): several sampler slots, each with its own atlas region (`texUmin0`, ...). Rust has one
     texture per material and binds every sampler to its atlas.
 
 ## Resources and assets
 
-16. **Global resource cache shared between scenes** (`feather-Cache`): atlases, meshes, shaders
+15. **Global resource cache shared between scenes** (`feather-Cache`): atlases, meshes, shaders
     and materials stored once by name and reused by every root/scene, with garbage collection of
     unused entries and `getStats()`. In Rust each `Scene` owns its own resources.
-17. **Material description file** (`feather-Material`, `assets/materials.mdb`): text format with
+16. **Material description file** (`feather-Material`, `assets/materials.mdb`): text format with
     `@material` sections, `shader`, `texture` (atlas / single), `uniform` (float, int, vec3, vec4,
     RGB, RGBA), `font`, `version` and `define` / `%name` macros. Rust has JSON scene files instead;
     loading `.mdb` would let GuitarPrompter's assets be reused unchanged.
-18. **Font atlas attached to a material** (`Material::font_atlas`, `TextBuilder(material)`): build
+17. **Font atlas attached to a material** (`Material::font_atlas`, `TextBuilder(material)`): build
     text directly from a material that names its font.
-19. **Asset enumeration** (`AssetManager::enumerate_files`): list the files of an asset directory.
-20. **Typed loading errors** (`feather-Exceptions.h`: `FileNotFound`, `FileReadError`,
+18. **Asset enumeration** (`AssetManager::enumerate_files`): list the files of an asset directory.
+19. **Typed loading errors** (`feather-Exceptions.h`: `FileNotFound`, `FileReadError`,
     `IncorrectFileFormat`, `UnsupportedFileVersion`, `MaterialNotFound`): callers can tell failure
     kinds apart; Rust returns opaque `anyhow` errors.
 
 ## Images and textures
 
-21. **JPEG loading** (`feather-jpeg`): decode JPEG images into atlases/textures.
-22. **Mutable atlases** (`Atlas::setTexel`, `m_isMutable`, `buildTexBuffer`): change pixels at
+20. **JPEG loading** (`feather-jpeg`): decode JPEG images into atlases/textures.
+21. **Mutable atlases** (`Atlas::setTexel`, `m_isMutable`, `buildTexBuffer`): change pixels at
     runtime and re-upload the texture.
-23. **Texture from a raw buffer** (`Texture::CreateFromBuffer(w, h, format, buffer)`), including
+22. **Texture from a raw buffer** (`Texture::CreateFromBuffer(w, h, format, buffer)`), including
     **RGB (3-byte) pixel format** (`PixelFormat::RGB`); Rust atlases are RGBA only.
-24. **Texture size in pixels** (`Texture::getWidth`, `getHeight`, `getSize`).
+23. **Texture size in pixels** (`Texture::getWidth`, `getHeight`, `getSize`).
 
 ## Meshes
 
-25. **Ribbon mesh builder** (`feather-MeshBuilderRibbon`): a strip built from pairs of points with
+24. **Ribbon mesh builder** (`feather-MeshBuilderRibbon`): a strip built from pairs of points with
     UVs, with normals generated automatically.
-26. **Custom mesh builder** (`feather-MeshBuilderCustom`): add points (position, normal, UV) and
+25. **Custom mesh builder** (`feather-MeshBuilderCustom`): add points (position, normal, UV) and
     faces (polygons, optionally inverted) one by one.
-27. **Mesh merger** (`feather-MeshMerger`): combine two meshes into one.
-28. **Plane builder variants** (`feather-MeshBuilderPlane`): planes in the XZ plane, centered unit
+26. **Mesh merger** (`feather-MeshMerger`): combine two meshes into one.
+27. **Plane builder variants** (`feather-MeshBuilderPlane`): planes in the XZ plane, centered unit
     planes (`unitCXY`, `unitCXZ`), planes with custom UV ranges, and the **9-patch plane**
     (`build9pInXY`) for scalable UI panels.
-29. **Coordinate system preview** (`CreateCoordinateSystemPreview`): a helper that adds X/Y/Z axes
+28. **Coordinate system preview** (`CreateCoordinateSystemPreview`): a helper that adds X/Y/Z axes
     gizmo nodes under a parent, for debugging.
 
 ## Input and application
 
-30. **Thread-safe scene objects** (`ThreadsafeObject`, `FEATHER_THREADSAFE`): optional locking so
+29. **Thread-safe scene objects** (`ThreadsafeObject`, `FEATHER_THREADSAFE`): optional locking so
     the scene can be modified from a thread other than the render thread, and a debug check that
     catches access from the wrong thread.
-31. **Profiler integration** (Tracy `ZoneScoped` in `types.h`).
+30. **Profiler integration** (Tracy `ZoneScoped` in `types.h`).
 
 ## Animation ideas (not in C++ either)
 
@@ -120,7 +118,7 @@ several per scene with an active one, defined in scene files), several scenes pe
 
 ## UI ideas (not in C++ either)
 
-- **9-patch track and knob** (item 28): rounded knobs and buttons that don't stretch their
+- **9-patch track and knob** (item 27): rounded knobs and buttons that don't stretch their
   corners.
 - **Clipping**: a scissor rectangle per scene or per node, so a scrolled list is cut at the
   view's edges. Today widgets must stay in their rectangle themselves (demo 22's list hides the
@@ -150,5 +148,9 @@ several per scene with an active one, defined in scene files), several scenes pe
 
 C++ features feather.rs won't port.
 
+- **"Receives shadow" flag** (`Node::Flags::DisplaysShadow`): declared in C++ but never read;
+  its generated shader's `iExpectShadow` uniform was hard-coded to 1. In feather.rs a shader can
+  declare its own uniform (e.g. `bool receivesShadow`, default in the material) and skip the
+  shadow map when it is false; set on a node, it is inherited by the whole subtree.
 - **`.tex` texture file format** (`Atlas::CreateFromTexFile`, `Texture::CreateFromTexFile`): the
   C++ engine's own pre-processed texture format.
