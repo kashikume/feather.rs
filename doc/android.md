@@ -336,9 +336,12 @@ The build ends with two notices that need no action:
   drop it.)
 - `Consider enabling configuration cache`: a speed-up not set up yet.
 
-The APK is about 28 MB: mostly assets (38 MB uncompressed, chiefly demo 16's meshes) and, in a
-debug APK, the AndroidX libraries' unshrunk Java code (`classes.dex`, 8.6 MB). The Rust library
-is 2.7 MB once Gradle strips its symbols.
+The APK's contents take about 21 MB: in a debug APK, the AndroidX libraries' unshrunk Java code
+(`classes.dex`, 8.6 MB); the PNG atlases (7.5 MB, stored as they are); the Rust library (2.7 MB
+once Gradle strips its symbols); and the meshes, 9.8 MB of uncompressed `.fmesh` files that the
+APK deflates to 1.1 MB (as OBJ files they were 32 MB, 6 MB deflated; see
+[fmesh-format.md](fmesh-format.md)). After incremental builds the file itself can be larger
+than its contents (28.9 MB on 2026-11-12).
 
 ### Checking that the code compiles for Android
 
@@ -759,6 +762,12 @@ Asset names are the same on both: paths relative to the assets root with `/` sep
 `"demo_000_viking_room_shader.vert.spv"`. Inside the APK they are read-only, and the APK holds
 exactly what `build.rs` put in the `assets\` directory (copied afresh by the cargo task: see
 *The Gradle project*).
+
+Meshes are `.fmesh` files made from the OBJs by `build.rs`. For an Android target
+(`CARGO_CFG_TARGET_OS` is `android`), `feather_build::build_meshes` writes them uncompressed:
+the APK deflates its assets anyway, and the device then inflates each mesh only once. Their load
+times appear in logcat: `N meshes built in X ms` per scene file (see
+[fmesh-format.md](fmesh-format.md#measurements-and-decisions)).
 
 A missing asset fails with `asset <name> not found in the APK`.
 

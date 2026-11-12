@@ -9,111 +9,111 @@
   "meshes": [
     {
       "name": "glass_facade_mesh",
-      "file": "demo_016_city_glass_facade_mesh.obj"
+      "file": "demo_016_city_glass_facade_mesh.fmesh"
     },
     {
       "name": "brick_facade_mesh",
-      "file": "demo_016_city_brick_facade_mesh.obj"
+      "file": "demo_016_city_brick_facade_mesh.fmesh"
     },
     {
       "name": "concrete_facade_mesh",
-      "file": "demo_016_city_concrete_facade_mesh.obj"
+      "file": "demo_016_city_concrete_facade_mesh.fmesh"
     },
     {
       "name": "stone_facade_mesh",
-      "file": "demo_016_city_stone_facade_mesh.obj"
+      "file": "demo_016_city_stone_facade_mesh.fmesh"
     },
     {
       "name": "roofs_mesh",
-      "file": "demo_016_city_roofs_mesh.obj"
+      "file": "demo_016_city_roofs_mesh.fmesh"
     },
     {
       "name": "roads_mesh",
-      "file": "demo_016_city_roads_mesh.obj"
+      "file": "demo_016_city_roads_mesh.fmesh"
     },
     {
       "name": "intersections_mesh",
-      "file": "demo_016_city_intersections_mesh.obj"
+      "file": "demo_016_city_intersections_mesh.fmesh"
     },
     {
       "name": "crosswalks_mesh",
-      "file": "demo_016_city_crosswalks_mesh.obj"
+      "file": "demo_016_city_crosswalks_mesh.fmesh"
     },
     {
       "name": "sidewalks_mesh",
-      "file": "demo_016_city_sidewalks_mesh.obj"
+      "file": "demo_016_city_sidewalks_mesh.fmesh"
     },
     {
       "name": "curbs_mesh",
-      "file": "demo_016_city_curbs_mesh.obj"
+      "file": "demo_016_city_curbs_mesh.fmesh"
     },
     {
       "name": "grass_mesh",
-      "file": "demo_016_city_grass_mesh.obj"
+      "file": "demo_016_city_grass_mesh.fmesh"
     },
     {
       "name": "tree_trunks_mesh",
-      "file": "demo_016_city_tree_trunks_mesh.obj"
+      "file": "demo_016_city_tree_trunks_mesh.fmesh"
     },
     {
       "name": "tree_tops_mesh",
-      "file": "demo_016_city_tree_tops_mesh.obj"
+      "file": "demo_016_city_tree_tops_mesh.fmesh"
     },
     {
       "name": "poles_mesh",
-      "file": "demo_016_city_poles_mesh.obj"
+      "file": "demo_016_city_poles_mesh.fmesh"
     },
     {
       "name": "traffic_lights_mesh",
-      "file": "demo_016_city_traffic_lights_mesh.obj"
+      "file": "demo_016_city_traffic_lights_mesh.fmesh"
     },
     {
       "name": "person_mesh",
-      "file": "demo_016_city_person_mesh.obj"
+      "file": "demo_016_city_person_mesh.fmesh"
     },
     {
       "name": "leg_mesh",
-      "file": "demo_016_city_leg_mesh.obj"
+      "file": "demo_016_city_leg_mesh.fmesh"
     },
     {
       "name": "lamp_mesh",
-      "file": "demo_016_city_lamp_mesh.obj"
+      "file": "demo_016_city_lamp_mesh.fmesh"
     },
     {
       "name": "sky_dome_mesh",
-      "file": "demo_016_city_sky_dome_mesh.obj"
+      "file": "demo_016_city_sky_dome_mesh.fmesh"
     },
     {
       "name": "truck_mesh",
-      "file": "demo_016_city_truck_mesh.obj"
+      "file": "demo_016_city_truck_mesh.fmesh"
     },
     {
       "name": "bus_mesh",
-      "file": "demo_016_city_bus_mesh.obj"
+      "file": "demo_016_city_bus_mesh.fmesh"
     },
     {
       "name": "van_mesh",
-      "file": "demo_016_city_van_mesh.obj"
+      "file": "demo_016_city_van_mesh.fmesh"
     },
     {
       "name": "sedan_mesh",
-      "file": "demo_016_city_sedan_mesh.obj"
+      "file": "demo_016_city_sedan_mesh.fmesh"
     },
     {
       "name": "pickup_mesh",
-      "file": "demo_016_city_pickup_mesh.obj"
+      "file": "demo_016_city_pickup_mesh.fmesh"
     },
     {
       "name": "suv_mesh",
-      "file": "demo_016_city_suv_mesh.obj"
+      "file": "demo_016_city_suv_mesh.fmesh"
     },
     {
       "name": "delivery_mesh",
-      "file": "demo_016_city_delivery_mesh.obj"
+      "file": "demo_016_city_delivery_mesh.fmesh"
     },
     {
       "name": "hatchback_mesh",
-      "file": "demo_016_city_hatchback_mesh.obj"
+      "file": "demo_016_city_hatchback_mesh.fmesh"
     }
   ],
   "shaders": [

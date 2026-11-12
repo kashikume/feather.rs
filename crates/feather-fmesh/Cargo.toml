@@ -1,0 +1,11 @@
+[package]
+name = "feather-fmesh"
+version = "0.0.1"
+edition.workspace = true
+description = "Reading and writing .fmesh files, feather's binary meshes (see doc/fmesh-format.md)."
+publish = false
+
+[dependencies]
+crc32fast.workspace = true
+miniz_oxide.workspace = true
+thiserror.workspace = true

@@ -8,6 +8,7 @@ description = "A lightweight 3D engine on top of the Vulkan API."
 anyhow.workspace = true
 log.workspace = true
 cgmath.workspace = true
+feather-fmesh.workspace = true
 png.workspace = true
 thiserror.workspace = true
 tobj.workspace = true
@@ -16,6 +17,10 @@ winit.workspace = true
 spirq.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+
+[dev-dependencies]
+# Converts the test app's OBJs in a test, to compare them with their .fmesh.
+mesh-converter.workspace = true
 
 [build-dependencies]
 feather-build.workspace = true

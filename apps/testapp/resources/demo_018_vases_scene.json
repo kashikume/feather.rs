@@ -1,9 +1,9 @@
 {
   "meshes": [
     { "name": "Plate", "cuboid": { "x": [-4, 4], "y": [-4, 4], "z": [-0.25, 0] } },
-    { "name": "Classic", "file": "demo_007_vases_classic_mesh.obj" },
-    { "name": "Bottle", "file": "demo_007_vases_bottle_mesh.obj" },
-    { "name": "Urn", "file": "demo_007_vases_urn_mesh.obj" }
+    { "name": "Classic", "file": "demo_007_vases_classic_mesh.fmesh" },
+    { "name": "Bottle", "file": "demo_007_vases_bottle_mesh.fmesh" },
+    { "name": "Urn", "file": "demo_007_vases_urn_mesh.fmesh" }
   ],
   "shaders": [
     {
