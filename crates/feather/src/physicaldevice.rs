@@ -25,7 +25,8 @@ pub struct DeviceFeatures {
     /// The largest anisotropy the sampler may use (`maxSamplerAnisotropy`).
     pub max_sampler_anisotropy: f32,
     /// Sample-rate shading: with MSAA, the fragment shader runs per sample, smoothing the
-    /// inside of textured surfaces as well as their edges.
+    /// inside of textured surfaces as well as their edges. Enabled only when the app asks for
+    /// it (`RenderSettings::sample_shading`).
     pub sample_rate_shading: bool,
 }
 
@@ -57,8 +58,13 @@ pub unsafe fn pick_physical_device(instance: &Instance, data: &mut AppData) -> R
         } else {
             info!("Selected physical device (`{}`).", properties.device_name);
             data.physical_device = physical_device;
-            data.msaa_samples = get_max_msaa_samples(instance, data);
+            let settings = data.app.render_settings();
+            data.msaa_samples = choose_msaa_samples(instance, data, settings.max_msaa_samples);
             data.features = DeviceFeatures::get(instance, physical_device);
+            // Sample-rate shading only when the app asks for it (and there is MSAA to use it).
+            data.features.sample_rate_shading &= settings.sample_shading
+                && data.msaa_samples != vk::SampleCountFlags::_1;
+            info!("MSAA samples: {:?}", data.msaa_samples);
             info!("Device features: {:?}", data.features);
             return Ok(());
         }
@@ -101,20 +107,52 @@ unsafe fn check_physical_device_extensions(
     }
 }
 
-unsafe fn get_max_msaa_samples(instance: &Instance, data: &AppData) -> vk::SampleCountFlags {
+/// The largest sample count, up to `max_samples`, that the device supports for both color and
+/// depth attachments.
+unsafe fn choose_msaa_samples(
+    instance: &Instance,
+    data: &AppData,
+    max_samples: u32,
+) -> vk::SampleCountFlags {
     let properties = instance.get_physical_device_properties(data.physical_device);
     let counts = properties.limits.framebuffer_color_sample_counts
         & properties.limits.framebuffer_depth_sample_counts;
+    pick_sample_count(counts, max_samples)
+}
+
+/// The largest of `counts` that is at most `max_samples`, or 1.
+fn pick_sample_count(counts: vk::SampleCountFlags, max_samples: u32) -> vk::SampleCountFlags {
     [
-        vk::SampleCountFlags::_64,
-        vk::SampleCountFlags::_32,
-        vk::SampleCountFlags::_16,
-        vk::SampleCountFlags::_8,
-        vk::SampleCountFlags::_4,
-        vk::SampleCountFlags::_2,
+        (64, vk::SampleCountFlags::_64),
+        (32, vk::SampleCountFlags::_32),
+        (16, vk::SampleCountFlags::_16),
+        (8, vk::SampleCountFlags::_8),
+        (4, vk::SampleCountFlags::_4),
+        (2, vk::SampleCountFlags::_2),
     ]
     .iter()
-    .cloned()
-    .find(|c| counts.contains(*c))
+    .find(|(n, c)| *n <= max_samples && counts.contains(*c))
+    .map(|(_, c)| *c)
     .unwrap_or(vk::SampleCountFlags::_1)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sample_count_is_capped() {
+        let all = vk::SampleCountFlags::_1
+            | vk::SampleCountFlags::_2
+            | vk::SampleCountFlags::_4
+            | vk::SampleCountFlags::_8
+            | vk::SampleCountFlags::_16;
+        assert_eq!(pick_sample_count(all, 4), vk::SampleCountFlags::_4);
+        assert_eq!(pick_sample_count(all, 64), vk::SampleCountFlags::_16);
+        assert_eq!(pick_sample_count(all, 5), vk::SampleCountFlags::_4);
+        assert_eq!(pick_sample_count(all, 1), vk::SampleCountFlags::_1);
+        assert_eq!(pick_sample_count(all, 0), vk::SampleCountFlags::_1);
+        let few = vk::SampleCountFlags::_1 | vk::SampleCountFlags::_2;
+        assert_eq!(pick_sample_count(few, 4), vk::SampleCountFlags::_2);
+    }
 }

@@ -66,6 +66,35 @@ pub trait FeatherApp {
     fn window_title(&self) -> Option<String> {
         None
     }
+
+    /// How the engine renders: multisampling and sample-rate shading. Read once, when the
+    /// engine starts.
+    fn render_settings(&self) -> RenderSettings {
+        RenderSettings::default()
+    }
+}
+
+/// How the engine renders (`FeatherApp::render_settings`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RenderSettings {
+    /// The most samples per pixel for multisample antialiasing (1, 2, 4, 8, 16, 32 or 64); the
+    /// engine takes the largest count up to this that the device supports. 1 turns MSAA off.
+    /// The default, 4, costs little on tile-based GPUs and is the usual balance on desktop.
+    pub max_msaa_samples: u32,
+    /// Sample-rate shading: with MSAA, run the fragment shader for several samples of a pixel
+    /// (at least 20% of them), smoothing the inside of textured surfaces as well as their
+    /// edges, at the cost of more shader work. Used only if the device supports it. Off by
+    /// default.
+    pub sample_shading: bool,
+}
+
+impl Default for RenderSettings {
+    fn default() -> Self {
+        Self {
+            max_msaa_samples: 4,
+            sample_shading: false,
+        }
+    }
 }
 
 /// How many pixels of touchpad scrolling make one line of `FeatherApp::on_mouse_wheel`.

@@ -1,7 +1,10 @@
 use anyhow::{anyhow, Result};
+use log::*;
 use vulkanalia::prelude::v1_0::*;
 
-use super::other::{begin_single_time_commands, end_single_time_commands, get_memory_type_index};
+use super::other::{
+    begin_single_time_commands, end_single_time_commands, get_memory_type_index_preferring,
+};
 
 //================================================
 // Shared (Images)
@@ -44,14 +47,39 @@ pub unsafe fn create_image(
 
     let requirements = device.get_image_memory_requirements(image);
 
+    // Transient attachments (MSAA color, depth) live only in tile memory on tile-based GPUs:
+    // lazily allocated memory, when the device has it, is only committed if ever needed.
+    let preferred = if usage.contains(vk::ImageUsageFlags::TRANSIENT_ATTACHMENT) {
+        properties | vk::MemoryPropertyFlags::LAZILY_ALLOCATED
+    } else {
+        properties
+    };
+    let memory_type_index = get_memory_type_index_preferring(
+        instance,
+        &physical_device,
+        preferred,
+        properties,
+        requirements,
+    )?;
+    if preferred != properties {
+        let memory = instance.get_physical_device_memory_properties(physical_device);
+        let lazy = memory.memory_types[memory_type_index as usize]
+            .property_flags
+            .contains(vk::MemoryPropertyFlags::LAZILY_ALLOCATED);
+        info!(
+            "Transient {}x{} image ({:?}, {:?}): {} memory, {} bytes.",
+            width,
+            height,
+            format,
+            samples,
+            if lazy { "lazily allocated" } else { "device-local" },
+            requirements.size
+        );
+    }
+
     let info = vk::MemoryAllocateInfo::builder()
         .allocation_size(requirements.size)
-        .memory_type_index(get_memory_type_index(
-            instance,
-            &physical_device,
-            properties,
-            requirements,
-        )?);
+        .memory_type_index(memory_type_index);
 
     let image_memory = device.allocate_memory(&info, None)?;
 

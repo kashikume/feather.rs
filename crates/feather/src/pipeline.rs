@@ -25,7 +25,9 @@ pub unsafe fn create_render_pass(
         .format(data.swapchain.swapchain_format)
         .samples(data.msaa_samples)
         .load_op(vk::AttachmentLoadOp::CLEAR)
-        .store_op(vk::AttachmentStoreOp::STORE)
+        // Only its resolve (the swapchain image) is read afterwards: not storing the
+        // multisampled image saves writing it to memory every frame on tile-based GPUs.
+        .store_op(vk::AttachmentStoreOp::DONT_CARE)
         .stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
         .stencil_store_op(vk::AttachmentStoreOp::DONT_CARE)
         .initial_layout(vk::ImageLayout::UNDEFINED)

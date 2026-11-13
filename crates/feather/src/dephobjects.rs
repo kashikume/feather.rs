@@ -27,7 +27,9 @@ pub unsafe fn create_depth_objects(
         data.msaa_samples,
         format,
         vk::ImageTiling::OPTIMAL,
-        vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
+        // Never read after the render pass (it isn't stored): transient, so lazily allocated
+        // memory can be used on tile-based GPUs.
+        vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT | vk::ImageUsageFlags::TRANSIENT_ATTACHMENT,
         vk::MemoryPropertyFlags::DEVICE_LOCAL,
     )?;
 

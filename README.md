@@ -59,13 +59,15 @@ What works today:
   background and back, and back to leave; see [doc/android.md](doc/android.md)
 - A UI library, `feather-ui` (after the C++ engine's `featherui`): a hud drawn in a scene of its
   own, with layouts, labels, buttons and scrollbars, laid out in the window and fed the mouse
-- MSAA
+- MSAA (4× by default; the app can choose the sample count and turn on sample-rate shading
+  with `FeatherApp::render_settings`)
 - Vulkan validation layers turned on automatically in debug builds
 
 > The renderer draws every visible node that has a mesh and a material, with the material's
 > shader and texture, and the node's uniforms. An app can draw several scenes, one over the
 > other, each through its active camera. See
-> [doc/todo](doc/todo/node-uniforms-rendering.md) for the plan and known limitations.
+> [doc/archive](doc/archive/done-node-uniforms-rendering.md) for how it was built and
+> [doc/todo](doc/todo/node-uniforms-rendering.md) for known limitations.
 
 ## Requirements
 
