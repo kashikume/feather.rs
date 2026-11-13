@@ -6,7 +6,7 @@ and texture coordinates, and triangle indices. It is made from a Wavefront OBJ f
 `MeshBuilderFmeshFile` (or by a scene file's mesh `file` ending in `.fmesh`).
 
 It replaces the C++ feather's `.mesh` files (made by its `ObjMeshConverter`); see
-[todo/fmesh-plan.md](todo/fmesh-plan.md) for what changed and why.
+[archive/done-fmesh-plan.md](archive/done-fmesh-plan.md) for what changed and why.
 
 This document is enough to write a reader or a writer without the Rust code. The Rust
 implementation is the `feather-fmesh` crate (`crates/feather-fmesh`).

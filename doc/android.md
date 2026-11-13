@@ -4,8 +4,8 @@ How to set up a Windows machine to build feather apps for Android, and how the t
 and run on a device.
 
 > Everything here was done and checked on one machine (Windows 11 on ARM64) and one phone (a
-> Galaxy S25), following [the Android plan](todo/android-plan.md), which also lists what is left
-> for later.
+> Galaxy S25), following [the Android plan](archive/done-android-plan.md); what is left for later is in
+> [todo/android-plan.md](todo/android-plan.md).
 
 ## Overview
 
@@ -524,7 +524,8 @@ when the device has it, and logs what it found at start-up:
 
 ```
 Selected physical device (`Qualcomm(R) Adreno(TM) X1-85 GPU`).
-Device features: DeviceFeatures { sampler_anisotropy: true, max_sampler_anisotropy: 16.0, sample_rate_shading: true }
+MSAA samples: _4
+Device features: DeviceFeatures { sampler_anisotropy: true, max_sampler_anisotropy: 16.0, sample_rate_shading: false }
 ```
 
 (That is this Windows machine's GPU.) Without a feature, rendering still works, slightly less
@@ -533,7 +534,24 @@ smooth:
 - `sampler_anisotropy`: textures seen at a slant are blurrier (no anisotropic filtering);
   `max_sampler_anisotropy` caps how much is used (at most 16).
 - `sample_rate_shading`: with MSAA, the inside of textured surfaces is less smooth; edges are
-  still antialiased.
+  still antialiased. It is off unless the app asks for it (`RenderSettings::sample_shading`,
+  from `FeatherApp::render_settings`), as it runs the fragment shader several times per pixel;
+  the log then shows `false` even when the device has it.
+
+MSAA uses at most 4 samples per pixel by default (`RenderSettings::max_msaa_samples`), the
+largest count up to that which the device supports.
+
+The multisampled color and depth images are only used inside the render pass (never stored), so
+they are transient and take lazily allocated memory when the device has it, as phone GPUs do.
+It is then never committed, since the GPU keeps them in its tile memory. The log shows it:
+
+```
+Transient 2340x1080 image (R8G8B8A8_SRGB, _4): lazily allocated memory, 41119744 bytes.
+Transient 2340x1080 image (D32_SFLOAT, _4): lazily allocated memory, 41119744 bytes.
+```
+
+On the Galaxy S25 this saves about 80 MB of graphics memory (`adb shell dumpsys meminfo
+com.kashikume.feather.testapp`, `GL mtrack`).
 
 ## Making an app run on Android
 

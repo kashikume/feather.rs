@@ -6,7 +6,7 @@ and the engine loading them**. It's a port of the C++ feather's `ObjMeshConverte
 (read the OBJ once, offline; ship a binary file that loads with no text parsing) but with a file
 format designed for feather.rs.
 
-Covers items 29 and 33 of [missing-features-vs-cpp.md](missing-features-vs-cpp.md) (binary mesh
+Covers items 29 and 33 of [missing-features-vs-cpp.md](../todo/missing-features-vs-cpp.md) (binary mesh
 loader and a loader picked by the file's extension; the `ObjMeshConverter` tool), since removed
 from it.
 
