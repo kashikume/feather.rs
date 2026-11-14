@@ -375,6 +375,9 @@ on the `feather` crate unless they need the engine: it requires the Vulkan SDK t
 
 ## Writing an application
 
+To start an app of your own, step by step, from an empty directory to a turning feather on
+Windows and Android, see the [tutorial](doc/tutorial/README.md).
+
 An application implements the `FeatherApp` trait and gives the engine the scenes to render, each
 drawn through its active camera:
 

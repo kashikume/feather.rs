@@ -1,6 +1,8 @@
 [workspace]
 resolver = "2"
 members = ["crates/*", "apps/*", "tools/*"]
+# Python scripts, not a crate.
+exclude = ["tools/scripts"]
 # `cargo run` / `cargo build` at the root work on the development app.
 default-members = ["apps/testapp"]
 
