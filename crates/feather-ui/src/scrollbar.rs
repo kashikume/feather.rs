@@ -2,8 +2,7 @@ use anyhow::Result;
 
 use crate::rect::Rect;
 use crate::widget::{
-    quad_transform, EventContext, LayoutContext, UiEvent, Visibility, Widget, WidgetBase,
-    WidgetId,
+    quad_transform, EventContext, LayoutContext, UiEvent, Visibility, Widget, WidgetBase, WidgetId,
 };
 
 /// Which way a scrollbar goes.
@@ -224,8 +223,14 @@ impl Scrollbar {
             }
         };
         let parts = [
-            (self.track, pick(self.track_material, self.track_hover_material)),
-            (self.knob, pick(self.knob_material, self.knob_hover_material)),
+            (
+                self.track,
+                pick(self.track_material, self.track_hover_material),
+            ),
+            (
+                self.knob,
+                pick(self.knob_material, self.knob_hover_material),
+            ),
         ];
         for (node, material) in parts {
             if let (Some(node), Some(material)) = (node, material) {

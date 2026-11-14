@@ -22,7 +22,11 @@ impl Uniforms {
 
     /// Sets a uniform. If one with this name exists its value is replaced (the type may
     /// change), otherwise it is added at the end.
-    pub fn set(&mut self, name: impl Into<UniformName>, value: impl Into<UniformValue>) -> &mut Self {
+    pub fn set(
+        &mut self,
+        name: impl Into<UniformName>,
+        value: impl Into<UniformValue>,
+    ) -> &mut Self {
         let name = name.into();
         let value = value.into();
         match self.position(name) {
@@ -49,7 +53,8 @@ impl Uniforms {
     }
 
     pub fn contains(&self, name: impl UniformKey) -> bool {
-        name.uniform_name().is_some_and(|name| self.position(name).is_some())
+        name.uniform_name()
+            .is_some_and(|name| self.position(name).is_some())
     }
 
     pub fn iter(&self) -> impl Iterator<Item = &Uniform> {
@@ -224,7 +229,10 @@ mod tests {
         let mut uniforms = Uniforms::new();
         let id = UniformName::new("uniforms_test_by_id");
         uniforms.set(id, 1.0f32);
-        assert_eq!(uniforms.get("uniforms_test_by_id"), Some(&UniformValue::Float(1.0)));
+        assert_eq!(
+            uniforms.get("uniforms_test_by_id"),
+            Some(&UniformValue::Float(1.0))
+        );
         uniforms.set("uniforms_test_by_id", 2.0f32);
         assert_eq!(uniforms.len(), 1);
         assert_eq!(uniforms.get(id), Some(&UniformValue::Float(2.0)));

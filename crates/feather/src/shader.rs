@@ -370,7 +370,9 @@ pub(crate) mod tests {
             .is_err());
         assert_eq!(shader.get_uniform_view_name(), Some("view"));
 
-        shader.set_uniform_names(matrices(None, None, None)).unwrap();
+        shader
+            .set_uniform_names(matrices(None, None, None))
+            .unwrap();
         assert_eq!(shader.get_uniform_view_name(), None);
     }
 
@@ -401,7 +403,10 @@ pub(crate) mod tests {
     #[test]
     fn new_reflects_layout() {
         let shader = new(VERT, FRAG, ShaderUniformNames::default()).unwrap();
-        assert_eq!(shader.get_layout(), &ShaderLayout::reflect(VERT, FRAG).unwrap());
+        assert_eq!(
+            shader.get_layout(),
+            &ShaderLayout::reflect(VERT, FRAG).unwrap()
+        );
         assert!(shader.get_layout().find("texSampler").is_some());
     }
 
@@ -433,6 +438,11 @@ pub(crate) mod tests {
 
     #[test]
     fn bad_magic_fails() {
-        assert!(new(&[1, 2, 3, 4, 5, 6, 7, 8], FRAG, ShaderUniformNames::default()).is_err());
+        assert!(new(
+            &[1, 2, 3, 4, 5, 6, 7, 8],
+            FRAG,
+            ShaderUniformNames::default()
+        )
+        .is_err());
     }
 }

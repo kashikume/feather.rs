@@ -9,8 +9,8 @@ use super::gpumeshbuffer::GpuMeshBuffer;
 use super::physicaldevice::DeviceFeatures;
 use super::pipeline::{PipelineKey, ShaderPipeline};
 use super::shadowpass::{ShadowMap, ShadowRenderer};
-use super::uniformdata::UniformIssue;
 use super::swapchain::Swapchain;
+use super::uniformdata::UniformIssue;
 
 /// The Vulkan handles and associated properties used by our Vulkan app.
 pub struct AppData {
@@ -99,15 +99,21 @@ impl SceneGpuState {
     /// Destroys the pipelines (they depend on the swapchain); they are recreated when needed.
     /// The GPU must not be using them.
     pub unsafe fn destroy_pipelines(&mut self, device: &Device) {
-        self.shader_pipelines.drain().for_each(|(_, p)| p.destroy(device));
+        self.shader_pipelines
+            .drain()
+            .for_each(|(_, p)| p.destroy(device));
         self.failed_pipelines.clear();
     }
 
     /// Destroys everything. The GPU must not be using any of it.
     pub unsafe fn destroy(&mut self, device: &Device) {
         self.destroy_pipelines(device);
-        self.gpu_atlases.drain().for_each(|(_, a)| a.destroy(device));
-        self.gpu_mesh_buffers.drain().for_each(|(_, b)| b.destroy(device));
+        self.gpu_atlases
+            .drain()
+            .for_each(|(_, a)| a.destroy(device));
+        self.gpu_mesh_buffers
+            .drain()
+            .for_each(|(_, b)| b.destroy(device));
         if let Some(map) = self.shadow_map.take() {
             map.destroy(device);
         }

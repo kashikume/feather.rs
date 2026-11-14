@@ -132,7 +132,9 @@ impl Widget for Button {
         let rect = self.base.rect();
         let background = match self.background {
             Some(node) => node,
-            None => *self.background.insert(cx.create_quad(self.current_material())?),
+            None => *self
+                .background
+                .insert(cx.create_quad(self.current_material())?),
         };
         let local = Rect::from_size(0.0, 0.0, rect.width(), rect.height());
         cx.set_transform(background, quad_transform(local, 0.0))?;

@@ -31,7 +31,9 @@ fn fixture() -> Fixture {
         .unwrap();
     let normal = scene.create_material(Some("normal".into()), panel).unwrap();
     let hover = scene.create_material(Some("hover".into()), panel).unwrap();
-    let pressed = scene.create_material(Some("pressed".into()), panel).unwrap();
+    let pressed = scene
+        .create_material(Some("pressed".into()), panel)
+        .unwrap();
 
     // `A` is 8 × 16 pixels, the space 4 × 16.
     let mut atlas = Atlas::from_rgba(Some("font".into()), 64, 32, vec![0; 64 * 32 * 4]);
@@ -108,8 +110,14 @@ fn the_hud_has_its_own_camera_root_and_square() {
 fn a_side_button_keeps_its_size_and_alignment_in_its_slot() {
     let mut f = fixture();
     let button = f.button().with_size(40.0, 100.0).with_margin(5.0);
-    let button = f.hud.add(button.with_align(Align::End, Align::Center)).unwrap();
-    let root = f.hud.add(LayoutNswe::new().with(Slot::East, button)).unwrap();
+    let button = f
+        .hud
+        .add(button.with_align(Align::End, Align::Center))
+        .unwrap();
+    let root = f
+        .hud
+        .add(LayoutNswe::new().with(Slot::East, button))
+        .unwrap();
     f.hud.set_root(Some(root.into()));
     f.hud.set_scale(2.0);
     f.hud.update().unwrap();
@@ -139,7 +147,9 @@ fn widgets_out_of_the_tree_or_gone_are_hidden() {
     let west = f.hud.add(Spacer::new().with_size(30.0, 0.0)).unwrap();
     let center = f.hud.add(Spacer::new()).unwrap();
     let loose = f.hud.add(Spacer::new()).unwrap();
-    let root = LayoutNswe::new().with(Slot::West, west).with(Slot::Center, center);
+    let root = LayoutNswe::new()
+        .with(Slot::West, west)
+        .with(Slot::Center, center);
     let root = f.hud.add(root).unwrap();
     f.hud.set_root(Some(root.into()));
     f.hud.update().unwrap();
@@ -148,13 +158,21 @@ fn widgets_out_of_the_tree_or_gone_are_hidden() {
     assert_eq!(f.rect(center).left, 30.0);
 
     // Invisible: hidden, keeps its space.
-    f.hud.get_mut(west).unwrap().base_mut().set_visibility(Visibility::Invisible);
+    f.hud
+        .get_mut(west)
+        .unwrap()
+        .base_mut()
+        .set_visibility(Visibility::Invisible);
     f.hud.update().unwrap();
     assert!(!f.node_visible(west));
     assert_eq!(f.rect(center).left, 30.0);
 
     // Gone: hidden, gives its space to the center.
-    f.hud.get_mut(west).unwrap().base_mut().set_visibility(Visibility::Gone);
+    f.hud
+        .get_mut(west)
+        .unwrap()
+        .base_mut()
+        .set_visibility(Visibility::Gone);
     f.hud.update().unwrap();
     assert!(!f.node_visible(west));
     assert_eq!(f.rect(center).left, 0.0);
@@ -169,13 +187,23 @@ fn widgets_out_of_the_tree_or_gone_are_hidden() {
 fn a_hidden_layout_hides_what_it_holds() {
     let mut f = fixture();
     let button = f.hud.add(f.button()).unwrap();
-    let inner = f.hud.add(LayoutNswe::new().with(Slot::Center, button)).unwrap();
-    let root = f.hud.add(LayoutNswe::new().with(Slot::Center, inner)).unwrap();
+    let inner = f
+        .hud
+        .add(LayoutNswe::new().with(Slot::Center, button))
+        .unwrap();
+    let root = f
+        .hud
+        .add(LayoutNswe::new().with(Slot::Center, inner))
+        .unwrap();
     f.hud.set_root(Some(root.into()));
     f.hud.update().unwrap();
     assert!(f.node_visible(button));
 
-    f.hud.get_mut(inner).unwrap().base_mut().set_visibility(Visibility::Invisible);
+    f.hud
+        .get_mut(inner)
+        .unwrap()
+        .base_mut()
+        .set_visibility(Visibility::Invisible);
     f.hud.update().unwrap();
     assert!(!f.node_visible(button));
     // Hidden widgets don't take clicks.
@@ -186,7 +214,10 @@ fn a_hidden_layout_hides_what_it_holds() {
 fn buttons_report_clicks_released_over_them() {
     let mut f = fixture();
     let button = f.button().with_size(100.0, 50.0);
-    let button = f.hud.add(button.with_align(Align::Start, Align::Start)).unwrap();
+    let button = f
+        .hud
+        .add(button.with_align(Align::Start, Align::Start))
+        .unwrap();
     f.hud.set_root(Some(button.into()));
 
     assert!(f.click(10.0, 10.0));
@@ -213,7 +244,10 @@ fn buttons_report_clicks_released_over_them() {
 fn buttons_show_hover_and_press() {
     let mut f = fixture();
     let button = f.button().with_size(100.0, 50.0);
-    let button = f.hud.add(button.with_align(Align::Start, Align::Start)).unwrap();
+    let button = f
+        .hud
+        .add(button.with_align(Align::Start, Align::Start))
+        .unwrap();
     f.hud.set_root(Some(button.into()));
     f.hud.update().unwrap();
     assert_eq!(f.material_of(button), Some(f.normal));
@@ -237,8 +271,14 @@ fn buttons_show_hover_and_press() {
 fn clicks_reach_buttons_in_nested_layouts() {
     let mut f = fixture();
     let button = f.hud.add(f.button().with_size(50.0, 50.0)).unwrap();
-    let inner = f.hud.add(LayoutNswe::new().with(Slot::West, button)).unwrap();
-    let root = f.hud.add(LayoutNswe::new().with(Slot::Center, inner)).unwrap();
+    let inner = f
+        .hud
+        .add(LayoutNswe::new().with(Slot::West, button))
+        .unwrap();
+    let root = f
+        .hud
+        .add(LayoutNswe::new().with(Slot::Center, inner))
+        .unwrap();
     f.hud.set_root(Some(root.into()));
 
     assert!(f.click(10.0, 300.0));
@@ -256,7 +296,10 @@ fn clicks_reach_buttons_in_nested_layouts() {
 fn mouse_positions_are_divided_by_the_scale() {
     let mut f = fixture();
     let button = f.button().with_size(100.0, 50.0);
-    let button = f.hud.add(button.with_align(Align::Start, Align::Start)).unwrap();
+    let button = f
+        .hud
+        .add(button.with_align(Align::Start, Align::Start))
+        .unwrap();
     f.hud.set_root(Some(button.into()));
     f.hud.set_scale(4.0);
     // The button is 400 × 200 pixels.
@@ -269,7 +312,10 @@ fn labels_are_as_big_as_their_text() {
     let mut f = fixture();
     let label = f.label("AA A").with_align(Align::Start, Align::End);
     let label = f.hud.add(label).unwrap();
-    let root = f.hud.add(LayoutNswe::new().with(Slot::South, label)).unwrap();
+    let root = f
+        .hud
+        .add(LayoutNswe::new().with(Slot::South, label))
+        .unwrap();
     f.hud.set_root(Some(root.into()));
     f.hud.update().unwrap();
 
@@ -291,7 +337,10 @@ fn labels_are_as_big_as_their_text() {
 fn button_labels_are_centered() {
     let mut f = fixture();
     let button = f.button().label(f.label("A")).with_size(48.0, 96.0);
-    let button = f.hud.add(button.with_align(Align::Start, Align::Start)).unwrap();
+    let button = f
+        .hud
+        .add(button.with_align(Align::Start, Align::Start))
+        .unwrap();
     f.hud.set_root(Some(button.into()));
     f.hud.update().unwrap();
     let text = f
@@ -477,12 +526,20 @@ fn scrollbars_hide_when_there_is_nothing_to_scroll() {
     assert!(!f.click(790.0, 10.0));
 
     // Forced visible.
-    f.hud.get_mut(bar).unwrap().base_mut().set_visibility(Visibility::Visible);
+    f.hud
+        .get_mut(bar)
+        .unwrap()
+        .base_mut()
+        .set_visibility(Visibility::Visible);
     f.hud.update().unwrap();
     assert!(f.node_visible(bar));
     // Invisible: not drawn even though it could scroll (a bug in C++).
     f.hud.get_mut(bar).unwrap().set_range(0.0, 10.0);
-    f.hud.get_mut(bar).unwrap().base_mut().set_visibility(Visibility::Invisible);
+    f.hud
+        .get_mut(bar)
+        .unwrap()
+        .base_mut()
+        .set_visibility(Visibility::Invisible);
     f.hud.update().unwrap();
     assert!(!f.node_visible(bar));
 }

@@ -75,7 +75,10 @@ impl Skeleton {
     pub fn check(&self, clip: &AnimationClip) -> Result<()> {
         for bone in clip.bones.keys() {
             if !self.bones.contains_key(bone) {
-                bail!("animation `{}` moves bone `{bone}`, which the skeleton doesn't have", clip.name);
+                bail!(
+                    "animation `{}` moves bone `{bone}`, which the skeleton doesn't have",
+                    clip.name
+                );
             }
         }
         Ok(())
@@ -142,7 +145,11 @@ mod tests {
 
     fn hand_position(scene: &mut Scene, hand: usize) -> Vec3 {
         scene.update_nodes();
-        let m = scene.get_node(hand).unwrap().get_global_transform().unwrap();
+        let m = scene
+            .get_node(hand)
+            .unwrap()
+            .get_global_transform()
+            .unwrap();
         let p = m * Vec4::new(0.0, 0.0, 0.0, 1.0);
         Vec3::new(p.x, p.y, p.z)
     }
@@ -157,7 +164,10 @@ mod tests {
     fn named_nodes_become_bones_with_their_rest_transforms() {
         let (scene, body, arm, _) = arm_scene();
         let skeleton = Skeleton::from_nodes(&scene, body).unwrap();
-        assert_eq!(skeleton.bone_names().collect::<Vec<_>>(), ["Arm", "Body", "Hand"]);
+        assert_eq!(
+            skeleton.bone_names().collect::<Vec<_>>(),
+            ["Arm", "Body", "Hand"]
+        );
         let bone = skeleton.get_bone("Arm").unwrap();
         assert_eq!(bone.node, arm);
         assert_eq!(bone.rest, Mat4::from_translation(Vec3::new(1.0, 0.0, 0.0)));

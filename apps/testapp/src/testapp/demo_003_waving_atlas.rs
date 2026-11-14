@@ -84,10 +84,7 @@ impl WavingAtlasDemo {
         // The scene file's camera: in front of the grid and a little to the side, so that the
         // wind's push is visible, looking at its centre. The `Plates` node turns the plates from
         // the XY plane to the XZ plane, facing -Y.
-        Ok(Self {
-            scene,
-            plates_node,
-        })
+        Ok(Self { scene, plates_node })
     }
 }
 

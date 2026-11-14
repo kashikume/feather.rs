@@ -99,11 +99,12 @@ pub fn convert(obj_text: &str, settings: &Settings) -> Result<Conversion> {
     let meshes = if settings.split {
         // Objects by `o`, or by `g` when there's no `o`; faces of objects with the same name
         // go together.
-        let (names, of_face): (&[String], Box<dyn Fn(&obj::Face) -> Option<u32>>) = if !obj.objects.is_empty() {
-            (&obj.objects, Box::new(|f| f.object))
-        } else {
-            (&obj.groups, Box::new(|f| f.group))
-        };
+        let (names, of_face): (&[String], Box<dyn Fn(&obj::Face) -> Option<u32>>) =
+            if !obj.objects.is_empty() {
+                (&obj.objects, Box::new(|f| f.object))
+            } else {
+                (&obj.groups, Box::new(|f| f.group))
+            };
         let mut objects: Vec<(String, Vec<usize>)> = Vec::new();
         for (i, face) in obj.faces.iter().enumerate() {
             let name = of_face(face)
@@ -118,7 +119,8 @@ pub fn convert(obj_text: &str, settings: &Settings) -> Result<Conversion> {
         objects
             .into_iter()
             .map(|(name, faces)| {
-                convert::convert_faces(&obj, &faces, settings, Some(name.clone())).with_context(|| format!("object {name}"))
+                convert::convert_faces(&obj, &faces, settings, Some(name.clone()))
+                    .with_context(|| format!("object {name}"))
             })
             .collect::<Result<_>>()?
     } else {
@@ -126,7 +128,10 @@ pub fn convert(obj_text: &str, settings: &Settings) -> Result<Conversion> {
         vec![convert::convert_faces(&obj, &faces, settings, None)?]
     };
 
-    Ok(Conversion { meshes, skipped: obj.skipped })
+    Ok(Conversion {
+        meshes,
+        skipped: obj.skipped,
+    })
 }
 
 /// Reads `bytes` as an `.fmesh` file and checks that every triangle corner has the values the
@@ -153,11 +158,25 @@ pub fn check(converted: &Converted, bytes: &[u8]) -> Result<()> {
             mesh.uvs[2 * i + 1],
         ];
         for c in 0..8 {
-            let tolerance = if (3..6).contains(&c) { converted.normals_tolerance } else { 0.0 };
+            let tolerance = if (3..6).contains(&c) {
+                converted.normals_tolerance
+            } else {
+                0.0
+            };
             // NaN never compares equal; it's still the right value if both are NaN.
-            let same = (read[c] - expected[c]).abs() <= tolerance || (read[c].is_nan() && expected[c].is_nan());
+            let same = (read[c] - expected[c]).abs() <= tolerance
+                || (read[c].is_nan() && expected[c].is_nan());
             if !same {
-                let what = ["position x", "position y", "position z", "normal x", "normal y", "normal z", "u", "v"][c];
+                let what = [
+                    "position x",
+                    "position y",
+                    "position z",
+                    "normal x",
+                    "normal y",
+                    "normal z",
+                    "u",
+                    "v",
+                ][c];
                 bail!(
                     "triangle {}, corner {}: {what} is {} instead of {}",
                     k / 3,
@@ -176,7 +195,13 @@ pub fn check(converted: &Converted, bytes: &[u8]) -> Result<()> {
 pub fn split_path(output: &Path, object: &str) -> PathBuf {
     let object: String = object
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || "_-.".contains(c) { c } else { '_' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || "_-.".contains(c) {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect();
     let stem = output.file_stem().unwrap_or_default().to_string_lossy();
     output.with_file_name(format!("{stem}_{object}.fmesh"))
@@ -185,8 +210,14 @@ pub fn split_path(output: &Path, object: &str) -> PathBuf {
 /// Converts the OBJ file `input` into `output` (or, with [`Settings::split`], into files named
 /// by [`split_path`]), creating the output's directory if needed. With `check`, reads every
 /// file back and [`check`]s it.
-pub fn convert_file(input: &Path, output: &Path, settings: &Settings, check_output: bool) -> Result<(Conversion, Vec<PathBuf>)> {
-    let text = fs::read_to_string(input).with_context(|| format!("can't read {}", input.display()))?;
+pub fn convert_file(
+    input: &Path,
+    output: &Path,
+    settings: &Settings,
+    check_output: bool,
+) -> Result<(Conversion, Vec<PathBuf>)> {
+    let text =
+        fs::read_to_string(input).with_context(|| format!("can't read {}", input.display()))?;
     let conversion = convert(&text, settings)?;
     if let Some(dir) = output.parent().filter(|d| !d.as_os_str().is_empty()) {
         fs::create_dir_all(dir).with_context(|| format!("can't create {}", dir.display()))?;
@@ -197,10 +228,13 @@ pub fn convert_file(input: &Path, output: &Path, settings: &Settings, check_outp
             Some(object) => split_path(output, object),
             None => output.to_path_buf(),
         };
-        fs::write(&path, &converted.written.bytes).with_context(|| format!("can't write {}", path.display()))?;
+        fs::write(&path, &converted.written.bytes)
+            .with_context(|| format!("can't write {}", path.display()))?;
         if check_output {
-            let bytes = fs::read(&path).with_context(|| format!("can't read back {}", path.display()))?;
-            check(converted, &bytes).with_context(|| format!("check of {} failed", path.display()))?;
+            let bytes =
+                fs::read(&path).with_context(|| format!("can't read back {}", path.display()))?;
+            check(converted, &bytes)
+                .with_context(|| format!("check of {} failed", path.display()))?;
         }
         paths.push(path);
     }

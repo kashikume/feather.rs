@@ -200,7 +200,12 @@ fn sample_keys(keys: &[Key], time: f32, duration: f32) -> Vec3 {
         let key = keys[k.rem_euclid(n as isize) as usize];
         (key.time + loops as f32 * duration, key.value)
     };
-    let i = i as isize + if time < keys[0].time { -(n as isize) } else { 0 };
+    let i = i as isize
+        + if time < keys[0].time {
+            -(n as isize)
+        } else {
+            0
+        };
     let (t0, p0) = key(i - 1);
     let (t1, p1) = key(i);
     let (t2, p2) = key(i + 1);
@@ -324,7 +329,10 @@ mod tests {
     #[test]
     fn invalid_clips_fail() {
         for (json, expected) in [
-            (r#"{ "name": "A", "duration": 0, "bones": {} }"#, "duration must be positive"),
+            (
+                r#"{ "name": "A", "duration": 0, "bones": {} }"#,
+                "duration must be positive",
+            ),
             (
                 r#"{ "name": "A", "duration": 1, "bones": { "B": { "rotation": [[1.0, [0, 0, 0]]] } } }"#,
                 "outside 0..1",
@@ -333,10 +341,16 @@ mod tests {
                 r#"{ "name": "A", "duration": 1, "bones": { "B": { "offset": [[0.5, [0, 0, 0]], [0.2, [0, 0, 0]]] } } }"#,
                 "increasing order",
             ),
-            (r#"{ "name": "A", "duration": 1, "bones": { "B": { "scale": [] } } }"#, "unknown field"),
+            (
+                r#"{ "name": "A", "duration": 1, "bones": { "B": { "scale": [] } } }"#,
+                "unknown field",
+            ),
         ] {
             let error = format!("{:#}", AnimationClip::from_json(json).unwrap_err());
-            assert!(error.contains(expected), "expected `{expected}` in: {error}");
+            assert!(
+                error.contains(expected),
+                "expected `{expected}` in: {error}"
+            );
         }
     }
 }

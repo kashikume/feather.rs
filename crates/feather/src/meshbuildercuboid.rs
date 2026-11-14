@@ -76,7 +76,6 @@ impl MeshBuilderCuboid {
 
     /// Builds the mesh, named `name`, adds it to `scene` and returns its handle.
     pub fn build(mut self, scene: &mut Scene, name: Option<String>) -> Result<usize> {
-
         // 0
         self.add_wall(
             (self.x.0, self.x.1),
@@ -228,7 +227,10 @@ mod tests {
             let facing = (b.pos - a.pos).cross(c.pos - a.pos).normalize();
             for v in [a, b, c] {
                 assert_eq!(v.normal, facing, "{triangle:?}");
-                assert!(v.normal.dot(v.pos - centre) > 0.0, "{triangle:?} points inward");
+                assert!(
+                    v.normal.dot(v.pos - centre) > 0.0,
+                    "{triangle:?} points inward"
+                );
             }
         }
     }

@@ -6,7 +6,9 @@ use anyhow::{bail, Result};
 use vulkanalia::prelude::v1_0::*;
 
 use super::buffers::create_buffer;
-use super::images::{copy_buffer_to_image, create_image, create_image_view, transition_image_layout};
+use super::images::{
+    copy_buffer_to_image, create_image, create_image_view, transition_image_layout,
+};
 use super::other::{begin_single_time_commands, end_single_time_commands};
 use super::physicaldevice::DeviceFeatures;
 
@@ -40,7 +42,10 @@ impl GpuImage {
         pixels: &[u8],
     ) -> Result<Self> {
         if width == 0 || height == 0 || pixels.len() != width as usize * height as usize * 4 {
-            bail!("invalid RGBA image: {width}x{height} with {} bytes", pixels.len());
+            bail!(
+                "invalid RGBA image: {width}x{height} with {} bytes",
+                pixels.len()
+            );
         }
         let device = ctx.device;
         let size = pixels.len() as u64;
@@ -142,8 +147,13 @@ impl GpuImage {
                     mip_levels,
                 )?;
             }
-            gpu_image.view =
-                create_image_view(device, image, FORMAT, vk::ImageAspectFlags::COLOR, mip_levels)?;
+            gpu_image.view = create_image_view(
+                device,
+                image,
+                FORMAT,
+                vk::ImageAspectFlags::COLOR,
+                mip_levels,
+            )?;
             Ok(())
         })();
 

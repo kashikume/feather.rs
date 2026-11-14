@@ -27,7 +27,7 @@ impl Object for Mesh {
     fn get_handle(&self) -> usize {
         self.handle
     }
-}  
+}
 
 impl Mesh {
     pub fn new(name: Option<String>, vertices: Vec<Vertex>, indices: Vec<u32>) -> Self {
@@ -100,7 +100,11 @@ mod tests {
         let vertex = |x, y, z| Vertex::new(Vec3::new(x, y, z), Vec3::unit_z(), Vec2::new(0.0, 0.0));
         let mesh = Mesh::new(
             None,
-            vec![vertex(1.0, 2.0, 3.0), vertex(-1.0, 0.0, 5.0), vertex(0.0, -2.0, 4.0)],
+            vec![
+                vertex(1.0, 2.0, 3.0),
+                vertex(-1.0, 0.0, 5.0),
+                vertex(0.0, -2.0, 4.0),
+            ],
             vec![0, 1, 2],
         );
         let bounds = mesh.get_bounds().unwrap();
@@ -110,6 +114,8 @@ mod tests {
 
     #[test]
     fn mesh_without_vertices_has_no_bounds() {
-        assert!(Mesh::new(None, Vec::new(), Vec::new()).get_bounds().is_none());
+        assert!(Mesh::new(None, Vec::new(), Vec::new())
+            .get_bounds()
+            .is_none());
     }
 }

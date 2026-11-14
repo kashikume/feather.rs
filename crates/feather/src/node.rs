@@ -481,7 +481,10 @@ mod tests {
         node.update_global_transform(Some(&parent));
 
         let p = node.get_global_transform().unwrap() * vec4(1.0, 0.0, 0.0, 1.0);
-        assert!((p.x - 1.0).abs() < 1e-6 && (p.y - 1.0).abs() < 1e-6, "{p:?}");
+        assert!(
+            (p.x - 1.0).abs() < 1e-6 && (p.y - 1.0).abs() < 1e-6,
+            "{p:?}"
+        );
     }
 
     #[test]

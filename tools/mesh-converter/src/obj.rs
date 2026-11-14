@@ -17,7 +17,10 @@ pub struct Number {
 }
 
 impl Number {
-    pub const ZERO: Number = Number { decimal: Some(Decimal::ZERO), value: 0.0 };
+    pub const ZERO: Number = Number {
+        decimal: Some(Decimal::ZERO),
+        value: 0.0,
+    };
 
     fn parse(text: &str) -> Option<Number> {
         Some(Number {
@@ -85,7 +88,9 @@ impl Obj {
             let at = |e: anyhow::Error| anyhow!("line {number}: {e}");
             let line = line.trim();
             let mut tokens = line.split_ascii_whitespace();
-            let Some(keyword) = tokens.next() else { continue };
+            let Some(keyword) = tokens.next() else {
+                continue;
+            };
             let rest = || line[keyword.len()..].trim().to_string();
             match keyword {
                 "v" => obj.positions.push(numbers::<3>(tokens, 3).map_err(at)?),
@@ -99,7 +104,13 @@ impl Obj {
                     if corners.len() < 3 {
                         return Err(at(anyhow!("a face needs at least 3 corners")));
                     }
-                    obj.faces.push(Face { corners, object, group, smoothing, line: number });
+                    obj.faces.push(Face {
+                        corners,
+                        object,
+                        group,
+                        smoothing,
+                        line: number,
+                    });
                 }
                 "o" => {
                     obj.objects.push(rest());
@@ -134,7 +145,9 @@ impl Obj {
             match parts.next() {
                 None | Some("") => Ok(None),
                 Some(part) => {
-                    let i: i64 = part.parse().map_err(|_| anyhow!("invalid {what} index in \"{text}\""))?;
+                    let i: i64 = part
+                        .parse()
+                        .map_err(|_| anyhow!("invalid {what} index in \"{text}\""))?;
                     let resolved = match i {
                         0 => bail!("{what} index 0 in \"{text}\" (indices start at 1)"),
                         i if i > 0 => i - 1,
@@ -154,7 +167,11 @@ impl Obj {
         if parts.next().is_some() {
             bail!("invalid corner \"{text}\"");
         }
-        Ok(Corner { position, uv, normal })
+        Ok(Corner {
+            position,
+            uv,
+            normal,
+        })
     }
 
     /// Every corner must point at a position, UV and normal of the file (positive indices may
@@ -162,13 +179,13 @@ impl Obj {
     fn check_indices(&self) -> Result<()> {
         for face in &self.faces {
             for corner in &face.corners {
-                let check = |index: Option<u32>, count: usize, what: &str| {
-                    match index {
-                        Some(i) if i as usize >= count => {
-                            Err(anyhow!("line {}: {what} {} doesn't exist (the file has {count})", face.line, i + 1))
-                        }
-                        _ => Ok(()),
-                    }
+                let check = |index: Option<u32>, count: usize, what: &str| match index {
+                    Some(i) if i as usize >= count => Err(anyhow!(
+                        "line {}: {what} {} doesn't exist (the file has {count})",
+                        face.line,
+                        i + 1
+                    )),
+                    _ => Ok(()),
                 };
                 check(Some(corner.position), self.positions.len(), "position")?;
                 check(corner.uv, self.uvs.len(), "texture coordinate")?;
@@ -181,11 +198,15 @@ impl Obj {
 
 /// The first `N` numbers of a statement, which must have at least `required` of them (the
 /// missing ones are 0, the extra ones ignored: `w` of `v` and `vt`, colours after `v`).
-fn numbers<'a, const N: usize>(tokens: impl Iterator<Item = &'a str>, required: usize) -> Result<[Number; N]> {
+fn numbers<'a, const N: usize>(
+    tokens: impl Iterator<Item = &'a str>,
+    required: usize,
+) -> Result<[Number; N]> {
     let mut numbers = [Number::ZERO; N];
     let mut count = 0;
     for token in tokens.take(N) {
-        numbers[count] = Number::parse(token).ok_or_else(|| anyhow!("invalid number \"{token}\""))?;
+        numbers[count] =
+            Number::parse(token).ok_or_else(|| anyhow!("invalid number \"{token}\""))?;
         count += 1;
     }
     if count < required {
@@ -199,7 +220,11 @@ mod tests {
     use super::*;
 
     fn corner(position: u32, uv: Option<u32>, normal: Option<u32>) -> Corner {
-        Corner { position, uv, normal }
+        Corner {
+            position,
+            uv,
+            normal,
+        }
     }
 
     #[test]
@@ -233,8 +258,22 @@ l 1 2
         assert!(obj.has_smoothing);
         assert_eq!(obj.faces.len(), 2);
         assert_eq!(obj.faces[0].corners[1], corner(1, Some(1), Some(0)));
-        assert_eq!((obj.faces[0].object, obj.faces[0].group, obj.faces[0].smoothing), (Some(0), None, 0));
-        assert_eq!((obj.faces[1].group, obj.faces[1].smoothing, obj.faces[1].line), (Some(0), 2, 15));
+        assert_eq!(
+            (
+                obj.faces[0].object,
+                obj.faces[0].group,
+                obj.faces[0].smoothing
+            ),
+            (Some(0), None, 0)
+        );
+        assert_eq!(
+            (
+                obj.faces[1].group,
+                obj.faces[1].smoothing,
+                obj.faces[1].line
+            ),
+            (Some(0), 2, 15)
+        );
         assert_eq!(obj.faces[1].corners[0], corner(0, None, Some(0)));
         assert_eq!(obj.skipped, [(16, "l 1 2".to_string())]);
     }

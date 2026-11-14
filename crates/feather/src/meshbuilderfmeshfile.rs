@@ -36,14 +36,27 @@ impl MeshBuilderFmeshFile {
     pub fn build(self, scene: &mut Scene, name: Option<String>) -> Result<usize> {
         let start = Instant::now();
         let what = self.asset.as_deref().unwrap_or("mesh data");
-        let file = feather_fmesh::read(&self.bytes).with_context(|| format!("Cannot read {what}"))?;
+        let file =
+            feather_fmesh::read(&self.bytes).with_context(|| format!("Cannot read {what}"))?;
 
         let vertices: Vec<Vertex> = (0..file.vertex_count())
             .map(|i| {
-                let (p, n, t) = (&file.positions[3 * i..], &file.normals[3 * i..], &file.uvs[2 * i..]);
+                let (p, n, t) = (
+                    &file.positions[3 * i..],
+                    &file.normals[3 * i..],
+                    &file.uvs[2 * i..],
+                );
                 Vertex::new(
-                    Vec3 { x: p[0], y: p[1], z: p[2] },
-                    Vec3 { x: n[0], y: n[1], z: n[2] },
+                    Vec3 {
+                        x: p[0],
+                        y: p[1],
+                        z: p[2],
+                    },
+                    Vec3 {
+                        x: n[0],
+                        y: n[1],
+                        z: n[2],
+                    },
                     Vec2 { x: t[0], y: t[1] },
                 )
             })
@@ -53,7 +66,11 @@ impl MeshBuilderFmeshFile {
             vertices.len(),
             file.indices.len() / 3,
             self.bytes.len(),
-            if file.header.compressed() { " (deflated)" } else { "" },
+            if file.header.compressed() {
+                " (deflated)"
+            } else {
+                ""
+            },
             start.elapsed().as_secs_f64() * 1000.0
         );
 
@@ -81,7 +98,10 @@ mod tests {
         assert_eq!(mesh.get_indices(), [0, 1, 2]);
         let v = mesh.get_vertices();
         assert_eq!((v[1].pos.x, v[1].pos.y, v[1].pos.z), (1.5, 0.0, 0.0));
-        assert_eq!((v[2].normal.x, v[2].normal.y, v[2].normal.z), (0.0, 0.0, 1.0));
+        assert_eq!(
+            (v[2].normal.x, v[2].normal.y, v[2].normal.z),
+            (0.0, 0.0, 1.0)
+        );
         // V flipped: the OBJ's (0, 1) is (0, 0).
         assert_eq!((v[2].tex_coord.x, v[2].tex_coord.y), (0.0, 0.0));
     }
@@ -97,7 +117,10 @@ mod tests {
         let error = MeshBuilderFmeshFile::from_bytes(b"v 0 0 0\n".to_vec())
             .build(&mut scene, None)
             .unwrap_err();
-        assert!(format!("{error:#}").contains("not an .fmesh file"), "{error:#}");
+        assert!(
+            format!("{error:#}").contains("not an .fmesh file"),
+            "{error:#}"
+        );
     }
 
     /// Converts every OBJ of the test app and checks that the `.fmesh` gives the same mesh as
@@ -107,7 +130,8 @@ mod tests {
     /// `f32`, the converter exactly.
     #[test]
     fn same_mesh_as_the_obj_for_every_test_app_obj() {
-        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../apps/testapp/resources");
+        let dir =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../apps/testapp/resources");
         let mut objs: Vec<_> = std::fs::read_dir(&dir)
             .unwrap()
             .map(|e| e.unwrap().path())
@@ -126,18 +150,29 @@ mod tests {
                 .bytes;
 
             let mut scene = Scene::new();
-            let from_obj = MeshBuilderObjFile::from_bytes(text.into_bytes()).build(&mut scene, None).unwrap();
-            let from_fmesh = MeshBuilderFmeshFile::from_bytes(fmesh).build(&mut scene, None).unwrap();
-            let (a, b) = (scene.get_mesh(from_obj).unwrap(), scene.get_mesh(from_fmesh).unwrap());
+            let from_obj = MeshBuilderObjFile::from_bytes(text.into_bytes())
+                .build(&mut scene, None)
+                .unwrap();
+            let from_fmesh = MeshBuilderFmeshFile::from_bytes(fmesh)
+                .build(&mut scene, None)
+                .unwrap();
+            let (a, b) = (
+                scene.get_mesh(from_obj).unwrap(),
+                scene.get_mesh(from_fmesh).unwrap(),
+            );
 
             let name = path.file_name().unwrap().to_string_lossy();
             assert_eq!(a.get_indices().len(), b.get_indices().len(), "{name}");
             assert!(b.get_vertices().len() <= a.get_vertices().len(), "{name}");
             for (&i, &j) in a.get_indices().iter().zip(b.get_indices()) {
                 let (u, v) = (a.get_vertices()[i as usize], b.get_vertices()[j as usize]);
-                let v_close = (u.tex_coord.y - v.tex_coord.y).abs() <= u.tex_coord.y.abs().max(1.0) * f32::EPSILON;
+                let v_close = (u.tex_coord.y - v.tex_coord.y).abs()
+                    <= u.tex_coord.y.abs().max(1.0) * f32::EPSILON;
                 assert!(
-                    u.pos == v.pos && u.normal == v.normal && u.tex_coord.x == v.tex_coord.x && v_close,
+                    u.pos == v.pos
+                        && u.normal == v.normal
+                        && u.tex_coord.x == v.tex_coord.x
+                        && v_close,
                     "{name}: {u:?} != {v:?}"
                 );
             }

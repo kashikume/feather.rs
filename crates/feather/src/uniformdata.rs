@@ -56,13 +56,22 @@ impl std::fmt::Display for UniformIssue {
                 name,
                 expected,
                 found,
-            } => write!(f, "uniform `{name}` is {expected:?} in the shader, but the value is {found}"),
+            } => write!(
+                f,
+                "uniform `{name}` is {expected:?} in the shader, but the value is {found}"
+            ),
             UniformIssue::Unused(name) => write!(f, "uniform `{name}` is not used by the shader"),
             UniformIssue::NoTexture => {
-                write!(f, "the shader has samplers, but the material has no texture")
+                write!(
+                    f,
+                    "the shader has samplers, but the material has no texture"
+                )
             }
             UniformIssue::UnknownAtlas(atlas) => {
-                write!(f, "the material's texture uses atlas {atlas}, which doesn't exist")
+                write!(
+                    f,
+                    "the material's texture uses atlas {atlas}, which doesn't exist"
+                )
             }
         }
     }
@@ -84,8 +93,7 @@ pub fn fill_members(
                 found: value.glsl_type(),
             }),
             Some(value) => {
-                let written =
-                    value.write_bytes(block, member.offset as usize, stride(member));
+                let written = value.write_bytes(block, member.offset as usize, stride(member));
                 debug_assert!(written, "uniform `{}` doesn't fit its block", member.name);
             }
         }
@@ -150,7 +158,12 @@ pub fn pack_draw(
     for block in &layout.uniform_blocks {
         let size = block.size as usize;
         let offset = arena.alloc(size);
-        fill_members(arena.bytes_mut(offset, size), &block.members, values, issues);
+        fill_members(
+            arena.bytes_mut(offset, size),
+            &block.members,
+            values,
+            issues,
+        );
         packed.block_offsets.push(offset as u32);
     }
     if let Some(push) = &layout.push_constants {
@@ -266,8 +279,13 @@ mod tests {
     }
 
     /// Engine values with their names interned, as `engine_uniforms` returns them.
-    fn named<const N: usize>(values: [(&str, UniformValue); N]) -> Vec<(UniformName, UniformValue)> {
-        values.into_iter().map(|(n, v)| (UniformName::new(n), v)).collect()
+    fn named<const N: usize>(
+        values: [(&str, UniformValue); N],
+    ) -> Vec<(UniformName, UniformValue)> {
+        values
+            .into_iter()
+            .map(|(n, v)| (UniformName::new(n), v))
+            .collect()
     }
 
     fn translation(x: f32) -> Mat4 {
@@ -283,7 +301,10 @@ mod tests {
             engine: &engine,
             node: &node,
         };
-        assert_eq!(values.get("view"), Some(&UniformValue::Mat4(translation(1.0))));
+        assert_eq!(
+            values.get("view"),
+            Some(&UniformValue::Mat4(translation(1.0)))
+        );
         assert_eq!(values.get("tint"), Some(&UniformValue::Float(1.0)));
         assert_eq!(values.get("none"), None);
     }
@@ -367,7 +388,10 @@ mod tests {
         let texture = Texture::full(0);
         assert_eq!(
             engine_uniforms(&names, m, m, m, m, Some(&texture)),
-            named([("v", UniformValue::Mat4(m)), ("right", UniformValue::Float(1.0))])
+            named([
+                ("v", UniformValue::Mat4(m)),
+                ("right", UniformValue::Float(1.0))
+            ])
         );
         // Without a texture there is no rectangle; packing reports the uniform as missing.
         assert_eq!(

@@ -349,7 +349,10 @@ impl Scene {
         check_unique("mesh", file.meshes.iter().map(|m| &m.name))?;
         check_unique("shader", file.shaders.iter().map(|s| &s.name))?;
         check_unique("material", file.materials.iter().map(|m| &m.name))?;
-        check_unique("camera", file.cameras.iter().filter_map(|c| c.name.as_ref()))?;
+        check_unique(
+            "camera",
+            file.cameras.iter().filter_map(|c| c.name.as_ref()),
+        )?;
 
         let mut atlases = HashMap::new();
         for entry in &file.atlases {
@@ -473,11 +476,16 @@ fn build_mesh(scene: &mut Scene, assets: &dyn AssetsProvider, entry: &MeshEntry)
     };
     match (&entry.file, &entry.cuboid, &entry.plane, &entry.sphere) {
         (Some(file), None, None, None) => {
-            let extension = std::path::Path::new(file).extension().and_then(|e| e.to_str());
+            let extension = std::path::Path::new(file)
+                .extension()
+                .and_then(|e| e.to_str());
             match extension.map(str::to_ascii_lowercase).as_deref() {
                 Some("fmesh") => MeshBuilderFmeshFile::new(assets, file)?.build(scene, name),
                 Some("obj") => MeshBuilderObjFile::new(assets, file)?.build(scene, name),
-                _ => bail!("mesh {}: unknown file type {file} (.fmesh or .obj expected)", entry.name),
+                _ => bail!(
+                    "mesh {}: unknown file type {file} (.fmesh or .obj expected)",
+                    entry.name
+                ),
             }
         }
         (None, Some(c), None, None) => {
@@ -503,7 +511,9 @@ fn build_mesh(scene: &mut Scene, assets: &dyn AssetsProvider, entry: &MeshEntry)
         }
         (None, None, None, Some(sphere)) => MeshBuilderSphere::new(
             sphere.radius.unwrap_or(meshbuildersphere::DEFAULT_RADIUS),
-            sphere.segments.unwrap_or(meshbuildersphere::DEFAULT_SEGMENTS),
+            sphere
+                .segments
+                .unwrap_or(meshbuildersphere::DEFAULT_SEGMENTS),
             sphere.rings.unwrap_or(meshbuildersphere::DEFAULT_RINGS),
         )
         .build(scene, name),
@@ -553,7 +563,9 @@ fn build_camera(entry: &CameraEntry) -> Result<Camera> {
     camera.set_near_far(near, far);
 
     let eye = entry.eye.map_or(camera.get_eye_position(), Point3::from);
-    let target = entry.target.map_or(camera.get_target_position(), Point3::from);
+    let target = entry
+        .target
+        .map_or(camera.get_target_position(), Point3::from);
     let up = entry.up.map_or(camera.get_up_vector(), Vec3::from);
     if eye == target {
         bail!("eye and target must differ, both are {:?}", eye);
@@ -696,7 +708,8 @@ impl TransformEntry {
         }
         let translation = Mat4::from_translation(Vec3::from(self.translation.unwrap_or_default()));
         let [x, y, z] = self.rotation.unwrap_or_default();
-        let rotation = Mat4::from_angle_z(Deg(z)) * Mat4::from_angle_y(Deg(y)) * Mat4::from_angle_x(Deg(x));
+        let rotation =
+            Mat4::from_angle_z(Deg(z)) * Mat4::from_angle_y(Deg(y)) * Mat4::from_angle_x(Deg(x));
         let scale = match self.scale {
             None => Mat4::from_scale(1.0),
             Some(ScaleEntry::Uniform(s)) => Mat4::from_scale(s),
@@ -715,7 +728,8 @@ mod tests {
     use crate::texture::Texture;
     use cgmath::{vec4, InnerSpace, SquareMatrix};
 
-    const TRIANGLE: &str = "v 0 0 0\nv 1 0 0\nv 0 1 0\nvt 0 0\nvt 1 0\nvt 0 1\nvn 0 0 1\nf 1/1/1 2/2/1 3/3/1\n";
+    const TRIANGLE: &str =
+        "v 0 0 0\nv 1 0 0\nv 0 1 0\nvt 0 0\nvt 1 0\nvt 0 1\nvn 0 0 1\nf 1/1/1 2/2/1 3/3/1\n";
 
     /// A 4x2 PNG, with metadata naming its left and right halves.
     fn png_4x2() -> Vec<u8> {
@@ -735,7 +749,10 @@ mod tests {
             ("atlas.png", png_4x2()),
             ("atlas.atlas", b"left 0 0 2 2\nright 2 0 2 2\n".to_vec()),
             ("triangle.obj", TRIANGLE.as_bytes().to_vec()),
-            ("triangle.fmesh", include_bytes!("../testdata/triangle.fmesh").to_vec()),
+            (
+                "triangle.fmesh",
+                include_bytes!("../testdata/triangle.fmesh").to_vec(),
+            ),
             ("basic.vert.spv", VERT.to_vec()),
             ("basic.frag.spv", FRAG.to_vec()),
         ] {
@@ -808,7 +825,11 @@ mod tests {
             Some(&Texture::full(plain.get_handle()))
         );
         assert_eq!(
-            scene.materials.get_by_name("Untextured").unwrap().get_texture(),
+            scene
+                .materials
+                .get_by_name("Untextured")
+                .unwrap()
+                .get_texture(),
             None
         );
     }
@@ -830,8 +851,14 @@ mod tests {
         assert!(!scene.get_node(a).unwrap().is_transparent());
 
         let node_a = scene.get_node(a).unwrap();
-        assert_eq!(node_a.get_mesh(), Some(scene.meshes.get_by_name("Triangle").unwrap().get_handle()));
-        assert_eq!(node_a.get_material(), Some(scene.materials.get_by_name("Mat").unwrap().get_handle()));
+        assert_eq!(
+            node_a.get_mesh(),
+            Some(scene.meshes.get_by_name("Triangle").unwrap().get_handle())
+        );
+        assert_eq!(
+            node_a.get_material(),
+            Some(scene.materials.get_by_name("Mat").unwrap().get_handle())
+        );
         assert_eq!(
             node_a.get_transform(),
             Mat4::from_translation(Vec3::new(1.0, 2.0, 3.0)) * Mat4::from_scale(2.0)
@@ -839,7 +866,10 @@ mod tests {
         assert_eq!(node_a.uniforms().get("count"), Some(&UniformValue::UInt(3)));
 
         let rotated = scene.get_node(b).unwrap().get_transform() * vec4(1.0, 0.0, 0.0, 1.0);
-        assert!((rotated - vec4(0.0, 1.0, 0.0, 1.0)).magnitude() < 1e-6, "{rotated:?}");
+        assert!(
+            (rotated - vec4(0.0, 1.0, 0.0, 1.0)).magnitude() < 1e-6,
+            "{rotated:?}"
+        );
     }
 
     #[test]
@@ -892,14 +922,19 @@ mod tests {
         let uniforms = scene.nodes.iter().next().unwrap().uniforms();
         assert_eq!(uniforms.len(), 16);
         assert_eq!(uniforms.get("f"), Some(&UniformValue::Float(1.5)));
-        assert_eq!(uniforms.get("i2"), Some(&UniformValue::IVec2(IVec2::new(1, -2))));
+        assert_eq!(
+            uniforms.get("i2"),
+            Some(&UniformValue::IVec2(IVec2::new(1, -2)))
+        );
         assert_eq!(
             uniforms.get("m2"),
             Some(&UniformValue::Mat2(Matrix2::new(1.0, 2.0, 3.0, 4.0)))
         );
         assert_eq!(
             uniforms.get("m4"),
-            Some(&UniformValue::Mat4(Mat4::from_translation(Vec3::new(5.0, 6.0, 7.0))))
+            Some(&UniformValue::Mat4(Mat4::from_translation(Vec3::new(
+                5.0, 6.0, 7.0
+            ))))
         );
     }
 
@@ -909,12 +944,24 @@ mod tests {
 
     #[test]
     fn mesh_files_by_extension() {
-        let json = |file: &str| format!(r#"{{ "meshes": [{{ "name": "M", "file": "{file}" }}], "root": {{}} }}"#);
+        let json = |file: &str| {
+            format!(r#"{{ "meshes": [{{ "name": "M", "file": "{file}" }}], "root": {{}} }}"#)
+        };
         let scene = Scene::from_json(&assets(), &json("triangle.fmesh")).unwrap();
         // testdata/triangle.fmesh's second vertex is (1.5, 0, 0), TRIANGLE's (1, 0, 0).
-        assert_eq!(scene.meshes.get_by_name("M").unwrap().get_vertices()[1].pos.x, 1.5);
+        assert_eq!(
+            scene.meshes.get_by_name("M").unwrap().get_vertices()[1]
+                .pos
+                .x,
+            1.5
+        );
         let scene = Scene::from_json(&assets(), &json("triangle.obj")).unwrap();
-        assert_eq!(scene.meshes.get_by_name("M").unwrap().get_vertices()[1].pos.x, 1.0);
+        assert_eq!(
+            scene.meshes.get_by_name("M").unwrap().get_vertices()[1]
+                .pos
+                .x,
+            1.0
+        );
         assert!(load_error(&json("triangle.ply")).contains("unknown file type"));
         assert!(load_error(&json("triangle")).contains("unknown file type"));
     }
@@ -940,7 +987,8 @@ mod tests {
         let scene = Scene::from_json(&assets(), json).unwrap();
         let light = scene.get_shadow_light().unwrap();
         assert_eq!(light.map_size, 512);
-        let expected = ShadowLight::directional(Vec3::new(0.0, 0.0, -1.0), Point3::new(0.0, 0.0, 0.0), 4.0);
+        let expected =
+            ShadowLight::directional(Vec3::new(0.0, 0.0, -1.0), Point3::new(0.0, 0.0, 0.0), 4.0);
         assert_eq!(light.view_projection, expected.view_projection);
 
         let node = |name| scene.get_node(scene.find_node(name).unwrap()).unwrap();
@@ -954,7 +1002,10 @@ mod tests {
         assert_eq!(shader.get_shadow_map_sampler_name(), Some("texSampler"));
 
         // Without `shadow_light`, no shadows.
-        assert!(Scene::from_json(&assets(), SCENE).unwrap().get_shadow_light().is_none());
+        assert!(Scene::from_json(&assets(), SCENE)
+            .unwrap()
+            .get_shadow_light()
+            .is_none());
     }
 
     #[test]
@@ -1000,7 +1051,9 @@ mod tests {
         let scene = Scene::from_json(&assets(), &json).unwrap();
         assert_eq!(scene.cameras.iter().count(), 4);
 
-        let persp = scene.get_camera(scene.find_camera("Persp").unwrap()).unwrap();
+        let persp = scene
+            .get_camera(scene.find_camera("Persp").unwrap())
+            .unwrap();
         assert_eq!(persp.get_projection_kind(), Projection::Perspective);
         assert_eq!(persp.get_fov(), 60.0);
         assert_eq!((persp.get_near(), persp.get_far()), (0.5, 100.0));
@@ -1008,7 +1061,9 @@ mod tests {
         assert_eq!(persp.get_target_position(), Point3::new(0.0, 0.0, 1.0));
         assert_eq!(persp.get_up_vector(), Vec3::new(0.0, 0.0, 1.0));
 
-        let flat = scene.get_camera(scene.find_camera("Flat").unwrap()).unwrap();
+        let flat = scene
+            .get_camera(scene.find_camera("Flat").unwrap())
+            .unwrap();
         assert_eq!(flat.get_projection_kind(), Projection::Orthographic);
         assert_eq!(flat.get_origin(), ScreenOrigin::TopLeft);
         assert_eq!(flat.get_units(), ScreenUnits::Height(12.0));
@@ -1048,27 +1103,85 @@ mod tests {
         let p = r#""perspective": {}"#;
         let o = r#""orthographic": {}"#;
         for (camera, extra, expected) in [
-            (format!("{{ {p}, {o} }}"), "", "exactly one of `perspective` and `orthographic`"),
-            ("{}".to_string(), "", "exactly one of `perspective` and `orthographic`"),
-            (r#"{ "perspective": { "fov": 180 } }"#.into(), "", "fov must be between 0 and 180"),
-            (r#"{ "perspective": { "fov": 0 } }"#.into(), "", "fov must be between 0 and 180"),
-            (r#"{ "orthographic": { "height": 0 } }"#.into(), "", "height must be above 0"),
-            (r#"{ "orthographic": { "origin": "top" } }"#.into(), "", "unknown variant `top`"),
-            (format!(r#"{{ {p}, "near": 5, "far": 5 }}"#), "", "must be below far"),
-            (format!(r#"{{ {p}, "near": -1 }}"#), "", "near must be above 0"),
-            (format!(r#"{{ {p}, "eye": [1, 1, 1], "target": [1, 1, 1] }}"#), "", "must differ"),
-            (format!(r#"{{ {p}, "up": [0, 0, 0] }}"#), "", "up must not be zero"),
-            (format!(r#"{{ {p}, "zoom": 2 }}"#), "", "unknown field `zoom`"),
-            (format!(r#"{{ "name": "C", {p} }}, {{ "name": "C", {o} }}"#), "", "more than one camera named `C`"),
-            (format!("{{ {p} }}"), r#""active_camera": "Nope","#, "unknown camera `Nope`"),
+            (
+                format!("{{ {p}, {o} }}"),
+                "",
+                "exactly one of `perspective` and `orthographic`",
+            ),
+            (
+                "{}".to_string(),
+                "",
+                "exactly one of `perspective` and `orthographic`",
+            ),
+            (
+                r#"{ "perspective": { "fov": 180 } }"#.into(),
+                "",
+                "fov must be between 0 and 180",
+            ),
+            (
+                r#"{ "perspective": { "fov": 0 } }"#.into(),
+                "",
+                "fov must be between 0 and 180",
+            ),
+            (
+                r#"{ "orthographic": { "height": 0 } }"#.into(),
+                "",
+                "height must be above 0",
+            ),
+            (
+                r#"{ "orthographic": { "origin": "top" } }"#.into(),
+                "",
+                "unknown variant `top`",
+            ),
+            (
+                format!(r#"{{ {p}, "near": 5, "far": 5 }}"#),
+                "",
+                "must be below far",
+            ),
+            (
+                format!(r#"{{ {p}, "near": -1 }}"#),
+                "",
+                "near must be above 0",
+            ),
+            (
+                format!(r#"{{ {p}, "eye": [1, 1, 1], "target": [1, 1, 1] }}"#),
+                "",
+                "must differ",
+            ),
+            (
+                format!(r#"{{ {p}, "up": [0, 0, 0] }}"#),
+                "",
+                "up must not be zero",
+            ),
+            (
+                format!(r#"{{ {p}, "zoom": 2 }}"#),
+                "",
+                "unknown field `zoom`",
+            ),
+            (
+                format!(r#"{{ "name": "C", {p} }}, {{ "name": "C", {o} }}"#),
+                "",
+                "more than one camera named `C`",
+            ),
+            (
+                format!("{{ {p} }}"),
+                r#""active_camera": "Nope","#,
+                "unknown camera `Nope`",
+            ),
         ] {
             let error = load_error(&with_cameras(&camera, extra));
             assert!(error.contains(expected), "{camera}: {error}");
         }
         // Errors name the camera, or its index.
-        let error = load_error(&with_cameras(r#"{ "name": "Cam", "orthographic": { "height": -1 } }"#, ""));
+        let error = load_error(&with_cameras(
+            r#"{ "name": "Cam", "orthographic": { "height": -1 } }"#,
+            "",
+        ));
         assert!(error.contains("camera `Cam`"), "{error}");
-        let error = load_error(&with_cameras(&format!(r#"{{ {p} }}, {{ {o}, "far": -2000 }}"#), ""));
+        let error = load_error(&with_cameras(
+            &format!(r#"{{ {p} }}, {{ {o}, "far": -2000 }}"#),
+            "",
+        ));
         assert!(error.contains("camera 1"), "{error}");
     }
 
@@ -1076,9 +1189,15 @@ mod tests {
     fn errors_name_the_problem() {
         let cases = [
             (r#"{ "root": {}, "extra": 1 }"#, "unknown field `extra`"),
-            (r#"{ "root": {}, "textures": [] }"#, "unknown field `textures`"),
+            (
+                r#"{ "root": {}, "textures": [] }"#,
+                "unknown field `textures`",
+            ),
             (r#"{ "root": { "mesh": "Nope" } }"#, "unknown mesh `Nope`"),
-            (r#"{ "root": { "material": "Nope" } }"#, "unknown material `Nope`"),
+            (
+                r#"{ "root": { "material": "Nope" } }"#,
+                "unknown material `Nope`",
+            ),
             (
                 r#"{ "materials": [{ "name": "M", "shader": "Nope" }], "root": {} }"#,
                 "material `M`: unknown shader `Nope`",
@@ -1133,7 +1252,10 @@ mod tests {
         ];
         for (json, expected) in cases {
             let error = load_error(json);
-            assert!(error.contains(expected), "expected `{expected}` in: {error}");
+            assert!(
+                error.contains(expected),
+                "expected `{expected}` in: {error}"
+            );
         }
     }
 
@@ -1174,11 +1296,19 @@ mod tests {
 
         let positions = |name| -> Vec<[f32; 3]> {
             let mesh = scene.meshes.get_by_name(name).unwrap();
-            mesh.vertices.iter().map(|v| [v.pos.x, v.pos.y, v.pos.z]).collect()
+            mesh.vertices
+                .iter()
+                .map(|v| [v.pos.x, v.pos.y, v.pos.z])
+                .collect()
         };
         let mut default_scene = Scene::new();
-        let default_mesh = MeshBuilderCuboid::default().build(&mut default_scene, None).unwrap();
-        let expected: Vec<[f32; 3]> = default_scene.get_mesh(default_mesh).unwrap().vertices
+        let default_mesh = MeshBuilderCuboid::default()
+            .build(&mut default_scene, None)
+            .unwrap();
+        let expected: Vec<[f32; 3]> = default_scene
+            .get_mesh(default_mesh)
+            .unwrap()
+            .vertices
             .iter()
             .map(|v| [v.pos.x, v.pos.y, v.pos.z])
             .collect();
@@ -1215,9 +1345,14 @@ mod tests {
         assert_eq!(grid.vertices[0].pos, Vec3::new(0.0, 0.0, 0.0));
         assert_eq!(grid.vertices[14].pos, Vec3::new(2.0, -1.0, 0.0));
 
-        let error = load_error(r#"{ "meshes": [{ "name": "P", "plane": { "segments": [0, 1] } }],
-                                    "root": {} }"#);
-        assert!(error.contains("mesh `P`: a plane needs at least 1 segment"), "{error}");
+        let error = load_error(
+            r#"{ "meshes": [{ "name": "P", "plane": { "segments": [0, 1] } }],
+                                    "root": {} }"#,
+        );
+        assert!(
+            error.contains("mesh `P`: a plane needs at least 1 segment"),
+            "{error}"
+        );
     }
 
     #[test]
@@ -1232,7 +1367,9 @@ mod tests {
         let scene = Scene::from_json(&assets(), json).unwrap();
 
         let mut default_scene = Scene::new();
-        let default = MeshBuilderSphere::default().build(&mut default_scene, None).unwrap();
+        let default = MeshBuilderSphere::default()
+            .build(&mut default_scene, None)
+            .unwrap();
         let expected = default_scene.get_mesh(default).unwrap();
         let mesh = scene.meshes.get_by_name("Default").unwrap();
         assert_eq!(mesh.vertices, expected.vertices);
@@ -1243,9 +1380,14 @@ mod tests {
         use cgmath::InnerSpace;
         assert!((globe.vertices[10].pos.magnitude() - 2.0).abs() < 1e-5);
 
-        let error = load_error(r#"{ "meshes": [{ "name": "S", "sphere": { "rings": 1 } }],
-                                    "root": {} }"#);
-        assert!(error.contains("mesh `S`: a sphere needs at least"), "{error}");
+        let error = load_error(
+            r#"{ "meshes": [{ "name": "S", "sphere": { "rings": 1 } }],
+                                    "root": {} }"#,
+        );
+        assert!(
+            error.contains("mesh `S`: a sphere needs at least"),
+            "{error}"
+        );
     }
 
     #[test]
@@ -1259,7 +1401,10 @@ mod tests {
         let neither = r#"{ "meshes": [{ "name": "M" }], "root": {} }"#;
         for json in [both, cuboid_and_plane, plane_and_sphere, neither] {
             let error = load_error(json);
-            assert!(error.contains("mesh `M`: a mesh needs exactly one of"), "{error}");
+            assert!(
+                error.contains("mesh `M`: a mesh needs exactly one of"),
+                "{error}"
+            );
         }
     }
 

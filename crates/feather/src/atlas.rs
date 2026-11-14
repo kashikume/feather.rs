@@ -83,12 +83,7 @@ impl Atlas {
     /// Creates an atlas from 8-bit RGBA pixels (`width * height * 4` bytes, row by row from
     /// the top), e.g. a texture generated in code. The atlas has no metadata; see
     /// `set_metadata`. Panics if `pixels` has the wrong length.
-    pub fn from_rgba(
-        name: Option<String>,
-        width: u32,
-        height: u32,
-        pixels: Vec<u8>,
-    ) -> Self {
+    pub fn from_rgba(name: Option<String>, width: u32, height: u32, pixels: Vec<u8>) -> Self {
         assert_eq!(pixels.len(), width as usize * height as usize * 4);
         Self {
             name,
@@ -185,8 +180,8 @@ pub fn parse_metadata(text: &str) -> Result<HashMap<String, AtlasRegion>> {
         if line.is_empty() {
             continue;
         }
-        let (name, region) = parse_metadata_line(line)
-            .with_context(|| format!("line {}: `{line}`", index + 1))?;
+        let (name, region) =
+            parse_metadata_line(line).with_context(|| format!("line {}: `{line}`", index + 1))?;
         if regions.insert(name.to_string(), region).is_some() {
             bail!("line {}: texture `{name}` is listed twice", index + 1);
         }
@@ -198,9 +193,8 @@ fn parse_metadata_line(line: &str) -> Result<(&str, AtlasRegion)> {
     let mut parts = line.rsplitn(5, char::is_whitespace);
     let mut number = || -> Result<u32> {
         let part = parts.next().unwrap_or("");
-        part.parse().with_context(|| {
-            format!("expected `name x y width height`, `{part}` is not a number")
-        })
+        part.parse()
+            .with_context(|| format!("expected `name x y width height`, `{part}` is not a number"))
     };
     let (height, width, y, x) = (number()?, number()?, number()?, number()?);
     let name = parts.next().map(str::trim_end).unwrap_or("");
@@ -459,7 +453,10 @@ mod tests {
         );
         let atlas = Atlas::new_from_png_bytes(&png, Some("tiny".to_string())).unwrap();
         assert_eq!(atlas.get_name(), Some("tiny".to_string()));
-        assert_eq!(Atlas::new_from_png_bytes(&png, None).unwrap().get_name(), None);
+        assert_eq!(
+            Atlas::new_from_png_bytes(&png, None).unwrap().get_name(),
+            None
+        );
     }
 
     #[test]
@@ -518,7 +515,9 @@ mod tests {
     fn get_texture_converts_pixels_to_uv() {
         let mut atlas = atlas_4x2();
         atlas.set_handle(7);
-        atlas.set_metadata("left 0 0 2 2\ncorner 3 1 1 1\n").unwrap();
+        atlas
+            .set_metadata("left 0 0 2 2\ncorner 3 1 1 1\n")
+            .unwrap();
 
         assert_eq!(
             atlas.get_texture("left"),
@@ -572,9 +571,10 @@ mod tests {
         );
         let mut assets = MemoryAssetsProvider::default();
         assets.assets.insert("a.png".to_string(), png);
-        assets
-            .assets
-            .insert("a.atlas".to_string(), b"one 0 0 4 1\ntwo 0 1 4 1\n".to_vec());
+        assets.assets.insert(
+            "a.atlas".to_string(),
+            b"one 0 0 4 1\ntwo 0 1 4 1\n".to_vec(),
+        );
         assets
             .assets
             .insert("bad.atlas".to_string(), b"one 0 0 5 1".to_vec());

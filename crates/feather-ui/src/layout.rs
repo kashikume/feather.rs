@@ -13,7 +13,13 @@ pub enum Slot {
     Center,
 }
 
-const SLOTS: [Slot; 5] = [Slot::North, Slot::South, Slot::East, Slot::West, Slot::Center];
+const SLOTS: [Slot; 5] = [
+    Slot::North,
+    Slot::South,
+    Slot::East,
+    Slot::West,
+    Slot::Center,
+];
 
 /// A layout with five slots: west and east get their widget's width (with its margins) and
 /// north and south its height; center gets what is left.
@@ -87,9 +93,7 @@ impl LayoutNswe {
                 let widget = self.get(slot)?;
                 let space = match slot {
                     Slot::North => Rect::new(center.left, rect.top, center.right, center.top),
-                    Slot::South => {
-                        Rect::new(center.left, center.bottom, center.right, rect.bottom)
-                    }
+                    Slot::South => Rect::new(center.left, center.bottom, center.right, rect.bottom),
                     Slot::West => Rect::new(rect.left, center.top, center.left, center.bottom),
                     Slot::East => Rect::new(center.right, center.top, rect.right, center.bottom),
                     Slot::Center => center,
@@ -162,7 +166,9 @@ mod tests {
 
     #[test]
     fn five_slots_share_the_space() {
-        let [n, s, e, w, c] = [0, 1, 2, 3, 4].map(WidgetId::<Spacer>::new).map(|i| i.untyped());
+        let [n, s, e, w, c] = [0, 1, 2, 3, 4]
+            .map(WidgetId::<Spacer>::new)
+            .map(|i| i.untyped());
         let layout = LayoutNswe::new()
             .with(Slot::North, n)
             .with(Slot::South, s)
@@ -179,34 +185,46 @@ mod tests {
         assert_eq!(
             rects(&layout, &sizes),
             [
-                Rect::new(5.0, 0.0, 85.0, 10.0),   // north
-                Rect::new(5.0, 60.0, 85.0, 80.0),  // south
+                Rect::new(5.0, 0.0, 85.0, 10.0),    // north
+                Rect::new(5.0, 60.0, 85.0, 80.0),   // south
                 Rect::new(85.0, 10.0, 100.0, 60.0), // east
-                Rect::new(0.0, 10.0, 5.0, 60.0),   // west
-                Rect::new(5.0, 10.0, 85.0, 60.0),  // center
+                Rect::new(0.0, 10.0, 5.0, 60.0),    // west
+                Rect::new(5.0, 10.0, 85.0, 60.0),   // center
             ]
         );
     }
 
     #[test]
     fn empty_and_gone_slots_leave_their_space_to_the_center() {
-        let (e, c) = (WidgetId::<Spacer>::new(0).untyped(), WidgetId::<Spacer>::new(1).untyped());
+        let (e, c) = (
+            WidgetId::<Spacer>::new(0).untyped(),
+            WidgetId::<Spacer>::new(1).untyped(),
+        );
         let layout = LayoutNswe::new().with(Slot::East, e).with(Slot::Center, c);
         // East takes space, nothing else is there: north and south are full width.
         assert_eq!(
             rects(&layout, &[(e, Some((30.0, 0.0))), (c, Some((0.0, 0.0)))]),
-            [Rect::new(70.0, 0.0, 100.0, 80.0), Rect::new(0.0, 0.0, 70.0, 80.0)]
+            [
+                Rect::new(70.0, 0.0, 100.0, 80.0),
+                Rect::new(0.0, 0.0, 70.0, 80.0)
+            ]
         );
         // East is gone: it still gets a (zero-width) slot, and the center everything.
         assert_eq!(
             rects(&layout, &[(e, None), (c, Some((0.0, 0.0)))]),
-            [Rect::new(100.0, 0.0, 100.0, 80.0), Rect::new(0.0, 0.0, 100.0, 80.0)]
+            [
+                Rect::new(100.0, 0.0, 100.0, 80.0),
+                Rect::new(0.0, 0.0, 100.0, 80.0)
+            ]
         );
     }
 
     #[test]
     fn too_wide_sides_overlap_instead_of_inverting_the_center() {
-        let (e, w) = (WidgetId::<Spacer>::new(0).untyped(), WidgetId::<Spacer>::new(1).untyped());
+        let (e, w) = (
+            WidgetId::<Spacer>::new(0).untyped(),
+            WidgetId::<Spacer>::new(1).untyped(),
+        );
         let layout = LayoutNswe::new().with(Slot::East, e).with(Slot::West, w);
         let rects = rects(&layout, &[(e, Some((70.0, 0.0))), (w, Some((70.0, 0.0)))]);
         assert_eq!(rects[0], Rect::new(70.0, 0.0, 100.0, 80.0));

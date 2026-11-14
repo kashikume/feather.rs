@@ -158,7 +158,9 @@ impl Camera {
 
     /// The projection matrix, for Vulkan's clip space (y down, depth 0..1).
     pub fn get_projection(&self) -> Mat4 {
-        *self.projection_matrix.get_or_init(|| self.compute_projection())
+        *self
+            .projection_matrix
+            .get_or_init(|| self.compute_projection())
     }
 
     fn compute_projection(&self) -> Mat4 {
@@ -580,7 +582,10 @@ mod tests {
 
         camera.set_projection(Projection::Orthographic);
         assert!(camera.projection_matrix.get().is_none());
-        assert_eq!(camera.get_visible_size(), Some((5.0 * 1920.0 / 1080.0, 5.0)));
+        assert_eq!(
+            camera.get_visible_size(),
+            Some((5.0 * 1920.0 / 1080.0, 5.0))
+        );
         assert_ne!(camera.get_projection(), perspective);
 
         camera.set_projection(Projection::Perspective);

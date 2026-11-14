@@ -19,8 +19,18 @@ pub fn write(mesh: &MeshData, options: &WriteOptions) -> Result<Written, FmeshEr
     check_lengths(mesh, vertex_count)?;
 
     let mut data = Vec::new();
-    let positions = encode_stream(&mesh.positions, POSITION_COMPONENTS, options.encoding, &mut data);
-    let normals = encode_stream(&mesh.normals, NORMAL_COMPONENTS, options.encoding, &mut data);
+    let positions = encode_stream(
+        &mesh.positions,
+        POSITION_COMPONENTS,
+        options.encoding,
+        &mut data,
+    );
+    let normals = encode_stream(
+        &mesh.normals,
+        NORMAL_COMPONENTS,
+        options.encoding,
+        &mut data,
+    );
     let uvs = encode_stream(&mesh.uvs, UV_COMPONENTS, options.encoding, &mut data);
     let indices = encode_indices(&mesh.indices, vertex_count, options.encoding, &mut data);
 
@@ -90,15 +100,23 @@ fn check_lengths(mesh: &MeshData, vertex_count: usize) -> Result<(), FmeshError>
         }
         if let Stream::Fixed { decimals, .. } = stream {
             if *decimals > MAX_DECIMALS {
-                return Err(FmeshError::BadDecimals { stream: name, decimals: *decimals });
+                return Err(FmeshError::BadDecimals {
+                    stream: name,
+                    decimals: *decimals,
+                });
             }
         }
     }
     if !mesh.indices.len().is_multiple_of(3) {
-        return invalid(format!("{} indices, not a multiple of 3", mesh.indices.len()));
+        return invalid(format!(
+            "{} indices, not a multiple of 3",
+            mesh.indices.len()
+        ));
     }
     if let Some(&index) = mesh.indices.iter().find(|&&i| i as usize >= vertex_count) {
-        return invalid(format!("index {index} points past the {vertex_count} vertices"));
+        return invalid(format!(
+            "index {index} points past the {vertex_count} vertices"
+        ));
     }
     Ok(())
 }
@@ -115,7 +133,10 @@ fn encode_stream(
             for value in stream.to_f32() {
                 data.extend_from_slice(&value.to_le_bytes());
             }
-            return StreamDescriptor { encoding: Encoding::F32, decimals: 0 };
+            return StreamDescriptor {
+                encoding: Encoding::F32,
+                decimals: 0,
+            };
         }
         (Stream::Fixed { values, decimals }, _) => (values, *decimals),
     };
@@ -130,7 +151,10 @@ fn encode_stream(
             write_deltas(values.iter().map(|&v| v as i64), components, &mut delta);
             if delta.len() < fixed_size {
                 data.extend_from_slice(&delta);
-                return StreamDescriptor { encoding: Encoding::Delta, decimals };
+                return StreamDescriptor {
+                    encoding: Encoding::Delta,
+                    decimals,
+                };
             }
             fixed
         }
@@ -138,8 +162,12 @@ fn encode_stream(
 
     match encoding {
         Encoding::I8 => data.extend(values.iter().map(|&v| v as i8 as u8)),
-        Encoding::I16 => values.iter().for_each(|&v| data.extend_from_slice(&(v as i16).to_le_bytes())),
-        Encoding::I32 => values.iter().for_each(|&v| data.extend_from_slice(&v.to_le_bytes())),
+        Encoding::I16 => values
+            .iter()
+            .for_each(|&v| data.extend_from_slice(&(v as i16).to_le_bytes())),
+        Encoding::I32 => values
+            .iter()
+            .for_each(|&v| data.extend_from_slice(&v.to_le_bytes())),
         Encoding::Delta => write_deltas(values.iter().map(|&v| v as i64), components, data),
         _ => unreachable!(),
     }
@@ -158,8 +186,17 @@ fn narrowest(values: &[i32]) -> Encoding {
     }
 }
 
-fn encode_indices(indices: &[u32], vertex_count: usize, choice: EncodingChoice, data: &mut Vec<u8>) -> StreamDescriptor {
-    let fixed = if vertex_count <= 1 << 16 { Encoding::U16 } else { Encoding::U32 };
+fn encode_indices(
+    indices: &[u32],
+    vertex_count: usize,
+    choice: EncodingChoice,
+    data: &mut Vec<u8>,
+) -> StreamDescriptor {
+    let fixed = if vertex_count <= 1 << 16 {
+        Encoding::U16
+    } else {
+        Encoding::U32
+    };
     let encoding = match choice {
         EncodingChoice::Delta => Encoding::Delta,
         EncodingChoice::Auto => {
@@ -167,19 +204,29 @@ fn encode_indices(indices: &[u32], vertex_count: usize, choice: EncodingChoice, 
             write_deltas(indices.iter().map(|&i| i as i64), 1, &mut delta);
             if delta.len() < indices.len() * fixed.width().unwrap() {
                 data.extend_from_slice(&delta);
-                return StreamDescriptor { encoding: Encoding::Delta, decimals: 0 };
+                return StreamDescriptor {
+                    encoding: Encoding::Delta,
+                    decimals: 0,
+                };
             }
             fixed
         }
         EncodingChoice::F32 | EncodingChoice::Int => fixed,
     };
     match encoding {
-        Encoding::U16 => indices.iter().for_each(|&i| data.extend_from_slice(&(i as u16).to_le_bytes())),
-        Encoding::U32 => indices.iter().for_each(|&i| data.extend_from_slice(&i.to_le_bytes())),
+        Encoding::U16 => indices
+            .iter()
+            .for_each(|&i| data.extend_from_slice(&(i as u16).to_le_bytes())),
+        Encoding::U32 => indices
+            .iter()
+            .for_each(|&i| data.extend_from_slice(&i.to_le_bytes())),
         Encoding::Delta => write_deltas(indices.iter().map(|&i| i as i64), 1, data),
         _ => unreachable!(),
     }
-    StreamDescriptor { encoding, decimals: 0 }
+    StreamDescriptor {
+        encoding,
+        decimals: 0,
+    }
 }
 
 /// Writes each value as the zigzag varint of its difference from the value `components`

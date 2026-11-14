@@ -34,7 +34,11 @@ impl TouchAsMouse {
                 self.finger = Some(id);
                 vec![
                     MouseCall::Moved(x, y),
-                    MouseCall::Button { pressed: true, x, y },
+                    MouseCall::Button {
+                        pressed: true,
+                        x,
+                        y,
+                    },
                 ]
             }
             TouchPhase::Moved if self.finger == Some(id) => vec![MouseCall::Moved(x, y)],
@@ -43,7 +47,11 @@ impl TouchAsMouse {
             TouchPhase::Ended | TouchPhase::Cancelled if self.finger == Some(id) => {
                 self.finger = None;
                 vec![
-                    MouseCall::Button { pressed: false, x, y },
+                    MouseCall::Button {
+                        pressed: false,
+                        x,
+                        y,
+                    },
                     MouseCall::Left,
                 ]
             }
@@ -60,26 +68,46 @@ mod tests {
     use TouchPhase::{Cancelled, Ended, Started};
 
     fn press(x: f32, y: f32) -> MouseCall {
-        Button { pressed: true, x, y }
+        Button {
+            pressed: true,
+            x,
+            y,
+        }
     }
 
     fn release(x: f32, y: f32) -> MouseCall {
-        Button { pressed: false, x, y }
+        Button {
+            pressed: false,
+            x,
+            y,
+        }
     }
 
     #[test]
     fn a_tap_moves_presses_releases_and_leaves() {
         let mut touch = TouchAsMouse::default();
-        assert_eq!(touch.touch(1, Started, 10.0, 20.0), vec![MouseCall::Moved(10.0, 20.0), press(10.0, 20.0)]);
-        assert_eq!(touch.touch(1, Ended, 10.0, 20.0), vec![release(10.0, 20.0), Left]);
+        assert_eq!(
+            touch.touch(1, Started, 10.0, 20.0),
+            vec![MouseCall::Moved(10.0, 20.0), press(10.0, 20.0)]
+        );
+        assert_eq!(
+            touch.touch(1, Ended, 10.0, 20.0),
+            vec![release(10.0, 20.0), Left]
+        );
     }
 
     #[test]
     fn a_drag_moves_the_pointer() {
         let mut touch = TouchAsMouse::default();
         touch.touch(1, Started, 10.0, 20.0);
-        assert_eq!(touch.touch(1, TouchPhase::Moved, 15.0, 30.0), vec![MouseCall::Moved(15.0, 30.0)]);
-        assert_eq!(touch.touch(1, Ended, 16.0, 31.0), vec![release(16.0, 31.0), Left]);
+        assert_eq!(
+            touch.touch(1, TouchPhase::Moved, 15.0, 30.0),
+            vec![MouseCall::Moved(15.0, 30.0)]
+        );
+        assert_eq!(
+            touch.touch(1, Ended, 16.0, 31.0),
+            vec![release(16.0, 31.0), Left]
+        );
     }
 
     #[test]
@@ -89,7 +117,10 @@ mod tests {
         assert!(touch.touch(2, Started, 50.0, 60.0).is_empty());
         assert!(touch.touch(2, TouchPhase::Moved, 55.0, 65.0).is_empty());
         assert!(touch.touch(2, Ended, 55.0, 65.0).is_empty());
-        assert_eq!(touch.touch(1, TouchPhase::Moved, 11.0, 21.0), vec![MouseCall::Moved(11.0, 21.0)]);
+        assert_eq!(
+            touch.touch(1, TouchPhase::Moved, 11.0, 21.0),
+            vec![MouseCall::Moved(11.0, 21.0)]
+        );
     }
 
     #[test]
@@ -100,14 +131,20 @@ mod tests {
         touch.touch(1, Ended, 10.0, 20.0);
         // Finger 2 went down while 1 was followed: still ignored until it lifts.
         assert!(touch.touch(2, TouchPhase::Moved, 51.0, 61.0).is_empty());
-        assert_eq!(touch.touch(3, Started, 70.0, 80.0), vec![MouseCall::Moved(70.0, 80.0), press(70.0, 80.0)]);
+        assert_eq!(
+            touch.touch(3, Started, 70.0, 80.0),
+            vec![MouseCall::Moved(70.0, 80.0), press(70.0, 80.0)]
+        );
     }
 
     #[test]
     fn cancelled_releases() {
         let mut touch = TouchAsMouse::default();
         touch.touch(1, Started, 10.0, 20.0);
-        assert_eq!(touch.touch(1, Cancelled, 12.0, 22.0), vec![release(12.0, 22.0), Left]);
+        assert_eq!(
+            touch.touch(1, Cancelled, 12.0, 22.0),
+            vec![release(12.0, 22.0), Left]
+        );
         assert!(touch.touch(1, TouchPhase::Moved, 13.0, 23.0).is_empty());
     }
 

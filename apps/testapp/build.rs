@@ -26,15 +26,21 @@ fn main() {
     let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR not set"));
     let assets_dir = feather_build::assets_dir(&out_dir);
 
-    feather_build::copy_dir_filtered(Path::new("resources"), &assets_dir, |path| !feather_build::is_obj(path));
+    feather_build::copy_dir_filtered(Path::new("resources"), &assets_dir, |path| {
+        !feather_build::is_obj(path)
+    });
     for mesh in feather_build::build_meshes(Path::new("resources"), &out_dir.join("meshes")) {
-        feather_build::copy_file(&mesh.output, &assets_dir.join(mesh.output.file_name().unwrap()));
+        feather_build::copy_file(
+            &mesh.output,
+            &assets_dir.join(mesh.output.file_name().unwrap()),
+        );
     }
     // OBJs copied by older builds must not end up in the app (the APK takes every file there).
     for entry in std::fs::read_dir(&assets_dir).expect("failed to read the assets dir") {
         let path = entry.expect("failed to read dir entry").path();
         if path.is_file() && feather_build::is_obj(&path) {
-            std::fs::remove_file(&path).unwrap_or_else(|e| panic!("failed to remove {}: {e}", path.display()));
+            std::fs::remove_file(&path)
+                .unwrap_or_else(|e| panic!("failed to remove {}: {e}", path.display()));
         }
     }
 

@@ -22,13 +22,19 @@ struct Entry {
 
 impl From<Number> for Entry {
     fn from(number: Number) -> Self {
-        Entry { decimal: number.decimal, reference: number.value }
+        Entry {
+            decimal: number.decimal,
+            reference: number.value,
+        }
     }
 }
 
 impl From<Decimal> for Entry {
     fn from(decimal: Decimal) -> Self {
-        Entry { decimal: Some(decimal), reference: decimal.to_f32() }
+        Entry {
+            decimal: Some(decimal),
+            reference: decimal.to_f32(),
+        }
     }
 }
 
@@ -46,13 +52,20 @@ fn choose_scale(entries: &[Entry], max_decimals: u32) -> (Scale, Option<String>)
     for entry in entries {
         match entry.decimal {
             Some(decimal) => decimals = decimals.max(decimal.decimals),
-            None => return (Scale::Float, Some("some values aren't plain decimal numbers".into())),
+            None => {
+                return (
+                    Scale::Float,
+                    Some("some values aren't plain decimal numbers".into()),
+                )
+            }
         }
     }
     if decimals > max_decimals {
         return (
             Scale::Float,
-            Some(format!("{decimals} decimals, more than the maximum {max_decimals} (--max-decimals)")),
+            Some(format!(
+                "{decimals} decimals, more than the maximum {max_decimals} (--max-decimals)"
+            )),
         );
     }
     for entry in entries {
@@ -63,14 +76,19 @@ fn choose_scale(entries: &[Entry], max_decimals: u32) -> (Scale, Option<String>)
                 if fixed_to_f32(n, decimals as u8) != entry.reference {
                     return (
                         Scale::Float,
-                        Some(format!("{} with {decimals} decimals can't be read back exactly", entry.reference)),
+                        Some(format!(
+                            "{} with {decimals} decimals can't be read back exactly",
+                            entry.reference
+                        )),
                     );
                 }
             }
             _ => {
                 return (
                     Scale::Float,
-                    Some(format!("values too large for 32-bit integers with {decimals} decimals")),
+                    Some(format!(
+                        "values too large for 32-bit integers with {decimals} decimals"
+                    )),
                 )
             }
         }
@@ -118,7 +136,10 @@ fn scale_items<const N: usize>(
     }
     Scaled {
         scale,
-        keys: items.iter().map(|item| item.map(|e| key(scale, e))).collect(),
+        keys: items
+            .iter()
+            .map(|item| item.map(|e| key(scale, e)))
+            .collect(),
         references: items.iter().map(|item| item.map(|e| e.reference)).collect(),
     }
 }
@@ -129,7 +150,10 @@ fn uv_entries(obj: &Obj, uv: Option<u32>, flip_v: bool) -> [Entry; 2] {
     let v = if flip_v {
         match v.decimal.and_then(Decimal::one_minus) {
             Some(flipped) => Entry::from(flipped),
-            None => Entry { decimal: None, reference: (1.0 - v.to_f64()) as f32 },
+            None => Entry {
+                decimal: None,
+                reference: (1.0 - v.to_f64()) as f32,
+            },
         }
     } else {
         Entry::from(v)
@@ -138,7 +162,12 @@ fn uv_entries(obj: &Obj, uv: Option<u32>, flip_v: bool) -> [Entry; 2] {
 }
 
 /// One mesh (all the OBJ, or one object of it with `--split`).
-pub(crate) fn convert_faces(obj: &Obj, faces: &[usize], settings: &Settings, object: Option<String>) -> Result<Converted> {
+pub(crate) fn convert_faces(
+    obj: &Obj,
+    faces: &[usize],
+    settings: &Settings,
+    object: Option<String>,
+) -> Result<Converted> {
     let mut warnings = Vec::new();
     let mut notes = Vec::new();
 
@@ -173,9 +202,20 @@ pub(crate) fn convert_faces(obj: &Obj, faces: &[usize], settings: &Settings, obj
     }
 
     // Positions: the ones the triangles use.
-    let used_positions = used(triangles.iter().flatten().map(|c| c.position as usize), obj.positions.len());
-    let position_items: Vec<[Entry; 3]> = used_positions.iter().map(|&i| obj.positions[i].map(Entry::from)).collect();
-    let positions = scale_items("positions", &position_items, settings.max_decimals, &mut warnings);
+    let used_positions = used(
+        triangles.iter().flatten().map(|c| c.position as usize),
+        obj.positions.len(),
+    );
+    let position_items: Vec<[Entry; 3]> = used_positions
+        .iter()
+        .map(|&i| obj.positions[i].map(Entry::from))
+        .collect();
+    let positions = scale_items(
+        "positions",
+        &position_items,
+        settings.max_decimals,
+        &mut warnings,
+    );
     let position_slot = slots(&used_positions, obj.positions.len());
 
     // UVs: the ones used, and (last) the one of corners without any.
@@ -184,49 +224,81 @@ pub(crate) fn convert_faces(obj: &Obj, faces: &[usize], settings: &Settings, obj
     let used_uvs = used(triangles.iter().flatten().map(uv_index), uv_slot_count);
     let uv_items: Vec<[Entry; 2]> = used_uvs
         .iter()
-        .map(|&i| uv_entries(obj, (i < obj.uvs.len()).then_some(i as u32), settings.flip_v))
+        .map(|&i| {
+            uv_entries(
+                obj,
+                (i < obj.uvs.len()).then_some(i as u32),
+                settings.flip_v,
+            )
+        })
         .collect();
-    let uvs = scale_items("texture coordinates", &uv_items, settings.max_decimals, &mut warnings);
+    let uvs = scale_items(
+        "texture coordinates",
+        &uv_items,
+        settings.max_decimals,
+        &mut warnings,
+    );
     let uv_slot = slots(&used_uvs, uv_slot_count);
 
     // Normals: one item per OBJ normal used, or one per triangle corner when computed.
-    let (normals, normal_slot_of_corner, computed_normals): (Scaled<3>, Vec<usize>, Option<Vec<[f64; 3]>>) =
-        if settings.normals == Normals::FromObj {
-            let used_normals = used(triangles.iter().flatten().map(|c| c.normal.unwrap() as usize), obj.normals.len());
-            let items: Vec<[Entry; 3]> = used_normals.iter().map(|&i| obj.normals[i].map(Entry::from)).collect();
-            let scaled = scale_items("normals", &items, settings.max_decimals, &mut warnings);
-            let slot = slots(&used_normals, obj.normals.len());
-            let of_corner = triangles.iter().flatten().map(|c| slot[c.normal.unwrap() as usize]).collect();
-            (scaled, of_corner, None)
-        } else {
-            if !obj.normals.is_empty() {
-                warnings.push(format!("the OBJ's {} normals are replaced by computed ones", obj.normals.len()));
-            }
-            let normal_triangles: Vec<Triangle> = triangles
+    let (normals, normal_slot_of_corner, computed_normals): (
+        Scaled<3>,
+        Vec<usize>,
+        Option<Vec<[f64; 3]>>,
+    ) = if settings.normals == Normals::FromObj {
+        let used_normals = used(
+            triangles
                 .iter()
-                .zip(&smoothing)
-                .map(|(corners, &smoothing)| Triangle {
-                    points: corners.map(|c| obj.positions[c.position as usize].map(Number::to_f64)),
-                    keys: corners.map(|c| positions.keys[position_slot[c.position as usize]]),
-                    smoothing,
-                })
-                .collect();
-            let computed = normals::compute(settings.normals, &normal_triangles);
-            if computed.degenerate > 0 {
-                warnings.push(format!(
-                    "{} triangles have no area, so no normal: given (0, 0, 1)",
-                    computed.degenerate
-                ));
-            }
-            let scale = 10f64.powi(normals::DECIMALS as i32);
-            let items: Vec<[Entry; 3]> = computed
-                .normals
-                .iter()
-                .map(|n| n.map(|v| Entry::from(Decimal::new((v * scale).round() as i64, normals::DECIMALS))))
-                .collect();
-            let scaled = scale_items("normals", &items, normals::DECIMALS, &mut warnings);
-            (scaled, (0..items.len()).collect(), Some(computed.normals))
-        };
+                .flatten()
+                .map(|c| c.normal.unwrap() as usize),
+            obj.normals.len(),
+        );
+        let items: Vec<[Entry; 3]> = used_normals
+            .iter()
+            .map(|&i| obj.normals[i].map(Entry::from))
+            .collect();
+        let scaled = scale_items("normals", &items, settings.max_decimals, &mut warnings);
+        let slot = slots(&used_normals, obj.normals.len());
+        let of_corner = triangles
+            .iter()
+            .flatten()
+            .map(|c| slot[c.normal.unwrap() as usize])
+            .collect();
+        (scaled, of_corner, None)
+    } else {
+        if !obj.normals.is_empty() {
+            warnings.push(format!(
+                "the OBJ's {} normals are replaced by computed ones",
+                obj.normals.len()
+            ));
+        }
+        let normal_triangles: Vec<Triangle> = triangles
+            .iter()
+            .zip(&smoothing)
+            .map(|(corners, &smoothing)| Triangle {
+                points: corners.map(|c| obj.positions[c.position as usize].map(Number::to_f64)),
+                keys: corners.map(|c| positions.keys[position_slot[c.position as usize]]),
+                smoothing,
+            })
+            .collect();
+        let computed = normals::compute(settings.normals, &normal_triangles);
+        if computed.degenerate > 0 {
+            warnings.push(format!(
+                "{} triangles have no area, so no normal: given (0, 0, 1)",
+                computed.degenerate
+            ));
+        }
+        let scale = 10f64.powi(normals::DECIMALS as i32);
+        let items: Vec<[Entry; 3]> = computed
+            .normals
+            .iter()
+            .map(|n| {
+                n.map(|v| Entry::from(Decimal::new((v * scale).round() as i64, normals::DECIMALS)))
+            })
+            .collect();
+        let scaled = scale_items("normals", &items, normals::DECIMALS, &mut warnings);
+        (scaled, (0..items.len()).collect(), Some(computed.normals))
+    };
 
     // Vertices: identical ones merged, in the order of first use.
     let mut vertex_of_key: HashMap<[i64; 8], u32> = HashMap::new();
@@ -258,7 +330,10 @@ pub(crate) fn convert_faces(obj: &Obj, faces: &[usize], settings: &Settings, obj
 
     // The vertices' keys, component `columns` of each.
     let interleave = |columns: &[usize]| -> Vec<i64> {
-        vertex_keys.iter().flat_map(|k| columns.iter().map(|&c| k[c])).collect()
+        vertex_keys
+            .iter()
+            .flat_map(|k| columns.iter().map(|&c| k[c]))
+            .collect()
     };
     let mesh = MeshData {
         positions: stream(positions.scale, interleave(&[0, 1, 2])),
@@ -290,7 +365,11 @@ pub(crate) fn convert_faces(obj: &Obj, faces: &[usize], settings: &Settings, obj
         warnings,
         notes,
         expected,
-        normals_tolerance: if computed_normals.is_some() { 1e-4 } else { 0.0 },
+        normals_tolerance: if computed_normals.is_some() {
+            1e-4
+        } else {
+            0.0
+        },
     })
 }
 
@@ -319,15 +398,27 @@ mod tests {
     fn entries(texts: &[&str]) -> Vec<Entry> {
         texts
             .iter()
-            .map(|t| Entry { decimal: Decimal::parse(t), reference: t.parse().unwrap() })
+            .map(|t| Entry {
+                decimal: Decimal::parse(t),
+                reference: t.parse().unwrap(),
+            })
             .collect()
     }
 
     #[test]
     fn scale_is_the_most_decimals() {
-        assert_eq!(choose_scale(&entries(&["0.5", "1.25", "-3"]), 9), (Scale::Fixed(2), None));
-        assert_eq!(choose_scale(&entries(&["1.0000", "0.00000", "-0.0"]), 9), (Scale::Fixed(0), None));
-        assert_eq!(choose_scale(&entries(&["1.5e-07"]), 9), (Scale::Fixed(8), None));
+        assert_eq!(
+            choose_scale(&entries(&["0.5", "1.25", "-3"]), 9),
+            (Scale::Fixed(2), None)
+        );
+        assert_eq!(
+            choose_scale(&entries(&["1.0000", "0.00000", "-0.0"]), 9),
+            (Scale::Fixed(0), None)
+        );
+        assert_eq!(
+            choose_scale(&entries(&["1.5e-07"]), 9),
+            (Scale::Fixed(8), None)
+        );
         assert_eq!(choose_scale(&[], 9), (Scale::Fixed(0), None));
     }
 

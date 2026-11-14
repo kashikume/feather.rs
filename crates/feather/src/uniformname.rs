@@ -164,7 +164,9 @@ mod tests {
 
     #[test]
     fn threads_agree_on_ids() {
-        let names: Vec<String> = (0..50).map(|i| format!("uniformname_test_thread_{i}")).collect();
+        let names: Vec<String> = (0..50)
+            .map(|i| format!("uniformname_test_thread_{i}"))
+            .collect();
         let ids: Vec<Vec<UniformName>> = std::thread::scope(|scope| {
             let handles: Vec<_> = (0..8)
                 .map(|_| scope.spawn(|| names.iter().map(UniformName::from).collect::<Vec<_>>()))

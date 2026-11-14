@@ -68,11 +68,7 @@ impl Demo for WalkerDemo {
         // At `angle` it moves along (cos, sin); the person faces +Y, so it turns by
         // `angle` - 90 degrees to face where it goes.
         let angle = (WALK_SPEED * time / PATH_RADIUS) % TAU;
-        let position = Vec3::new(
-            PATH_RADIUS * angle.sin(),
-            -PATH_RADIUS * angle.cos(),
-            0.0,
-        );
+        let position = Vec3::new(PATH_RADIUS * angle.sin(), -PATH_RADIUS * angle.cos(), 0.0);
         let facing = Mat4::from_angle_z(cgmath::Rad(angle - TAU / 4.0));
         self.scene
             .get_node_mut(self.walker_node)

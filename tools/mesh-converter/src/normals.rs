@@ -59,7 +59,9 @@ pub fn compute(mode: Normals, triangles: &[Triangle]) -> Computed {
                 }
                 for k in 0..3 {
                     let weight = corner_angle(triangle, k);
-                    let sum = sums.entry((triangle.smoothing, triangle.keys[k])).or_insert([0.0; 3]);
+                    let sum = sums
+                        .entry((triangle.smoothing, triangle.keys[k]))
+                        .or_insert([0.0; 3]);
                     for c in 0..3 {
                         sum[c] += normal[c] * weight;
                     }
@@ -71,21 +73,25 @@ pub fn compute(mode: Normals, triangles: &[Triangle]) -> Computed {
                 .zip(&face_normals)
                 .flat_map(|(triangle, normal)| {
                     let own = normal.unwrap_or(FALLBACK);
-                    (0..3).map(move |k| {
-                        if triangle.smoothing == 0 {
-                            return own;
-                        }
-                        // Opposite faces can cancel out: keep the triangle's own normal then.
-                        sums.get(&(triangle.smoothing, triangle.keys[k]))
-                            .and_then(|&sum| normalize(sum))
-                            .unwrap_or(own)
-                    })
-                    .collect::<Vec<_>>()
+                    (0..3)
+                        .map(move |k| {
+                            if triangle.smoothing == 0 {
+                                return own;
+                            }
+                            // Opposite faces can cancel out: keep the triangle's own normal then.
+                            sums.get(&(triangle.smoothing, triangle.keys[k]))
+                                .and_then(|&sum| normalize(sum))
+                                .unwrap_or(own)
+                        })
+                        .collect::<Vec<_>>()
                 })
                 .collect()
         }
     };
-    Computed { normals, degenerate }
+    Computed {
+        normals,
+        degenerate,
+    }
 }
 
 fn sub(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
@@ -93,7 +99,11 @@ fn sub(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
 }
 
 fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
-    [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
+    [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    ]
 }
 
 fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
@@ -114,7 +124,10 @@ fn face_normal(triangle: &Triangle) -> Option<[f64; 3]> {
 /// The triangle's angle at corner `k`, in radians.
 fn corner_angle(triangle: &Triangle, k: usize) -> f64 {
     let p = triangle.points;
-    let (Some(e1), Some(e2)) = (normalize(sub(p[(k + 1) % 3], p[k])), normalize(sub(p[(k + 2) % 3], p[k]))) else {
+    let (Some(e1), Some(e2)) = (
+        normalize(sub(p[(k + 1) % 3], p[k])),
+        normalize(sub(p[(k + 2) % 3], p[k])),
+    ) else {
         return 0.0;
     };
     dot(e1, e2).clamp(-1.0, 1.0).acos()
@@ -126,7 +139,11 @@ mod tests {
 
     fn triangle(points: [[f64; 3]; 3], smoothing: u32) -> Triangle {
         let key = |p: [f64; 3]| p.map(|v| (v * 1000.0).round() as i64);
-        Triangle { points, keys: points.map(key), smoothing }
+        Triangle {
+            points,
+            keys: points.map(key),
+            smoothing,
+        }
     }
 
     fn close(a: [f64; 3], b: [f64; 3]) -> bool {
@@ -150,11 +167,19 @@ mod tests {
         let right = triangle([[0.0, 0.0, 1.0], [1.0, 0.0, 1.0], [0.0, 1.0, 0.0]], 1);
         let computed = compute(Normals::Soft, &[left, right]);
         // On the ridge: straight up.
-        assert!(close(computed.normals[1], [0.0, 0.0, 1.0]), "{:?}", computed.normals[1]);
+        assert!(
+            close(computed.normals[1], [0.0, 0.0, 1.0]),
+            "{:?}",
+            computed.normals[1]
+        );
         assert!(close(computed.normals[3], [0.0, 0.0, 1.0]));
         // At the eaves: each face's own normal.
         let h = std::f64::consts::FRAC_1_SQRT_2;
-        assert!(close(computed.normals[0], [0.0, -h, h]), "{:?}", computed.normals[0]);
+        assert!(
+            close(computed.normals[0], [0.0, -h, h]),
+            "{:?}",
+            computed.normals[0]
+        );
         assert!(close(computed.normals[5], [0.0, h, h]));
     }
 
@@ -182,7 +207,8 @@ mod tests {
             }
         };
         let normal_at_origin = |split| {
-            let mut triangles: Vec<Triangle> = floor.iter().map(|t| triangle(t.points, 1)).collect();
+            let mut triangles: Vec<Triangle> =
+                floor.iter().map(|t| triangle(t.points, 1)).collect();
             triangles.extend(wall(split));
             compute(Normals::Soft, &triangles).normals[0]
         };

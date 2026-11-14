@@ -1,5 +1,5 @@
-use super::uniformname::UniformName;
 use super::math::{IVec2, IVec3, IVec4, Mat2, Mat3, Mat4, UVec2, UVec3, UVec4, Vec2, Vec3, Vec4};
+use super::uniformname::UniformName;
 
 /// A value of any type that can be passed to a shader as a uniform.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -67,10 +67,7 @@ impl UniformValue {
             UniformValue::UVec2(v) => vec![vec![v.x, v.y]],
             UniformValue::UVec3(v) => vec![vec![v.x, v.y, v.z]],
             UniformValue::UVec4(v) => vec![vec![v.x, v.y, v.z, v.w]],
-            UniformValue::Mat2(m) => [m.x, m.y]
-                .iter()
-                .map(|c| vec![f(c.x), f(c.y)])
-                .collect(),
+            UniformValue::Mat2(m) => [m.x, m.y].iter().map(|c| vec![f(c.x), f(c.y)]).collect(),
             UniformValue::Mat3(m) => [m.x, m.y, m.z]
                 .iter()
                 .map(|c| vec![f(c.x), f(c.y), f(c.z)])
@@ -181,7 +178,10 @@ mod tests {
 
     #[test]
     fn write_scalars() {
-        assert_eq!(written(UniformValue::Float(1.5), 8, 4, 16), [X, 1.5f32.to_bits()]);
+        assert_eq!(
+            written(UniformValue::Float(1.5), 8, 4, 16),
+            [X, 1.5f32.to_bits()]
+        );
         assert_eq!(written(UniformValue::Int(-2), 4, 0, 16), [(-2i32) as u32]);
         assert_eq!(written(UniformValue::UInt(7), 4, 0, 16), [7]);
         assert_eq!(written(UniformValue::Bool(true), 4, 0, 16), [1]);
@@ -203,12 +203,30 @@ mod tests {
             written(UniformValue::Vec4(Vec4::new(1.0, 2.0, 3.0, 4.0)), 16, 0, 16),
             [f(1.0), f(2.0), f(3.0), f(4.0)]
         );
-        assert_eq!(written(UniformValue::IVec2(IVec2::new(-1, 2)), 8, 0, 16), [(-1i32) as u32, 2]);
-        assert_eq!(written(UniformValue::IVec3(IVec3::new(1, 2, 3)), 12, 0, 16), [1, 2, 3]);
-        assert_eq!(written(UniformValue::IVec4(IVec4::new(1, 2, 3, 4)), 16, 0, 16), [1, 2, 3, 4]);
-        assert_eq!(written(UniformValue::UVec2(UVec2::new(5, 6)), 8, 0, 16), [5, 6]);
-        assert_eq!(written(UniformValue::UVec3(UVec3::new(5, 6, 7)), 12, 0, 16), [5, 6, 7]);
-        assert_eq!(written(UniformValue::UVec4(UVec4::new(5, 6, 7, 8)), 16, 0, 16), [5, 6, 7, 8]);
+        assert_eq!(
+            written(UniformValue::IVec2(IVec2::new(-1, 2)), 8, 0, 16),
+            [(-1i32) as u32, 2]
+        );
+        assert_eq!(
+            written(UniformValue::IVec3(IVec3::new(1, 2, 3)), 12, 0, 16),
+            [1, 2, 3]
+        );
+        assert_eq!(
+            written(UniformValue::IVec4(IVec4::new(1, 2, 3, 4)), 16, 0, 16),
+            [1, 2, 3, 4]
+        );
+        assert_eq!(
+            written(UniformValue::UVec2(UVec2::new(5, 6)), 8, 0, 16),
+            [5, 6]
+        );
+        assert_eq!(
+            written(UniformValue::UVec3(UVec3::new(5, 6, 7)), 12, 0, 16),
+            [5, 6, 7]
+        );
+        assert_eq!(
+            written(UniformValue::UVec4(UVec4::new(5, 6, 7, 8)), 16, 0, 16),
+            [5, 6, 7, 8]
+        );
     }
 
     #[test]
@@ -230,9 +248,18 @@ mod tests {
         assert_eq!(
             written(UniformValue::Mat3(m3), 48, 0, 16),
             [
-                f(1.0), f(2.0), f(3.0), X,
-                f(4.0), f(5.0), f(6.0), X,
-                f(7.0), f(8.0), f(9.0), X,
+                f(1.0),
+                f(2.0),
+                f(3.0),
+                X,
+                f(4.0),
+                f(5.0),
+                f(6.0),
+                X,
+                f(7.0),
+                f(8.0),
+                f(9.0),
+                X,
             ]
         );
 

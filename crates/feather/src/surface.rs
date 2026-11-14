@@ -46,6 +46,8 @@ pub unsafe fn create_surface(instance: &Instance, window: &Window) -> Result<vk:
     }
     #[cfg(not(target_os = "android"))]
     {
-        Ok(vulkanalia::window::create_surface(instance, window, window)?)
+        Ok(vulkanalia::window::create_surface(
+            instance, window, window,
+        )?)
     }
 }

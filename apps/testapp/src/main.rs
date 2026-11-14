@@ -29,13 +29,19 @@ fn demo_from_args(mut args: impl Iterator<Item = String>) -> Result<usize> {
         None => 0,
         Some(arg) => match arg.parse::<usize>() {
             Ok(demo) if demo < DEMOS.len() => demo,
-            _ => bail!("Unknown demo `{arg}`.
-{}", usage()),
+            _ => bail!(
+                "Unknown demo `{arg}`.
+{}",
+                usage()
+            ),
         },
     };
     if let Some(extra) = args.next() {
-        bail!("Unexpected argument `{extra}`.
-{}", usage());
+        bail!(
+            "Unexpected argument `{extra}`.
+{}",
+            usage()
+        );
     }
     Ok(demo)
 }
@@ -46,10 +52,15 @@ fn usage() -> String {
         .enumerate()
         .map(|(i, d)| format!("  {i}  {}", d.name))
         .collect();
-    format!("Usage: testapp [demo]
+    format!(
+        "Usage: testapp [demo]
 Demos:
-{}", demos.join("
-"))
+{}",
+        demos.join(
+            "
+"
+        )
+    )
 }
 
 #[cfg(test)]

@@ -37,7 +37,10 @@ pub fn read_header(bytes: &[u8]) -> Result<Header, FmeshError> {
     let mut reader = Reader { bytes, pos: 8 };
     let version = reader.u16();
     if version != VERSION {
-        return Err(FmeshError::UnsupportedVersion { found: version, supported: VERSION });
+        return Err(FmeshError::UnsupportedVersion {
+            found: version,
+            supported: VERSION,
+        });
     }
     let header_size = reader.u16();
     if (header_size as usize) < HEADER_SIZE {
@@ -79,7 +82,9 @@ pub fn read_header(bytes: &[u8]) -> Result<Header, FmeshError> {
     };
 
     if !index_count.is_multiple_of(3) {
-        return Err(FmeshError::Invalid(format!("{index_count} indices, not a multiple of 3")));
+        return Err(FmeshError::Invalid(format!(
+            "{index_count} indices, not a multiple of 3"
+        )));
     }
     if header.data_size > MAX_DATA_SIZE {
         return Err(FmeshError::Invalid(format!(
@@ -123,13 +128,17 @@ pub fn read(bytes: &[u8]) -> Result<Fmesh, FmeshError> {
 
     let crc = crc32fast::hash(stored);
     if crc != header.crc32 {
-        return Err(FmeshError::Checksum { expected: header.crc32, found: crc });
+        return Err(FmeshError::Checksum {
+            expected: header.crc32,
+            found: crc,
+        });
     }
 
     let inflated;
     let data = if header.compressed() {
-        inflated = miniz_oxide::inflate::decompress_to_vec_with_limit(stored, header.data_size as usize)
-            .map_err(|_| FmeshError::Decompress)?;
+        inflated =
+            miniz_oxide::inflate::decompress_to_vec_with_limit(stored, header.data_size as usize)
+                .map_err(|_| FmeshError::Decompress)?;
         if inflated.len() != header.data_size as usize {
             return Err(FmeshError::Decompress);
         }
@@ -139,9 +148,18 @@ pub fn read(bytes: &[u8]) -> Result<Fmesh, FmeshError> {
     };
 
     let vertex_count = header.vertex_count as usize;
-    let mut reader = Reader { bytes: data, pos: 0 };
-    let positions = reader.vertex_stream("positions", header.positions, vertex_count, POSITION_COMPONENTS)?;
-    let normals = reader.vertex_stream("normals", header.normals, vertex_count, NORMAL_COMPONENTS)?;
+    let mut reader = Reader {
+        bytes: data,
+        pos: 0,
+    };
+    let positions = reader.vertex_stream(
+        "positions",
+        header.positions,
+        vertex_count,
+        POSITION_COMPONENTS,
+    )?;
+    let normals =
+        reader.vertex_stream("normals", header.normals, vertex_count, NORMAL_COMPONENTS)?;
     let uvs = reader.vertex_stream("uvs", header.uvs, vertex_count, UV_COMPONENTS)?;
     let indices = reader.indices(header.indices, header.index_count as usize)?;
     if reader.pos != data.len() {
@@ -156,7 +174,13 @@ pub fn read(bytes: &[u8]) -> Result<Fmesh, FmeshError> {
         )));
     }
 
-    Ok(Fmesh { header, positions, normals, uvs, indices })
+    Ok(Fmesh {
+        header,
+        positions,
+        normals,
+        uvs,
+        indices,
+    })
 }
 
 struct Reader<'a> {
@@ -184,12 +208,26 @@ impl Reader<'_> {
         f32::from_le_bytes(self.array())
     }
 
-    fn descriptor(&mut self, stream: &'static str, indices: bool) -> Result<StreamDescriptor, FmeshError> {
+    fn descriptor(
+        &mut self,
+        stream: &'static str,
+        indices: bool,
+    ) -> Result<StreamDescriptor, FmeshError> {
         let [code, decimals, _, _] = self.array::<4>();
         let encoding = Encoding::from_code(code)
-            .filter(|e| if indices { e.for_indices() } else { e.for_vertices() })
+            .filter(|e| {
+                if indices {
+                    e.for_indices()
+                } else {
+                    e.for_vertices()
+                }
+            })
             .ok_or(FmeshError::BadEncoding { stream, code })?;
-        let max_decimals = if indices || encoding == Encoding::F32 { 0 } else { MAX_DECIMALS };
+        let max_decimals = if indices || encoding == Encoding::F32 {
+            0
+        } else {
+            MAX_DECIMALS
+        };
         if decimals > max_decimals {
             return Err(FmeshError::BadDecimals { stream, decimals });
         }
@@ -199,7 +237,9 @@ impl Reader<'_> {
     /// The next `len` bytes of the data, or an error naming `stream` if there aren't enough.
     fn take(&mut self, len: usize, stream: &'static str) -> Result<&[u8], FmeshError> {
         if self.bytes.len() - self.pos < len {
-            return Err(FmeshError::Invalid(format!("{stream}: the data ends inside the stream")));
+            return Err(FmeshError::Invalid(format!(
+                "{stream}: the data ends inside the stream"
+            )));
         }
         let slice = &self.bytes[self.pos..self.pos + len];
         self.pos += len;
@@ -209,21 +249,27 @@ impl Reader<'_> {
     fn varint(&mut self, stream: &'static str) -> Result<u64, FmeshError> {
         let mut value = 0u64;
         for shift in (0..64).step_by(7) {
-            let byte = *self
-                .bytes
-                .get(self.pos)
-                .ok_or_else(|| FmeshError::Invalid(format!("{stream}: the data ends inside the stream")))?;
+            let byte = *self.bytes.get(self.pos).ok_or_else(|| {
+                FmeshError::Invalid(format!("{stream}: the data ends inside the stream"))
+            })?;
             self.pos += 1;
             value |= ((byte & 0x7f) as u64) << shift;
             if byte & 0x80 == 0 {
                 return Ok(value);
             }
         }
-        Err(FmeshError::Invalid(format!("{stream}: varint longer than 10 bytes")))
+        Err(FmeshError::Invalid(format!(
+            "{stream}: varint longer than 10 bytes"
+        )))
     }
 
     /// Decodes `count` delta values of `components` components each, as `i64`s.
-    fn deltas(&mut self, stream: &'static str, count: usize, components: usize) -> Result<Vec<i64>, FmeshError> {
+    fn deltas(
+        &mut self,
+        stream: &'static str,
+        count: usize,
+        components: usize,
+    ) -> Result<Vec<i64>, FmeshError> {
         let mut previous = vec![0i64; components];
         let mut values = Vec::with_capacity(count);
         for i in 0..count {
@@ -254,7 +300,11 @@ impl Reader<'_> {
                 .chunks_exact(4)
                 .map(|b| f32::from_le_bytes(b.try_into().unwrap()))
                 .collect(),
-            Encoding::I8 => self.take(count, stream)?.iter().map(|&b| fixed(b as i8 as i64)).collect(),
+            Encoding::I8 => self
+                .take(count, stream)?
+                .iter()
+                .map(|&b| fixed(b as i8 as i64))
+                .collect(),
             Encoding::I16 => self
                 .take(count * 2, stream)?
                 .chunks_exact(2)
@@ -267,7 +317,10 @@ impl Reader<'_> {
                 .collect(),
             Encoding::Delta => {
                 let values = self.deltas(stream, count, components)?;
-                if values.iter().any(|&v| v < i32::MIN as i64 || v > i32::MAX as i64) {
+                if values
+                    .iter()
+                    .any(|&v| v < i32::MIN as i64 || v > i32::MAX as i64)
+                {
                     return Err(FmeshError::Invalid(format!("{stream}: value outside i32")));
                 }
                 values.into_iter().map(fixed).collect()
@@ -276,7 +329,11 @@ impl Reader<'_> {
         })
     }
 
-    fn indices(&mut self, descriptor: StreamDescriptor, count: usize) -> Result<Vec<u32>, FmeshError> {
+    fn indices(
+        &mut self,
+        descriptor: StreamDescriptor,
+        count: usize,
+    ) -> Result<Vec<u32>, FmeshError> {
         const STREAM: &str = "indices";
         Ok(match descriptor.encoding {
             Encoding::U16 => self
@@ -292,7 +349,10 @@ impl Reader<'_> {
             Encoding::Delta => self
                 .deltas(STREAM, count, 1)?
                 .into_iter()
-                .map(|v| u32::try_from(v).map_err(|_| FmeshError::Invalid("indices: value outside u32".into())))
+                .map(|v| {
+                    u32::try_from(v)
+                        .map_err(|_| FmeshError::Invalid("indices: value outside u32".into()))
+                })
                 .collect::<Result<_, _>>()?,
             _ => unreachable!("checked by descriptor()"),
         })

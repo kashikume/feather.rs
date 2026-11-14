@@ -452,7 +452,8 @@ mod tests {
 
     #[test]
     fn smooth_easings_stay_in_range_and_never_decrease() {
-        let overshooting = |e: Easing| e.name().starts_with("Elastic") || e.name().starts_with("Back");
+        let overshooting =
+            |e: Easing| e.name().starts_with("Elastic") || e.name().starts_with("Back");
         let bouncing = |e: Easing| e.name().starts_with("Bounce");
         for e in Easing::ALL.into_iter().filter(|&e| !overshooting(e)) {
             let mut previous = 0.0;

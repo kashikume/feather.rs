@@ -28,8 +28,16 @@ impl Aabb {
         let first = points.next()?;
         let mut aabb = Self::new(first, first);
         for p in points {
-            aabb.min = Vec3::new(aabb.min.x.min(p.x), aabb.min.y.min(p.y), aabb.min.z.min(p.z));
-            aabb.max = Vec3::new(aabb.max.x.max(p.x), aabb.max.y.max(p.y), aabb.max.z.max(p.z));
+            aabb.min = Vec3::new(
+                aabb.min.x.min(p.x),
+                aabb.min.y.min(p.y),
+                aabb.min.z.min(p.z),
+            );
+            aabb.max = Vec3::new(
+                aabb.max.x.max(p.x),
+                aabb.max.y.max(p.y),
+                aabb.max.z.max(p.z),
+            );
         }
         Some(aabb)
     }
@@ -77,7 +85,11 @@ impl Frustum {
         let center = model * bounds.center().extend(1.0);
         let h = bounds.half_extents();
         // The box's axes in world space, scaled by its half-extents.
-        let axes = [model.x.truncate() * h.x, model.y.truncate() * h.y, model.z.truncate() * h.z];
+        let axes = [
+            model.x.truncate() * h.x,
+            model.y.truncate() * h.y,
+            model.z.truncate() * h.z,
+        ];
         self.planes.iter().all(|plane| {
             let n = plane.truncate();
             let distance = n.dot(center.truncate()) + plane.w;

@@ -7,8 +7,8 @@ use vulkanalia::loader::{LibloadingLoader, LIBRARY};
 use vulkanalia::prelude::v1_0::*;
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, Touch, WindowEvent};
-use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
+use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{Window, WindowAttributes, WindowId};
 
 use vulkanalia::vk::ExtDebugUtilsExtension;
@@ -38,25 +38,25 @@ use super::commandbuffers::{create_command_buffers, record_command_buffer, GpuDr
 use super::commandpool::create_command_pool;
 use super::dephobjects::create_depth_objects;
 use super::featherapp::{FeatherApp, FrameStats, SceneStats, PIXELS_PER_WHEEL_LINE};
-use super::object::Object;
 use super::framebuffers::create_framebuffers;
-use super::instance::create_instance;
-use super::logicaldevice::create_logical_device;
-use super::physicaldevice::{pick_physical_device, DeviceFeatures};
-use super::queuefamilyindices::QueueFamilyIndices;
-use super::pipeline::{create_render_pass, PipelineKey, PipelineTarget, ShaderPipeline};
-use super::scene::{sort_for_rendering, Culling};
-use super::swapchain::Swapchain;
-use super::surface;
-use super::syncobjects::create_sync_objects;
-use super::touch::{MouseCall, TouchAsMouse};
 use super::gpuimage::{create_texture_sampler, GpuImage, UploadContext};
 use super::gpumeshbuffer::GpuMeshBuffer;
+use super::instance::create_instance;
+use super::logicaldevice::create_logical_device;
+use super::math::Mat4;
+use super::object::Object;
+use super::physicaldevice::{pick_physical_device, DeviceFeatures};
+use super::pipeline::{create_render_pass, PipelineKey, PipelineTarget, ShaderPipeline};
+use super::queuefamilyindices::QueueFamilyIndices;
+use super::scene::{sort_for_rendering, Culling};
 use super::shadowpass::{ShadowDraw, ShadowMap, ShadowPass, ShadowRenderer};
+use super::surface;
+use super::swapchain::Swapchain;
+use super::syncobjects::create_sync_objects;
+use super::touch::{MouseCall, TouchAsMouse};
 use super::uniformdata::{
     engine_uniforms, pack_draw, sampler_sources, SamplerSource, UniformArena, UniformValues,
 };
-use super::math::Mat4;
 use cgmath::SquareMatrix;
 
 /// Our Vulkan app.
@@ -117,7 +117,8 @@ impl App {
         let instance = create_instance(window, &entry, &mut data)?;
         data.surface = surface::create_surface(&instance, window)?;
         pick_physical_device(&instance, &mut data)?;
-        let queue_families = QueueFamilyIndices::get(&instance, data.surface, data.physical_device)?;
+        let queue_families =
+            QueueFamilyIndices::get(&instance, data.surface, data.physical_device)?;
         data.min_uniform_alignment = instance
             .get_physical_device_properties(data.physical_device)
             .limits
@@ -139,11 +140,17 @@ impl App {
             queue: data.graphics_queue,
         };
         data.fallback_texture = Some(GpuImage::upload_rgba(&upload, 1, 1, &[255, 0, 255, 255])?);
-        data.fallback_shadow_map = Some(GpuImage::upload_rgba(&upload, 1, 1, &[255, 255, 255, 255])?);
-        data.shadow_renderer = Some(ShadowRenderer::create(&instance, &device, data.physical_device)?);
+        data.fallback_shadow_map =
+            Some(GpuImage::upload_rgba(&upload, 1, 1, &[255, 255, 255, 255])?);
+        data.shadow_renderer = Some(ShadowRenderer::create(
+            &instance,
+            &device,
+            data.physical_device,
+        )?);
         data.app.on_create()?;
         create_command_buffers(&device, &mut data)?;
-        data.frame_uniforms.resize_with(data.swapchain.swapchain_images.len(), || None);
+        data.frame_uniforms
+            .resize_with(data.swapchain.swapchain_images.len(), || None);
         create_sync_objects(&device, &mut data)?;
         Ok(Self {
             _entry: entry,
@@ -352,7 +359,10 @@ impl App {
         if !removed.is_empty() {
             self.device.device_wait_idle()?;
             for key in removed {
-                gpu.shader_pipelines.remove(&key).unwrap().destroy(&self.device);
+                gpu.shader_pipelines
+                    .remove(&key)
+                    .unwrap()
+                    .destroy(&self.device);
             }
         }
         gpu.failed_pipelines
@@ -430,7 +440,11 @@ impl App {
                         log::error!(
                             "Cannot draw with shader {}{}: {e:#}",
                             shader.get_name().unwrap_or_else(|| item.shader.to_string()),
-                            if key.transparent { " (transparent)" } else { "" }
+                            if key.transparent {
+                                " (transparent)"
+                            } else {
+                                ""
+                            }
                         );
                         gpu.failed_pipelines.insert(key);
                         continue;
@@ -488,7 +502,10 @@ impl App {
             };
             let packed = pack_draw(shader.get_layout(), &values, arena, &mut issues);
             for issue in issues.drain(..) {
-                if gpu.reported_uniform_issues.insert((item.shader, issue.clone())) {
+                if gpu
+                    .reported_uniform_issues
+                    .insert((item.shader, issue.clone()))
+                {
                     log::warn!(
                         "Shader {}: {issue}",
                         shader.get_name().unwrap_or_else(|| item.shader.to_string())
@@ -609,7 +626,10 @@ impl App {
         if !removed.is_empty() {
             self.device.device_wait_idle()?;
             for handle in removed {
-                gpu.gpu_mesh_buffers.remove(&handle).unwrap().destroy(&self.device);
+                gpu.gpu_mesh_buffers
+                    .remove(&handle)
+                    .unwrap()
+                    .destroy(&self.device);
             }
         }
         for buffer in scene.buffers.iter() {
@@ -635,7 +655,10 @@ impl App {
                 .drain()
                 .for_each(|(_, p)| p.destroy(&self.device));
             for handle in removed {
-                gpu.gpu_atlases.remove(&handle).unwrap().destroy(&self.device);
+                gpu.gpu_atlases
+                    .remove(&handle)
+                    .unwrap()
+                    .destroy(&self.device);
             }
         }
         gpu.failed_atlases.retain(|&h| scene.get_atlas(h).is_some());
@@ -727,7 +750,13 @@ impl App {
         stats.collect_time = collect_start.elapsed().as_secs_f32();
         self.report_frame_stats(&stats);
         self.upload_uniforms(image_index, &arena, &mut draws)?;
-        record_command_buffer(&self.device, &self.data, image_index, &shadow_passes, &draws)?;
+        record_command_buffer(
+            &self.device,
+            &self.data,
+            image_index,
+            &shadow_passes,
+            &draws,
+        )?;
 
         let wait_semaphores = &[self.data.image_available_semaphores[self.frame]];
         let wait_stages = &[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
@@ -789,7 +818,9 @@ impl App {
         create_depth_objects(&self.instance, &self.device, &mut self.data)?;
         create_framebuffers(&self.device, &mut self.data)?;
         create_command_buffers(&self.device, &mut self.data)?;
-        self.data.frame_uniforms.resize_with(self.data.swapchain.swapchain_images.len(), || None);
+        self.data
+            .frame_uniforms
+            .resize_with(self.data.swapchain.swapchain_images.len(), || None);
         self.data.images_in_flight.resize(
             self.data.swapchain.swapchain_images.len(),
             vk::Fence::null(),
@@ -1042,9 +1073,12 @@ impl Runner {
             }
             // Touches, on Android, as the mouse (`touch.rs`). Windows sends mouse events for
             // touch screens itself.
-            WindowEvent::Touch(Touch { id, phase, location, .. })
-                if cfg!(target_os = "android") =>
-            {
+            WindowEvent::Touch(Touch {
+                id,
+                phase,
+                location,
+                ..
+            }) if cfg!(target_os = "android") => {
                 let (x, y) = (location.x as f32, location.y as f32);
                 for call in self.touch.touch(id, phase, x, y) {
                     let result = match call {
@@ -1052,10 +1086,12 @@ impl Runner {
                             self.cursor = (x, y);
                             engine.data.app.on_mouse_moved(x, y)
                         }
-                        MouseCall::Button { pressed, x, y } => engine
-                            .data
-                            .app
-                            .on_mouse_button(MouseButton::Left, pressed, x, y),
+                        MouseCall::Button { pressed, x, y } => {
+                            engine
+                                .data
+                                .app
+                                .on_mouse_button(MouseButton::Left, pressed, x, y)
+                        }
                         MouseCall::Left => engine.data.app.on_mouse_left(),
                     };
                     if let Err(e) = result {

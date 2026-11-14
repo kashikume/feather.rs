@@ -123,7 +123,13 @@ impl AnimationDemo {
                     first.trim_end_matches(" in").to_string()
                 }
             };
-            label(&mut scene, &name, (LABELS_END, y), 0.38, HorizontalAlign::Right)?;
+            label(
+                &mut scene,
+                &name,
+                (LABELS_END, y),
+                0.38,
+                HorizontalAlign::Right,
+            )?;
 
             let rail = scene.create_node(None, lanes_node)?;
             scene.node_set_mesh(rail, track)?;
@@ -148,8 +154,13 @@ impl AnimationDemo {
         let header_y = TOP_LANE + 1.1;
         let mut headers = [0; 3];
         for (variant, title) in ["Ease in", "Ease out", "Ease in-out"].iter().enumerate() {
-            headers[variant] =
-                label(&mut scene, title, (0.0, header_y), 0.6, HorizontalAlign::Center)?;
+            headers[variant] = label(
+                &mut scene,
+                title,
+                (0.0, header_y),
+                0.6,
+                HorizontalAlign::Center,
+            )?;
         }
 
         label(

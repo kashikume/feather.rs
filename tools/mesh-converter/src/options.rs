@@ -34,7 +34,11 @@ impl Options {
 
         let mut args = args.iter();
         while let Some(arg) = args.next() {
-            let mut value = || args.next().cloned().ok_or_else(|| format!("missing value for {arg}"));
+            let mut value = || {
+                args.next()
+                    .cloned()
+                    .ok_or_else(|| format!("missing value for {arg}"))
+            };
             match arg.as_str() {
                 "--out-dir" | "-o" => options.out_dir = Some(PathBuf::from(value()?)),
                 "--split" | "-s" => options.settings.split = true,
@@ -52,7 +56,11 @@ impl Options {
                         "f32" => EncodingChoice::F32,
                         "int" => EncodingChoice::Int,
                         "delta" => EncodingChoice::Delta,
-                        v => return Err(format!("invalid --encoding: {v} (auto, f32, int or delta)")),
+                        v => {
+                            return Err(format!(
+                                "invalid --encoding: {v} (auto, f32, int or delta)"
+                            ))
+                        }
                     }
                 }
                 "--max-decimals" => {
@@ -61,7 +69,12 @@ impl Options {
                         .parse()
                         .ok()
                         .filter(|&d| d <= feather_fmesh::MAX_DECIMALS as u32)
-                        .ok_or_else(|| format!("invalid --max-decimals: {v} (0 to {})", feather_fmesh::MAX_DECIMALS))?;
+                        .ok_or_else(|| {
+                            format!(
+                                "invalid --max-decimals: {v} (0 to {})",
+                                feather_fmesh::MAX_DECIMALS
+                            )
+                        })?;
                 }
                 "--flat-normals" => flat = true,
                 "--soft-normals" => soft = true,
@@ -71,13 +84,17 @@ impl Options {
                 "--verbose" | "-v" => options.verbose = true,
                 "--quiet" | "-q" => options.quiet = true,
                 "--help" | "-h" => return Ok(None),
-                _ if arg.starts_with('-') && arg.len() > 1 => return Err(format!("invalid argument: {arg}")),
+                _ if arg.starts_with('-') && arg.len() > 1 => {
+                    return Err(format!("invalid argument: {arg}"))
+                }
                 _ => positional.push(PathBuf::from(arg)),
             }
         }
 
         options.settings.normals = match (flat, soft) {
-            (true, true) => return Err("--flat-normals and --soft-normals can't be used together".into()),
+            (true, true) => {
+                return Err("--flat-normals and --soft-normals can't be used together".into())
+            }
             (true, false) => Normals::Flat,
             (false, true) => Normals::Soft,
             (false, false) => Normals::FromObj,
@@ -130,7 +147,9 @@ impl Options {
         println!("                               - how values are stored: auto the smallest per stream, f32 floats, int fixed-width");
         println!("                                 integers, delta differences as varints. Default: auto.");
         println!(" --max-decimals [n]            - the most decimals a stream may have to be stored as integers. Default: 9.");
-        println!(" --flat-normals                - compute normals: each triangle's own (sharp edges).");
+        println!(
+            " --flat-normals                - compute normals: each triangle's own (sharp edges)."
+        );
         println!(" --soft-normals                - compute normals: averaged around each position (smooth), within smoothing groups.");
         println!(" --no-flip-v                   - keep V as in the OBJ instead of storing 1 - v.");
         println!(" --check                       - read each file back and compare every value with the OBJ.");
@@ -155,7 +174,10 @@ mod tests {
         let options = parse("car.obj").unwrap().unwrap();
         assert_eq!(options.inputs, [PathBuf::from("car.obj")]);
         assert_eq!(options.settings, Settings::default());
-        assert_eq!(options.output_for(Path::new("dir/car.obj")), PathBuf::from("dir/car.fmesh"));
+        assert_eq!(
+            options.output_for(Path::new("dir/car.obj")),
+            PathBuf::from("dir/car.fmesh")
+        );
         assert!(!options.check && !options.stats && !options.verbose && !options.quiet);
     }
 
@@ -176,15 +198,28 @@ mod tests {
             }
         );
         assert!(options.check && options.stats && options.verbose);
-        assert_eq!(options.output_for(Path::new("a.obj")), PathBuf::from("b.fmesh"));
-        assert_eq!(parse("--flat-normals -q a.obj").unwrap().unwrap().settings.normals, Normals::Flat);
+        assert_eq!(
+            options.output_for(Path::new("a.obj")),
+            PathBuf::from("b.fmesh")
+        );
+        assert_eq!(
+            parse("--flat-normals -q a.obj")
+                .unwrap()
+                .unwrap()
+                .settings
+                .normals,
+            Normals::Flat
+        );
     }
 
     #[test]
     fn out_dir() {
         let options = parse("a.obj --out-dir out x/b.obj").unwrap().unwrap();
         assert_eq!(options.inputs.len(), 2);
-        assert_eq!(options.output_for(Path::new("x/b.obj")), PathBuf::from("out/b.fmesh"));
+        assert_eq!(
+            options.output_for(Path::new("x/b.obj")),
+            PathBuf::from("out/b.fmesh")
+        );
     }
 
     #[test]

@@ -56,7 +56,10 @@ impl MeshData {
                 mesh.indices.push(remap[i as usize]);
             }
         }
-        cells.into_iter().map(|(cell, (mesh, _))| (cell, mesh)).collect()
+        cells
+            .into_iter()
+            .map(|(cell, (mesh, _))| (cell, mesh))
+            .collect()
     }
 
     /// A flat quad; corners counter-clockwise seen from the front: bottom left, bottom right,
@@ -477,8 +480,16 @@ mod tests {
     fn split_into_cells_keeps_every_triangle() {
         let mut m = MeshData::default();
         // A box in cell (0, 0), one in cell (1, 0), and a quad in cell (-1, 2).
-        m.walls(Vec3::new(1.0, 1.0, 0.0), Vec3::new(3.0, 3.0, 2.0), Vec2::new(1.0, 1.0));
-        m.walls(Vec3::new(11.0, 1.0, 0.0), Vec3::new(13.0, 3.0, 2.0), Vec2::new(1.0, 1.0));
+        m.walls(
+            Vec3::new(1.0, 1.0, 0.0),
+            Vec3::new(3.0, 3.0, 2.0),
+            Vec2::new(1.0, 1.0),
+        );
+        m.walls(
+            Vec3::new(11.0, 1.0, 0.0),
+            Vec3::new(13.0, 3.0, 2.0),
+            Vec2::new(1.0, 1.0),
+        );
         m.top(Vec2::new(-8.0, 21.0), Vec2::new(-6.0, 23.0), 0.0, 1.0);
         let (vertices, indices) = (m.vertices.clone(), m.indices.clone());
         let cells = m.split_into_cells(Vec2::new(0.0, 0.0), 10.0);
@@ -499,7 +510,10 @@ mod tests {
         };
         let mut split = Vec::new();
         for (_, mesh) in &cells {
-            assert!(mesh.indices.iter().all(|&i| (i as usize) < mesh.vertices.len()));
+            assert!(mesh
+                .indices
+                .iter()
+                .all(|&i| (i as usize) < mesh.vertices.len()));
             split.extend(triangles(&mesh.vertices, &mesh.indices));
         }
         split.sort_by(|a, b| a.partial_cmp(b).unwrap());

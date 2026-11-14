@@ -47,7 +47,11 @@ fn run(app: AndroidApp) -> Result<()> {
     let event_loop = EventLoop::builder().with_android_app(app.clone()).build()?;
     let window = Window::default_attributes().with_title(demo_window_title(0));
     let assets = Box::new(AndroidAssetsProvider::new(&app));
-    App::run(event_loop, window, Box::new(TestApp::with_assets(assets, 0)?))
+    App::run(
+        event_loop,
+        window,
+        Box::new(TestApp::with_assets(assets, 0)?),
+    )
 }
 
 /// `MainActivity.nativeRequestExit()`: back was pressed and the activity is finishing. Ends the

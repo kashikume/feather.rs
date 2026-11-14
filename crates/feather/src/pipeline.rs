@@ -216,12 +216,24 @@ impl ShaderPipeline {
                 .uniform_blocks
                 .iter()
                 .filter(|b| b.set == set)
-                .map(|b| (b.binding, vk::DescriptorType::UNIFORM_BUFFER_DYNAMIC, b.stages));
+                .map(|b| {
+                    (
+                        b.binding,
+                        vk::DescriptorType::UNIFORM_BUFFER_DYNAMIC,
+                        b.stages,
+                    )
+                });
             let samplers = shader_layout
                 .samplers
                 .iter()
                 .filter(|s| s.set == set)
-                .map(|s| (s.binding, vk::DescriptorType::COMBINED_IMAGE_SAMPLER, s.stages));
+                .map(|s| {
+                    (
+                        s.binding,
+                        vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+                        s.stages,
+                    )
+                });
             let bindings: Vec<_> = blocks
                 .chain(samplers)
                 .map(|(binding, descriptor_type, stages)| {
@@ -280,7 +292,13 @@ impl ShaderPipeline {
         if let Some(cached) = self.descriptor_sets.get_mut(&key) {
             if cached.uniform_buffer_id != uniform_buffer_id {
                 // The frame's uniform buffer was replaced (it grew).
-                write_descriptor_sets(device, &self.layout_info, &cached.sets, uniform_buffer, None);
+                write_descriptor_sets(
+                    device,
+                    &self.layout_info,
+                    &cached.sets,
+                    uniform_buffer,
+                    None,
+                );
                 cached.uniform_buffer_id = uniform_buffer_id;
             }
             return Ok(cached.sets.clone());

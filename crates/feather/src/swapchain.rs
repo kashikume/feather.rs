@@ -30,9 +30,10 @@ fn choose_surface_format(formats: &[vk::SurfaceFormatKHR]) -> vk::SurfaceFormatK
     [vk::Format::B8G8R8A8_SRGB, vk::Format::R8G8B8A8_SRGB]
         .iter()
         .find_map(|wanted| {
-            formats.iter().cloned().find(|f| {
-                f.format == *wanted && f.color_space == vk::ColorSpaceKHR::SRGB_NONLINEAR
-            })
+            formats
+                .iter()
+                .cloned()
+                .find(|f| f.format == *wanted && f.color_space == vk::ColorSpaceKHR::SRGB_NONLINEAR)
         })
         .unwrap_or_else(|| formats[0])
 }
@@ -176,7 +177,8 @@ impl Swapchain {
         let surface_format = choose_surface_format(&support.formats);
         let present_mode =
             choose_present_mode(&support.present_modes, !cfg!(target_os = "android"));
-        let composite_alpha = choose_composite_alpha(support.capabilities.supported_composite_alpha);
+        let composite_alpha =
+            choose_composite_alpha(support.capabilities.supported_composite_alpha);
         let pre_transform = choose_pre_transform(&support.capabilities);
         let extent = choose_extent(&support.capabilities, pre_transform, window_size);
         if log {
@@ -292,9 +294,18 @@ mod tests {
         supported_transforms: vk::SurfaceTransformFlagsKHR,
     ) -> vk::SurfaceCapabilitiesKHR {
         vk::SurfaceCapabilitiesKHR {
-            current_extent: vk::Extent2D { width: current.0, height: current.1 },
-            min_image_extent: vk::Extent2D { width: 1, height: 1 },
-            max_image_extent: vk::Extent2D { width: 4096, height: 4096 },
+            current_extent: vk::Extent2D {
+                width: current.0,
+                height: current.1,
+            },
+            min_image_extent: vk::Extent2D {
+                width: 1,
+                height: 1,
+            },
+            max_image_extent: vk::Extent2D {
+                width: 4096,
+                height: 4096,
+            },
             current_transform,
             supported_transforms,
             ..Default::default()
@@ -307,7 +318,10 @@ mod tests {
             format(vk::Format::R8G8B8A8_SRGB),
             format(vk::Format::B8G8R8A8_SRGB),
         ];
-        assert_eq!(choose_surface_format(&formats).format, vk::Format::B8G8R8A8_SRGB);
+        assert_eq!(
+            choose_surface_format(&formats).format,
+            vk::Format::B8G8R8A8_SRGB
+        );
     }
 
     #[test]
@@ -318,20 +332,32 @@ mod tests {
             format(vk::Format::R8G8B8A8_SRGB),
             format(vk::Format::R5G6B5_UNORM_PACK16),
         ];
-        assert_eq!(choose_surface_format(&formats).format, vk::Format::R8G8B8A8_SRGB);
+        assert_eq!(
+            choose_surface_format(&formats).format,
+            vk::Format::R8G8B8A8_SRGB
+        );
     }
 
     #[test]
     fn first_format_without_srgb() {
         let formats = [format(vk::Format::R8G8B8A8_UNORM)];
-        assert_eq!(choose_surface_format(&formats).format, vk::Format::R8G8B8A8_UNORM);
+        assert_eq!(
+            choose_surface_format(&formats).format,
+            vk::Format::R8G8B8A8_UNORM
+        );
     }
 
     #[test]
     fn mailbox_when_uncapped_and_available() {
         let modes = [vk::PresentModeKHR::FIFO, vk::PresentModeKHR::MAILBOX];
-        assert_eq!(choose_present_mode(&modes, true), vk::PresentModeKHR::MAILBOX);
-        assert_eq!(choose_present_mode(&modes[..1], true), vk::PresentModeKHR::FIFO);
+        assert_eq!(
+            choose_present_mode(&modes, true),
+            vk::PresentModeKHR::MAILBOX
+        );
+        assert_eq!(
+            choose_present_mode(&modes[..1], true),
+            vk::PresentModeKHR::FIFO
+        );
     }
 
     #[test]
@@ -344,7 +370,10 @@ mod tests {
     #[test]
     fn composite_alpha_prefers_opaque_then_inherit() {
         let all = vk::CompositeAlphaFlagsKHR::OPAQUE | vk::CompositeAlphaFlagsKHR::INHERIT;
-        assert_eq!(choose_composite_alpha(all), vk::CompositeAlphaFlagsKHR::OPAQUE);
+        assert_eq!(
+            choose_composite_alpha(all),
+            vk::CompositeAlphaFlagsKHR::OPAQUE
+        );
         assert_eq!(
             choose_composite_alpha(vk::CompositeAlphaFlagsKHR::INHERIT),
             vk::CompositeAlphaFlagsKHR::INHERIT
@@ -358,13 +387,19 @@ mod tests {
             vk::SurfaceTransformFlagsKHR::ROTATE_90,
             vk::SurfaceTransformFlagsKHR::IDENTITY | vk::SurfaceTransformFlagsKHR::ROTATE_90,
         );
-        assert_eq!(choose_pre_transform(&rotated), vk::SurfaceTransformFlagsKHR::IDENTITY);
+        assert_eq!(
+            choose_pre_transform(&rotated),
+            vk::SurfaceTransformFlagsKHR::IDENTITY
+        );
         let fixed = capabilities(
             (1080, 2400),
             vk::SurfaceTransformFlagsKHR::ROTATE_90,
             vk::SurfaceTransformFlagsKHR::ROTATE_90,
         );
-        assert_eq!(choose_pre_transform(&fixed), vk::SurfaceTransformFlagsKHR::ROTATE_90);
+        assert_eq!(
+            choose_pre_transform(&fixed),
+            vk::SurfaceTransformFlagsKHR::ROTATE_90
+        );
     }
 
     #[test]

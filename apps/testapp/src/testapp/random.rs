@@ -49,7 +49,9 @@ mod tests {
     #[test]
     fn range_stays_inside() {
         let mut random = Random::from_seed(7);
-        assert!((0..1000).map(|_| random.range(-2.0, 3.0)).all(|v| (-2.0..3.0).contains(&v)));
+        assert!((0..1000)
+            .map(|_| random.range(-2.0, 3.0))
+            .all(|v| (-2.0..3.0).contains(&v)));
     }
 
     #[test]

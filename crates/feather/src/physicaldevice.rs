@@ -33,7 +33,9 @@ pub struct DeviceFeatures {
 impl DeviceFeatures {
     pub unsafe fn get(instance: &Instance, physical_device: vk::PhysicalDevice) -> Self {
         let features = instance.get_physical_device_features(physical_device);
-        let limits = instance.get_physical_device_properties(physical_device).limits;
+        let limits = instance
+            .get_physical_device_properties(physical_device)
+            .limits;
         Self {
             sampler_anisotropy: features.sampler_anisotropy == vk::TRUE,
             max_sampler_anisotropy: limits.max_sampler_anisotropy,
@@ -62,8 +64,8 @@ pub unsafe fn pick_physical_device(instance: &Instance, data: &mut AppData) -> R
             data.msaa_samples = choose_msaa_samples(instance, data, settings.max_msaa_samples);
             data.features = DeviceFeatures::get(instance, physical_device);
             // Sample-rate shading only when the app asks for it (and there is MSAA to use it).
-            data.features.sample_rate_shading &= settings.sample_shading
-                && data.msaa_samples != vk::SampleCountFlags::_1;
+            data.features.sample_rate_shading &=
+                settings.sample_shading && data.msaa_samples != vk::SampleCountFlags::_1;
             info!("MSAA samples: {:?}", data.msaa_samples);
             info!("Device features: {:?}", data.features);
             return Ok(());

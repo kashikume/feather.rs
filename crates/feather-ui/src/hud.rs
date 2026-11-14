@@ -55,7 +55,11 @@ impl Store {
     }
 
     fn get_mut(&mut self, id: WidgetId) -> Option<&mut dyn Widget> {
-        self.slots.get_mut(id.index())?.as_mut()?.widget.as_deref_mut()
+        self.slots
+            .get_mut(id.index())?
+            .as_mut()?
+            .widget
+            .as_deref_mut()
     }
 
     fn node(&self, id: WidgetId) -> Option<usize> {

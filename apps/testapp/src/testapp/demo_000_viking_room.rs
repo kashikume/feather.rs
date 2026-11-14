@@ -20,10 +20,7 @@ impl VikingRoomDemo {
             .find_node("Room")
             .ok_or_else(|| anyhow!("the scene has no node `Room`"))?;
 
-        Ok(Self {
-            scene,
-            room_node,
-        })
+        Ok(Self { scene, room_node })
     }
 }
 

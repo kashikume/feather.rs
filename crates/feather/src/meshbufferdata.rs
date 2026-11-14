@@ -1,4 +1,4 @@
- pub(crate) struct MeshBufferData {
+pub(crate) struct MeshBufferData {
     pub buffer_handle: usize,
     pub vertex_begin_index: usize,
     pub vertex_size: usize,
@@ -7,13 +7,19 @@
 }
 
 impl MeshBufferData {
-    pub fn new(buffer_handle: usize, vertex_begin_index: usize, vertex_size: usize, index_begin_index: usize, index_size: usize) -> Self {
-        Self { 
-            buffer_handle, 
-            vertex_begin_index, 
-            vertex_size, 
-            index_begin_index, 
-            index_size 
+    pub fn new(
+        buffer_handle: usize,
+        vertex_begin_index: usize,
+        vertex_size: usize,
+        index_begin_index: usize,
+        index_size: usize,
+    ) -> Self {
+        Self {
+            buffer_handle,
+            vertex_begin_index,
+            vertex_size,
+            index_begin_index,
+            index_size,
         }
     }
 

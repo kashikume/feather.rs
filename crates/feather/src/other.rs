@@ -11,7 +11,13 @@ pub unsafe fn get_memory_type_index(
     properties: vk::MemoryPropertyFlags,
     requirements: vk::MemoryRequirements,
 ) -> Result<u32> {
-    get_memory_type_index_preferring(instance, physical_device, properties, properties, requirements)
+    get_memory_type_index_preferring(
+        instance,
+        physical_device,
+        properties,
+        properties,
+        requirements,
+    )
 }
 
 /// A memory type for `requirements` with the `preferred` properties if the device has one,

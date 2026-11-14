@@ -4,9 +4,18 @@ use super::*;
 /// One triangle, as in `doc/fmesh-format.md`'s example.
 fn triangle() -> MeshData {
     MeshData {
-        positions: Stream::Fixed { values: vec![0, 0, 0, 10, 0, 0, 0, 10, 0], decimals: 1 },
-        normals: Stream::Fixed { values: vec![0, 0, 1, 0, 0, 1, 0, 0, 1], decimals: 0 },
-        uvs: Stream::Fixed { values: vec![0, 1, 1, 1, 0, 0], decimals: 0 },
+        positions: Stream::Fixed {
+            values: vec![0, 0, 0, 10, 0, 0, 0, 10, 0],
+            decimals: 1,
+        },
+        normals: Stream::Fixed {
+            values: vec![0, 0, 1, 0, 0, 1, 0, 0, 1],
+            decimals: 0,
+        },
+        uvs: Stream::Fixed {
+            values: vec![0, 1, 1, 1, 0, 0],
+            decimals: 0,
+        },
         indices: vec![0, 1, 2],
     }
 }
@@ -23,15 +32,28 @@ fn big_mesh(vertex_count: usize) -> MeshData {
     }
     let indices = (0..vertex_count as u32 / 3 * 3).rev().collect();
     MeshData {
-        positions: Stream::Fixed { values: positions, decimals: 3 },
-        normals: Stream::Fixed { values: normals, decimals: 3 },
-        uvs: Stream::Fixed { values: uvs, decimals: 6 },
+        positions: Stream::Fixed {
+            values: positions,
+            decimals: 3,
+        },
+        normals: Stream::Fixed {
+            values: normals,
+            decimals: 3,
+        },
+        uvs: Stream::Fixed {
+            values: uvs,
+            decimals: 6,
+        },
         indices,
     }
 }
 
 fn options(encoding: EncodingChoice, compression: Compression) -> WriteOptions {
-    WriteOptions { encoding, compression, ..WriteOptions::default() }
+    WriteOptions {
+        encoding,
+        compression,
+        ..WriteOptions::default()
+    }
 }
 
 fn round_trip(mesh: &MeshData, options: &WriteOptions) -> Fmesh {
@@ -48,7 +70,12 @@ fn round_trip(mesh: &MeshData, options: &WriteOptions) -> Fmesh {
 #[test]
 fn round_trips_with_every_encoding_and_compression() {
     for mesh in [triangle(), big_mesh(70_000)] {
-        for encoding in [EncodingChoice::Auto, EncodingChoice::F32, EncodingChoice::Int, EncodingChoice::Delta] {
+        for encoding in [
+            EncodingChoice::Auto,
+            EncodingChoice::F32,
+            EncodingChoice::Int,
+            EncodingChoice::Delta,
+        ] {
             for compression in [Compression::Auto, Compression::On, Compression::Off] {
                 round_trip(&mesh, &options(encoding, compression));
             }
@@ -59,18 +86,39 @@ fn round_trips_with_every_encoding_and_compression() {
 #[test]
 fn picks_encodings() {
     let read = round_trip(&triangle(), &options(EncodingChoice::Int, Compression::Off));
-    assert_eq!(read.header.positions, StreamDescriptor { encoding: Encoding::I8, decimals: 1 });
+    assert_eq!(
+        read.header.positions,
+        StreamDescriptor {
+            encoding: Encoding::I8,
+            decimals: 1
+        }
+    );
     assert_eq!(read.header.indices.encoding, Encoding::U16);
 
-    let read = round_trip(&big_mesh(70_000), &options(EncodingChoice::Int, Compression::Off));
+    let read = round_trip(
+        &big_mesh(70_000),
+        &options(EncodingChoice::Int, Compression::Off),
+    );
     assert_eq!(read.header.positions.encoding, Encoding::I32);
     assert_eq!(read.header.normals.encoding, Encoding::I16);
     assert_eq!(read.header.indices.encoding, Encoding::U32);
 
-    let read = round_trip(&big_mesh(100), &options(EncodingChoice::F32, Compression::Off));
-    assert_eq!(read.header.positions, StreamDescriptor { encoding: Encoding::F32, decimals: 0 });
+    let read = round_trip(
+        &big_mesh(100),
+        &options(EncodingChoice::F32, Compression::Off),
+    );
+    assert_eq!(
+        read.header.positions,
+        StreamDescriptor {
+            encoding: Encoding::F32,
+            decimals: 0
+        }
+    );
 
-    let read = round_trip(&big_mesh(100), &options(EncodingChoice::Delta, Compression::Off));
+    let read = round_trip(
+        &big_mesh(100),
+        &options(EncodingChoice::Delta, Compression::Off),
+    );
     assert_eq!(read.header.uvs.encoding, Encoding::Delta);
     assert_eq!(read.header.indices.encoding, Encoding::Delta);
 }
@@ -78,7 +126,12 @@ fn picks_encodings() {
 #[test]
 fn auto_takes_the_smaller_encoding() {
     let mesh = big_mesh(3000);
-    let size = |encoding| write(&mesh, &options(encoding, Compression::Off)).unwrap().header.data_size;
+    let size = |encoding| {
+        write(&mesh, &options(encoding, Compression::Off))
+            .unwrap()
+            .header
+            .data_size
+    };
     let auto = size(EncodingChoice::Auto);
     assert!(auto <= size(EncodingChoice::Int));
     assert!(auto <= size(EncodingChoice::Delta));
@@ -87,7 +140,17 @@ fn auto_takes_the_smaller_encoding() {
 #[test]
 fn float_streams_stay_float() {
     let mut mesh = triangle();
-    mesh.positions = Stream::Float(vec![0.1, 0.2, 0.3, 1e30, -0.5, 0.0, f32::MIN_POSITIVE, 2.0, 3.0]);
+    mesh.positions = Stream::Float(vec![
+        0.1,
+        0.2,
+        0.3,
+        1e30,
+        -0.5,
+        0.0,
+        f32::MIN_POSITIVE,
+        2.0,
+        3.0,
+    ]);
     let read = round_trip(&mesh, &options(EncodingChoice::Int, Compression::Off));
     assert_eq!(read.header.positions.encoding, Encoding::F32);
     assert_eq!(read.header.bounds_max, [1e30, 2.0, 3.0]);
@@ -103,7 +166,10 @@ fn bounds_cover_the_positions() {
 #[test]
 fn empty_mesh() {
     let mesh = MeshData {
-        positions: Stream::Fixed { values: vec![], decimals: 0 },
+        positions: Stream::Fixed {
+            values: vec![],
+            decimals: 0,
+        },
         normals: Stream::Float(vec![]),
         uvs: Stream::Float(vec![]),
         indices: vec![],
@@ -115,7 +181,9 @@ fn empty_mesh() {
 #[test]
 fn compression_auto_keeps_only_worthwhile_compression() {
     // Repetitive data compresses well.
-    let header = write(&big_mesh(30_000), &WriteOptions::default()).unwrap().header;
+    let header = write(&big_mesh(30_000), &WriteOptions::default())
+        .unwrap()
+        .header;
     assert!(header.compressed());
     // Random floats don't.
     let mut seed = 12345u32;
@@ -177,7 +245,9 @@ fn varints() {
 }
 
 fn written_triangle() -> Vec<u8> {
-    write(&triangle(), &options(EncodingChoice::Int, Compression::Off)).unwrap().bytes
+    write(&triangle(), &options(EncodingChoice::Int, Compression::Off))
+        .unwrap()
+        .bytes
 }
 
 #[test]
@@ -192,7 +262,13 @@ fn rejects_wrong_magic() {
 fn rejects_unknown_version() {
     let mut bytes = written_triangle();
     bytes[8] = 2;
-    assert_eq!(read(&bytes), Err(FmeshError::UnsupportedVersion { found: 2, supported: 1 }));
+    assert_eq!(
+        read(&bytes),
+        Err(FmeshError::UnsupportedVersion {
+            found: 2,
+            supported: 1
+        })
+    );
 }
 
 #[test]
@@ -206,10 +282,22 @@ fn rejects_unknown_flags() {
 fn rejects_bad_encodings() {
     let mut bytes = written_triangle();
     bytes[24] = Encoding::U16.code(); // positions as indices
-    assert!(matches!(read(&bytes), Err(FmeshError::BadEncoding { stream: "positions", .. })));
+    assert!(matches!(
+        read(&bytes),
+        Err(FmeshError::BadEncoding {
+            stream: "positions",
+            ..
+        })
+    ));
     let mut bytes = written_triangle();
     bytes[36] = Encoding::I16.code(); // indices as a vertex stream
-    assert!(matches!(read(&bytes), Err(FmeshError::BadEncoding { stream: "indices", .. })));
+    assert!(matches!(
+        read(&bytes),
+        Err(FmeshError::BadEncoding {
+            stream: "indices",
+            ..
+        })
+    ));
     let mut bytes = written_triangle();
     bytes[25] = MAX_DECIMALS + 1;
     assert!(matches!(read(&bytes), Err(FmeshError::BadDecimals { .. })));
@@ -219,7 +307,10 @@ fn rejects_bad_encodings() {
 fn rejects_truncated_files() {
     let bytes = written_triangle();
     for len in [0, 4, 11, 40, HEADER_SIZE, bytes.len() - 1] {
-        assert!(matches!(read(&bytes[..len]), Err(FmeshError::Truncated(_))), "{len} bytes");
+        assert!(
+            matches!(read(&bytes[..len]), Err(FmeshError::Truncated(_))),
+            "{len} bytes"
+        );
     }
 }
 
@@ -236,7 +327,12 @@ fn rejects_bad_checksum() {
     *bytes.last_mut().unwrap() ^= 1;
     assert!(matches!(read(&bytes), Err(FmeshError::Checksum { .. })));
 
-    let mut bytes = write(&big_mesh(30_000), &options(EncodingChoice::Auto, Compression::On)).unwrap().bytes;
+    let mut bytes = write(
+        &big_mesh(30_000),
+        &options(EncodingChoice::Auto, Compression::On),
+    )
+    .unwrap()
+    .bytes;
     bytes[HEADER_SIZE + 100] ^= 0x10;
     assert!(matches!(read(&bytes), Err(FmeshError::Checksum { .. })));
 }
@@ -255,7 +351,10 @@ fn rejects_impossible_counts() {
 fn rejects_indices_past_the_vertices() {
     let mut mesh = triangle();
     mesh.indices = vec![0, 1, 3];
-    assert!(matches!(write(&mesh, &WriteOptions::default()), Err(FmeshError::Invalid(_))));
+    assert!(matches!(
+        write(&mesh, &WriteOptions::default()),
+        Err(FmeshError::Invalid(_))
+    ));
 
     // The same in a file: patch the last index (u16) to 3 and fix the checksum.
     let mut bytes = written_triangle();
@@ -270,7 +369,10 @@ fn rejects_indices_past_the_vertices() {
 fn rejects_mismatched_stream_lengths() {
     let mut mesh = triangle();
     mesh.uvs = Stream::Float(vec![0.0; 4]);
-    assert!(matches!(write(&mesh, &WriteOptions::default()), Err(FmeshError::Invalid(_))));
+    assert!(matches!(
+        write(&mesh, &WriteOptions::default()),
+        Err(FmeshError::Invalid(_))
+    ));
 }
 
 #[test]
@@ -295,9 +397,16 @@ fn example_in_the_documentation() {
     let end = doc.find("<!-- example:end -->").unwrap();
     let mut bytes = Vec::new();
     let mut offset = 0;
-    for row in doc[start..end].lines().filter(|l| l.starts_with("| ") && !l.starts_with("| Offset")) {
+    for row in doc[start..end]
+        .lines()
+        .filter(|l| l.starts_with("| ") && !l.starts_with("| Offset"))
+    {
         let columns: Vec<&str> = row.split('|').map(str::trim).collect();
-        assert_eq!(columns[1].parse::<usize>().unwrap(), offset, "offset of row {row}");
+        assert_eq!(
+            columns[1].parse::<usize>().unwrap(),
+            offset,
+            "offset of row {row}"
+        );
         for byte in columns[2].trim_matches('`').split(' ') {
             bytes.push(u8::from_str_radix(byte, 16).unwrap());
         }
@@ -306,7 +415,10 @@ fn example_in_the_documentation() {
     assert_eq!(bytes, include_bytes!("../testdata/triangle.fmesh"));
 
     let mesh = read(&bytes).unwrap();
-    assert_eq!(mesh.positions, [0.0, 0.0, 0.0, 1.5, 0.0, 0.0, 0.0, 1.25, 0.0]);
+    assert_eq!(
+        mesh.positions,
+        [0.0, 0.0, 0.0, 1.5, 0.0, 0.0, 0.0, 1.25, 0.0]
+    );
     assert_eq!(mesh.normals, [0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0]);
     assert_eq!(mesh.uvs, [0.0, 1.0, 1.0, 1.0, 0.0, 0.0]);
     assert_eq!(mesh.indices, [0, 1, 2]);

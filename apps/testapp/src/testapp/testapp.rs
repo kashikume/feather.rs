@@ -70,7 +70,13 @@ pub trait Demo {
     fn on_mouse_left(&mut self) -> Result<()> {
         Ok(())
     }
-    fn on_mouse_button(&mut self, _button: MouseButton, _pressed: bool, _x: f32, _y: f32) -> Result<()> {
+    fn on_mouse_button(
+        &mut self,
+        _button: MouseButton,
+        _pressed: bool,
+        _x: f32,
+        _y: f32,
+    ) -> Result<()> {
         Ok(())
     }
     fn on_mouse_wheel(&mut self, _delta_x: f32, _delta_y: f32, _x: f32, _y: f32) -> Result<()> {
@@ -263,7 +269,13 @@ impl FeatherApp for TestApp {
 
     /// The left button goes to the HUD first; the others, and what the HUD doesn't take, to
     /// the demo. Then the HUD's buttons switch demos.
-    fn on_mouse_button(&mut self, button: MouseButton, pressed: bool, x: f32, y: f32) -> Result<()> {
+    fn on_mouse_button(
+        &mut self,
+        button: MouseButton,
+        pressed: bool,
+        x: f32,
+        y: f32,
+    ) -> Result<()> {
         let taken = button == MouseButton::Left && self.hud.mouse_button(pressed, x, y)?;
         if !taken {
             self.demo.on_mouse_button(button, pressed, x, y)?;
@@ -438,7 +450,10 @@ mod tests {
 
     #[test]
     fn window_title_names_the_demo() {
-        assert_eq!(demo_window_title(0), "Feather development app - 0 Viking room");
+        assert_eq!(
+            demo_window_title(0),
+            "Feather development app - 0 Viking room"
+        );
         assert_eq!(
             demo_window_title(6),
             "Feather development app - 6 Bouncing balls"
@@ -482,7 +497,9 @@ mod tests {
         let scene = demo.scene();
         scene.update_nodes();
 
-        let root = scene.get_node(scene.find_node("Scene root").unwrap()).unwrap();
+        let root = scene
+            .get_node(scene.find_node("Scene root").unwrap())
+            .unwrap();
         let light = feather::uniform::UniformValue::Vec3(feather::math::Vec3::new(1.0, -0.5, 2.0));
         assert_eq!(root.uniforms().get("light"), Some(&light));
 
@@ -533,7 +550,10 @@ mod tests {
 
         // The moon follows the globe's path and stays at the same distance from it.
         let moon = scene.get_node(scene.find_node("Moon").unwrap()).unwrap();
-        assert_eq!(moon.dynamic_uniforms().get("light"), globe.dynamic_uniforms().get("light"));
+        assert_eq!(
+            moon.dynamic_uniforms().get("light"),
+            globe.dynamic_uniforms().get("light")
+        );
         let centre = |node: &feather::node::Node| {
             let m = node.get_global_transform().unwrap();
             feather::math::Vec3::new(m.w.x, m.w.y, m.w.z)
@@ -585,10 +605,15 @@ mod tests {
         assert_eq!(scene.atlases.iter().count(), 0);
 
         // The balls move.
-        let first = scene.get_node(*balls.get_children().iter().next().unwrap()).unwrap();
+        let first = scene
+            .get_node(*balls.get_children().iter().next().unwrap())
+            .unwrap();
         let (handle, before) = (first.get_handle(), first.get_transform());
         demo.update(0.5).unwrap();
-        assert_ne!(demo.scene().get_node(handle).unwrap().get_transform(), before);
+        assert_ne!(
+            demo.scene().get_node(handle).unwrap().get_transform(),
+            before
+        );
     }
 
     #[test]
@@ -604,7 +629,10 @@ mod tests {
             let vase = scene.get_node(vase).unwrap();
             meshes.push(vase.get_mesh().unwrap().to_string());
             colours.push(format!("{:?}", vase.uniforms().get("color").unwrap()));
-            scales.push(format!("{:.3}", vase.get_transform().x.x.hypot(vase.get_transform().x.y)));
+            scales.push(format!(
+                "{:.3}",
+                vase.get_transform().x.x.hypot(vase.get_transform().x.y)
+            ));
             let material = scene.get_material(vase.get_material().unwrap()).unwrap();
             let glass = material.get_name() == Some("Glass".to_string());
             assert_eq!(vase.is_transparent(), glass, "{:?}", vase.get_name());
@@ -617,7 +645,10 @@ mod tests {
         assert_eq!(meshes.len(), 3, "not 3 shapes");
         assert_eq!(colours.len(), 12, "colours are not all different");
         assert!(scales.len() >= 6, "too few sizes: {scales:?}");
-        assert!((3..=9).contains(&transparent), "{transparent} transparent vases");
+        assert!(
+            (3..=9).contains(&transparent),
+            "{transparent} transparent vases"
+        );
 
         // Each shape is a closed vase of height 1 standing on z = 0.
         for name in ["Classic", "Bottle", "Urn"] {
@@ -629,7 +660,10 @@ mod tests {
         let turntable = scene.find_node("Turntable").unwrap();
         demo.update(2.0).unwrap();
         let turned = demo.scene().get_node(turntable).unwrap().get_transform();
-        assert_ne!(turned, <feather::math::Mat4 as cgmath::SquareMatrix>::identity());
+        assert_ne!(
+            turned,
+            <feather::math::Mat4 as cgmath::SquareMatrix>::identity()
+        );
     }
 
     /// World position of the origin of node `name`, after `update_nodes`.
@@ -690,7 +724,10 @@ mod tests {
         let next = node_position(demo.scene(), "Walker");
         assert!((later - start).magnitude() > 0.5);
         let scene = demo.scene();
-        let m = scene.get_node(scene.find_node("Walker").unwrap()).unwrap().get_transform();
+        let m = scene
+            .get_node(scene.find_node("Walker").unwrap())
+            .unwrap()
+            .get_transform();
         let facing = feather::math::Vec3::new(m.y.x, m.y.y, m.y.z);
         assert!((next - later).normalize().dot(facing) > 0.99);
     }
@@ -704,7 +741,10 @@ mod tests {
             let scene = demo.scene();
             for leg in ["L1", "L2", "L3", "L4", "R1", "R2", "R3", "R4"] {
                 for bone in ["Hip", "Femur", "Knee", "Ankle"] {
-                    assert!(scene.find_node(&format!("{leg}{bone}")).is_some(), "{leg}{bone}");
+                    assert!(
+                        scene.find_node(&format!("{leg}{bone}")).is_some(),
+                        "{leg}{bone}"
+                    );
                 }
             }
             let atlas = scene.find_atlas("Spider").unwrap();
@@ -738,17 +778,32 @@ mod tests {
                 .filter(|(_, &z)| z < 0.06)
                 .map(|(l, _)| *l)
                 .collect();
-            assert!(down.len() >= 3, "step {step}: only {down:?} on the floor: {tips:?}");
-            assert!(down.iter().any(|l| l.starts_with('L')), "step {step}: {tips:?}");
-            assert!(down.iter().any(|l| l.starts_with('R')), "step {step}: {tips:?}");
-            assert!(!(tips[0] > 0.08 && tips[4] > 0.08), "step {step}: both front legs up");
+            assert!(
+                down.len() >= 3,
+                "step {step}: only {down:?} on the floor: {tips:?}"
+            );
+            assert!(
+                down.iter().any(|l| l.starts_with('L')),
+                "step {step}: {tips:?}"
+            );
+            assert!(
+                down.iter().any(|l| l.starts_with('R')),
+                "step {step}: {tips:?}"
+            );
+            assert!(
+                !(tips[0] > 0.08 && tips[4] > 0.08),
+                "step {step}: both front legs up"
+            );
             for (up, &z) in lifted.iter_mut().zip(&tips) {
                 *up |= z > 0.08;
             }
             // Feet never go far into the floor.
             assert!(tips.iter().all(|&z| z > -0.05), "step {step}: {tips:?}");
         }
-        assert!(lifted.iter().all(|&up| up), "not every leg lifts: {lifted:?}");
+        assert!(
+            lifted.iter().all(|&up| up),
+            "not every leg lifts: {lifted:?}"
+        );
 
         // It moves along the circle.
         let position = |demo: &mut Box<dyn Demo>| {
@@ -766,7 +821,6 @@ mod tests {
     /// Checks that `Plates` holds a plate per texture of atlas `Plates`, each with its own
     /// material showing its own texture, drawn with `shader`.
     fn check_plates(scene: &Scene, shader: &str) {
-
         let atlas_handle = scene.find_atlas("Plates").unwrap();
         let atlas = scene.get_atlas(atlas_handle).unwrap();
         let names = atlas.get_texture_names();
@@ -792,7 +846,9 @@ mod tests {
         rects.dedup();
         assert_eq!(rects.len(), 16);
 
-        let shader = scene.get_shader(scene.find_shader(shader).unwrap()).unwrap();
+        let shader = scene
+            .get_shader(scene.find_shader(shader).unwrap())
+            .unwrap();
         assert_eq!(shader.get_uniform_umin_name(), Some("umin"));
         assert_eq!(shader.get_uniform_vmax_name(), Some("vmax"));
     }
@@ -807,7 +863,10 @@ mod tests {
         let plate = scene.find_node("plate_07").unwrap();
         let before = scene.get_node(plate).unwrap().get_transform();
         demo.update(3.0).unwrap();
-        assert_eq!(demo.scene().get_node(plate).unwrap().get_transform(), before);
+        assert_eq!(
+            demo.scene().get_node(plate).unwrap().get_transform(),
+            before
+        );
     }
 
     #[test]
@@ -815,7 +874,11 @@ mod tests {
         let mut demo = demo(3);
         let scene = demo.scene();
         check_plates(scene, "Waving");
-        for name in scene.get_atlas(scene.find_atlas("Plates").unwrap()).unwrap().get_texture_names() {
+        for name in scene
+            .get_atlas(scene.find_atlas("Plates").unwrap())
+            .unwrap()
+            .get_texture_names()
+        {
             let node = scene.get_node(scene.find_node(name).unwrap()).unwrap();
             for uniform in ["phase", "speed", "strength"] {
                 assert!(node.uniforms().contains(uniform), "{name}: {uniform}");
@@ -829,7 +892,9 @@ mod tests {
         demo.update(2.5).unwrap();
         let scene = demo.scene();
         scene.update_nodes();
-        let plate = scene.get_node(scene.find_node("plate_07").unwrap()).unwrap();
+        let plate = scene
+            .get_node(scene.find_node("plate_07").unwrap())
+            .unwrap();
         assert_eq!(
             plate.dynamic_uniforms().get("time"),
             Some(&feather::uniform::UniformValue::Float(2.5))
@@ -859,11 +924,22 @@ mod tests {
         }
 
         // The wave has a node per letter, sharing one mesh, each in its own colour and moving.
-        let letters: Vec<usize> = scene.get_node(wave).unwrap().get_children().iter().copied().collect();
-        assert_eq!(letters.len(), "Anodeperletter:eachonemovesonitsown".chars().count());
+        let letters: Vec<usize> = scene
+            .get_node(wave)
+            .unwrap()
+            .get_children()
+            .iter()
+            .copied()
+            .collect();
+        assert_eq!(
+            letters.len(),
+            "Anodeperletter:eachonemovesonitsown".chars().count()
+        );
         assert_eq!(scene.get_node(wave).unwrap().get_mesh(), None);
-        let meshes: std::collections::HashSet<_> =
-            letters.iter().map(|&l| scene.get_node(l).unwrap().get_mesh().unwrap()).collect();
+        let meshes: std::collections::HashSet<_> = letters
+            .iter()
+            .map(|&l| scene.get_node(l).unwrap().get_mesh().unwrap())
+            .collect();
         assert_eq!(meshes.len(), 1);
         let colours: std::collections::HashSet<String> = letters
             .iter()
@@ -872,11 +948,19 @@ mod tests {
         assert!(colours.len() > 10, "{} colours", colours.len());
         let before = scene.get_node(letters[0]).unwrap().get_transform();
         demo.update(0.3).unwrap();
-        assert_ne!(demo.scene().get_node(letters[0]).unwrap().get_transform(), before);
+        assert_ne!(
+            demo.scene().get_node(letters[0]).unwrap().get_transform(),
+            before
+        );
         let scene = demo.scene();
-        let floor_text = scene.get_node(scene.find_node("Floor text").unwrap()).unwrap();
+        let floor_text = scene
+            .get_node(scene.find_node("Floor text").unwrap())
+            .unwrap();
         let floor_mesh = scene.get_mesh(floor_text.get_mesh().unwrap()).unwrap();
-        assert!(floor_mesh.get_vertices().iter().all(|v| v.pos.y == 0.0), "not in the XZ plane");
+        assert!(
+            floor_mesh.get_vertices().iter().all(|v| v.pos.y == 0.0),
+            "not in the XZ plane"
+        );
 
         // The clock's mesh is replaced when its text changes, and the old one removed.
         let clock = scene.find_node("Clock").unwrap();
@@ -891,7 +975,10 @@ mod tests {
         let turntable = demo.scene().find_node("Turntable").unwrap();
         let turned = demo.scene().get_node(turntable).unwrap().get_transform();
         demo.update(2.0).unwrap();
-        assert_ne!(demo.scene().get_node(turntable).unwrap().get_transform(), turned);
+        assert_ne!(
+            demo.scene().get_node(turntable).unwrap().get_transform(),
+            turned
+        );
     }
 
     #[test]
@@ -925,7 +1012,11 @@ mod tests {
                 scene.meshes.iter().count(),
                 scene.buffers.iter().count(),
             );
-            most = (most.0.max(counts.0), most.1.max(counts.1), most.2.max(counts.2));
+            most = (
+                most.0.max(counts.0),
+                most.1.max(counts.1),
+                most.2.max(counts.2),
+            );
         }
         let names = episodes(demo.scene());
         assert!(!names.contains(&"Episode 1".to_string()), "{names:?}");
@@ -957,24 +1048,42 @@ mod tests {
         // The right-hand group follows the window's width.
         demo.update(0.0).unwrap();
         let right = demo.scene_at(1).find_node("Right").unwrap();
-        let x = |demo: &mut Box<dyn Demo>| demo.scene_at(1).get_node(right).unwrap().get_transform().w.x;
+        let x = |demo: &mut Box<dyn Demo>| {
+            demo.scene_at(1)
+                .get_node(right)
+                .unwrap()
+                .get_transform()
+                .w
+                .x
+        };
         assert_eq!(x(&mut demo), 1024.0 - 20.0);
-        demo.scene_at(1).active_camera_mut().unwrap().set_screen_dimention(1536, 768);
+        demo.scene_at(1)
+            .active_camera_mut()
+            .unwrap()
+            .set_screen_dimention(1536, 768);
         demo.update(0.1).unwrap();
         assert_eq!(x(&mut demo), 1536.0 - 20.0);
 
         // Scene 0 is demo 0's room, spinning.
         let room_node = demo.scene_at(0).find_node("Room").unwrap();
-        let before = demo.scene_at(0).get_node(room_node).unwrap().get_transform();
+        let before = demo
+            .scene_at(0)
+            .get_node(room_node)
+            .unwrap()
+            .get_transform();
         demo.update(5.0).unwrap();
-        assert_ne!(demo.scene_at(0).get_node(room_node).unwrap().get_transform(), before);
+        assert_ne!(
+            demo.scene_at(0)
+                .get_node(room_node)
+                .unwrap()
+                .get_transform(),
+            before
+        );
     }
 
     #[test]
     fn overlay_demo_slides_and_fades_its_panels_in() {
-        use super::super::demo_012_overlay::{
-            INTRO_DURATION, INTRO_OFFSET, INTRO_RIGHT_DELAY,
-        };
+        use super::super::demo_012_overlay::{INTRO_DURATION, INTRO_OFFSET, INTRO_RIGHT_DELAY};
         let mut demo = demo(12);
         let overlay = demo.scene_at(1);
         let node = |scene: &Scene, name: &str| scene.find_node(name).unwrap();
@@ -985,7 +1094,8 @@ mod tests {
             Some(feather::uniform::UniformValue::Vec4(c)) => c.w,
             other => panic!("{other:?}"),
         };
-        let opacity = |scene: &Scene| match scene.get_node(image).unwrap().uniforms().get("opacity") {
+        let opacity = |scene: &Scene| match scene.get_node(image).unwrap().uniforms().get("opacity")
+        {
             Some(feather::uniform::UniformValue::Float(o)) => *o,
             other => panic!("{other:?}"),
         };
@@ -1037,14 +1147,19 @@ mod tests {
 
         // The shader takes the light's matrix and the shadow map from the engine.
         let shader = scene.get_shader(scene.find_shader("Lit").unwrap()).unwrap();
-        assert_eq!(shader.get_uniform_shadow_matrix_name(), Some("lightViewProj"));
+        assert_eq!(
+            shader.get_uniform_shadow_matrix_name(),
+            Some("lightViewProj")
+        );
         assert_eq!(shader.get_shadow_map_sampler_name(), Some("shadowMap"));
 
         // The sun moves, with the lighting's direction towards it.
         let sun = |demo: &mut Box<dyn Demo>| {
             let scene = demo.scene();
             let light = *scene.get_shadow_light().unwrap();
-            let root = scene.get_node(scene.find_node("Scene root").unwrap()).unwrap();
+            let root = scene
+                .get_node(scene.find_node("Scene root").unwrap())
+                .unwrap();
             (light, root.uniforms().get("light").cloned())
         };
         let (before, toward_before) = sun(&mut demo);
@@ -1073,13 +1188,22 @@ mod tests {
         let human = scene.get_mesh(node("Human").get_mesh().unwrap()).unwrap();
         let heights = human.get_vertices().iter().map(|v| v.pos.z);
         let (low, high) = heights.fold((f32::MAX, f32::MIN), |(l, h), z| (l.min(z), h.max(z)));
-        assert!(low.abs() < 1e-3 && (1.6..1.9).contains(&high), "{low}..{high}");
+        assert!(
+            low.abs() < 1e-3 && (1.6..1.9).contains(&high),
+            "{low}..{high}"
+        );
 
         // Nothing moves.
         let before = node("Human").get_transform();
         demo.update(5.0).unwrap();
         let scene = demo.scene();
-        assert_eq!(scene.get_node(scene.find_node("Human").unwrap()).unwrap().get_transform(), before);
+        assert_eq!(
+            scene
+                .get_node(scene.find_node("Human").unwrap())
+                .unwrap()
+                .get_transform(),
+            before
+        );
     }
 
     #[test]
@@ -1097,7 +1221,11 @@ mod tests {
             let node = scene.get_node(item.node).unwrap();
             assert!(item.casts_shadow, "{:?} casts no shadow", node.get_name());
             let material = scene.get_material(item.material).unwrap();
-            assert!(material.get_texture().is_some(), "{:?} has no texture", material.get_name());
+            assert!(
+                material.get_texture().is_some(),
+                "{:?} has no texture",
+                material.get_name()
+            );
         }
         assert!(scene.get_shadow_light().is_some());
         let count = |name: &str| {
@@ -1113,17 +1241,28 @@ mod tests {
             let group = scene.get_node(scene.find_node(group).unwrap()).unwrap();
             let mut nodes: Vec<usize> = group.get_children().iter().copied().collect();
             nodes.sort();
-            nodes.iter().map(|&n| scene.get_node(n).unwrap().get_transform()).collect()
+            nodes
+                .iter()
+                .map(|&n| scene.get_node(n).unwrap().get_transform())
+                .collect()
         };
         let (cars, people) = (positions(&mut demo, "Cars"), positions(&mut demo, "People"));
         let view = demo.scene().active_camera().unwrap().get_view();
         for step in 1..=60 {
             demo.update(step as f32 * 0.05).unwrap();
         }
-        let moved = |before: &[Mat4], after: &[Mat4]| before.iter().zip(after).filter(|(a, b)| a != b).count();
+        let moved = |before: &[Mat4], after: &[Mat4]| {
+            before.iter().zip(after).filter(|(a, b)| a != b).count()
+        };
         let cars_after = positions(&mut demo, "Cars");
-        assert!(moved(&cars, &cars_after) > cars.len() / 2, "cars don't move");
-        assert_eq!(moved(&people, &positions(&mut demo, "People")), people.len());
+        assert!(
+            moved(&cars, &cars_after) > cars.len() / 2,
+            "cars don't move"
+        );
+        assert_eq!(
+            moved(&people, &positions(&mut demo, "People")),
+            people.len()
+        );
         assert_ne!(demo.scene().active_camera().unwrap().get_view(), view);
         // The frame rate is the test app's HUD, not a scene of the demo.
         assert_eq!(demo.scene_count(), 1);
@@ -1162,8 +1301,10 @@ mod tests {
         assert_eq!(demo.caption(), Some("Street"));
 
         let tap = |demo: &mut Box<dyn Demo>, from: (f32, f32), to: (f32, f32)| {
-            demo.on_mouse_button(MouseButton::Left, true, from.0, from.1).unwrap();
-            demo.on_mouse_button(MouseButton::Left, false, to.0, to.1).unwrap();
+            demo.on_mouse_button(MouseButton::Left, true, from.0, from.1)
+                .unwrap();
+            demo.on_mouse_button(MouseButton::Left, false, to.0, to.1)
+                .unwrap();
         };
         // A drag isn't a tap; a slightly moving finger is.
         tap(&mut demo, (500.0, 400.0), (700.0, 400.0));
@@ -1183,7 +1324,10 @@ mod tests {
             demo.update(time).unwrap();
             let scene = demo.scene();
             let eye = scene.active_camera().unwrap().get_eye_position();
-            assert!(eye.x.abs().max(eye.y.abs()) < 125.0 + 20.0, "{time}: {eye:?}");
+            assert!(
+                eye.x.abs().max(eye.y.abs()) < 125.0 + 20.0,
+                "{time}: {eye:?}"
+            );
             assert!((eye.z - 4.0).abs() < 1e-3);
         }
     }
@@ -1232,11 +1376,7 @@ mod tests {
             demo.update(step as f32 * 0.05).unwrap();
         }
         let cars_after = positions(&mut demo, "Cars");
-        let moved = cars
-            .iter()
-            .zip(&cars_after)
-            .filter(|(a, b)| a != b)
-            .count();
+        let moved = cars.iter().zip(&cars_after).filter(|(a, b)| a != b).count();
         assert!(moved > cars.len() / 2, "cars don't move");
         assert_ne!(demo.scene().active_camera().unwrap().get_view(), view);
         assert_eq!(demo.scene_count(), 1);
@@ -1255,14 +1395,23 @@ mod tests {
             assert!(scene.find_material("Shadow").is_none(), "demo {index}");
 
             let shader = scene.shaders.iter().next().unwrap();
-            assert_eq!(shader.get_uniform_shadow_matrix_name(), Some("lightViewProj"));
+            assert_eq!(
+                shader.get_uniform_shadow_matrix_name(),
+                Some("lightViewProj")
+            );
             assert_eq!(shader.get_shadow_map_sampler_name(), Some("shadowMap"));
 
             let floor = scene.find_node("Floor").unwrap();
             let items = scene.draw_items(None);
             assert!(items.iter().any(|item| item.casts_shadow), "demo {index}");
-            assert!(items.iter().filter(|item| item.node == floor).all(|item| !item.casts_shadow));
-            assert!(items.iter().filter(|item| item.node != floor).all(|item| item.casts_shadow));
+            assert!(items
+                .iter()
+                .filter(|item| item.node == floor)
+                .all(|item| !item.casts_shadow));
+            assert!(items
+                .iter()
+                .filter(|item| item.node != floor)
+                .all(|item| item.casts_shadow));
         }
 
         // The balls bounce, and each one casts.
@@ -1276,7 +1425,10 @@ mod tests {
         let first = *group.get_children().iter().next().unwrap();
         let before = scene.get_node(first).unwrap().get_transform();
         balls.update(0.5).unwrap();
-        assert_ne!(balls.scene().get_node(first).unwrap().get_transform(), before);
+        assert_ne!(
+            balls.scene().get_node(first).unwrap().get_transform(),
+            before
+        );
 
         // The vases still turn, and the glass ones stay see-through while they cast.
         let mut vases = demo(18);
@@ -1305,12 +1457,18 @@ mod tests {
             let start = {
                 let scene = demo.scene();
                 let root = if index == 19 { "Walker" } else { "Spider" };
-                scene.get_node(scene.find_node(root).unwrap()).unwrap().get_transform()
+                scene
+                    .get_node(scene.find_node(root).unwrap())
+                    .unwrap()
+                    .get_transform()
             };
             demo.update(1.0).unwrap();
             let scene = demo.scene();
             let root = if index == 19 { "Walker" } else { "Spider" };
-            let later = scene.get_node(scene.find_node(root).unwrap()).unwrap().get_transform();
+            let later = scene
+                .get_node(scene.find_node(root).unwrap())
+                .unwrap()
+                .get_transform();
             assert_ne!(later, start);
             assert!(scene.nodes.iter().all(|node| !node.is_transparent()));
         }
@@ -1352,7 +1510,11 @@ mod tests {
         assert!(scene.find_animation("Round").is_some());
         assert!(scene.find_animation("Spin").is_some());
         // One slide per lane, the round timer, the spinner, the fader and the camera's sway.
-        assert!(scene.animation_count() <= 11 + 4, "{}", scene.animation_count());
+        assert!(
+            scene.animation_count() <= 11 + 4,
+            "{}",
+            scene.animation_count()
+        );
         assert!(scene.find_animation("Sway").is_some());
 
         // The camera dollied in, and keeps swaying.
@@ -1471,7 +1633,8 @@ mod tests {
         hud.set_title("0 Viking room");
         hud.update(0.0).unwrap();
         assert_eq!(hud.hud().size(), (1024.0, 768.0));
-        let rect = |hud: &TestHud, id: feather_ui::WidgetId| hud.hud().widget(id).unwrap().base().rect();
+        let rect =
+            |hud: &TestHud, id: feather_ui::WidgetId| hud.hud().widget(id).unwrap().base().rect();
         let (previous, next) = hud.buttons();
         let (previous, next) = (rect(&hud, previous.into()), rect(&hud, next.into()));
         let panel = rect(&hud, hud.panel().into());
@@ -1493,9 +1656,15 @@ mod tests {
         app.on_mouse_button(MouseButton::Left, false, x, y).unwrap();
     }
 
-    fn button_center(app: &TestApp, button: feather_ui::WidgetId<feather_ui::Button>) -> (f32, f32) {
+    fn button_center(
+        app: &TestApp,
+        button: feather_ui::WidgetId<feather_ui::Button>,
+    ) -> (f32, f32) {
         let rect = app.hud.hud().widget(button).unwrap().base().rect();
-        ((rect.left + rect.right) / 2.0, (rect.top + rect.bottom) / 2.0)
+        (
+            (rect.left + rect.right) / 2.0,
+            (rect.top + rect.bottom) / 2.0,
+        )
     }
 
     #[test]
@@ -1520,13 +1689,17 @@ mod tests {
         click(&mut app, 512.0, 300.0);
         assert_eq!(app.demo_index, 0);
         // Pressed, then released away from the button: taken back.
-        app.on_mouse_button(MouseButton::Left, true, next.0, next.1).unwrap();
+        app.on_mouse_button(MouseButton::Left, true, next.0, next.1)
+            .unwrap();
         app.on_mouse_moved(512.0, 300.0).unwrap();
-        app.on_mouse_button(MouseButton::Left, false, 512.0, 300.0).unwrap();
+        app.on_mouse_button(MouseButton::Left, false, 512.0, 300.0)
+            .unwrap();
         assert_eq!(app.demo_index, 0);
         // Other buttons don't click.
-        app.on_mouse_button(MouseButton::Right, true, next.0, next.1).unwrap();
-        app.on_mouse_button(MouseButton::Right, false, next.0, next.1).unwrap();
+        app.on_mouse_button(MouseButton::Right, true, next.0, next.1)
+            .unwrap();
+        app.on_mouse_button(MouseButton::Right, false, next.0, next.1)
+            .unwrap();
         assert_eq!(app.demo_index, 0);
     }
 
@@ -1538,7 +1711,10 @@ mod tests {
         let hud = app.get_scene_to_render(2).get_id();
         assert_ne!(hud, app.get_scene_to_render(0).get_id());
         assert_ne!(hud, app.get_scene_to_render(1).get_id());
-        assert!(app.get_scene_to_render(2).find_camera("UI camera").is_some());
+        assert!(app
+            .get_scene_to_render(2)
+            .find_camera("UI camera")
+            .is_some());
         assert_eq!(app.hud.get_title(), "12 Overlay");
 
         // Switching demos keeps the HUD and changes its title.
@@ -1562,7 +1738,12 @@ mod tests {
             let hud = demo.hud();
             let texts = hud.get(list).unwrap().texts();
             (0..texts.len())
-                .filter(|&i| hud.scene().get_node(texts[i].get_node()).unwrap().is_visible())
+                .filter(|&i| {
+                    hud.scene()
+                        .get_node(texts[i].get_node())
+                        .unwrap()
+                        .is_visible()
+                })
                 .collect()
         };
 
@@ -1588,9 +1769,11 @@ mod tests {
         let bar = demo.hud().get(vertical).unwrap().base().rect();
         let knob = demo.hud().get(vertical).unwrap().knob_rect();
         let (kx, ky) = ((bar.left + bar.right) / 2.0, bar.top + knob.top + 1.0);
-        demo.on_mouse_button(MouseButton::Left, true, kx, ky).unwrap();
+        demo.on_mouse_button(MouseButton::Left, true, kx, ky)
+            .unwrap();
         demo.on_mouse_moved(kx, ky + 5000.0).unwrap();
-        demo.on_mouse_button(MouseButton::Left, false, kx, ky + 5000.0).unwrap();
+        demo.on_mouse_button(MouseButton::Left, false, kx, ky + 5000.0)
+            .unwrap();
         demo.update(0.2).unwrap();
         assert_eq!(*shown(&mut demo).last().unwrap(), 79);
 

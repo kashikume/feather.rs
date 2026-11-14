@@ -91,7 +91,10 @@ fn print_stats(converted: &Converted, obj_size: u64) {
     // What the mesh takes as `Vertex` (8 floats) and `u32` indices: the engine's memory, and
     // what an `f32` file without encodings would hold.
     let raw = stats.vertices * 32 + stats.corners * 4;
-    println!("  triangles {}, corners {}, vertices {} (merged)", stats.triangles, stats.corners, stats.vertices);
+    println!(
+        "  triangles {}, corners {}, vertices {} (merged)",
+        stats.triangles, stats.corners, stats.vertices
+    );
     println!(
         "  positions: {}; normals: {}; uvs: {}; indices: {}",
         stream(header.positions),

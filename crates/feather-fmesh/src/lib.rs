@@ -274,7 +274,9 @@ impl Default for WriteOptions {
 pub enum FmeshError {
     #[error("not an .fmesh file (wrong magic bytes)")]
     BadMagic,
-    #[error("the file is version {found}, this build reads version {supported}: convert the mesh again")]
+    #[error(
+        "the file is version {found}, this build reads version {supported}: convert the mesh again"
+    )]
     UnsupportedVersion { found: u16, supported: u16 },
     #[error("the file is truncated ({0})")]
     Truncated(&'static str),

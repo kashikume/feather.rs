@@ -16,8 +16,17 @@ use mesh_converter::{convert, Compression, EncodingChoice, Settings};
 const RUNS: usize = 15;
 
 fn fmesh(text: &str, encoding: EncodingChoice, compression: Compression) -> Vec<u8> {
-    let settings = Settings { encoding, compression, ..Settings::default() };
-    convert(text, &settings).unwrap().meshes.remove(0).written.bytes
+    let settings = Settings {
+        encoding,
+        compression,
+        ..Settings::default()
+    };
+    convert(text, &settings)
+        .unwrap()
+        .meshes
+        .remove(0)
+        .written
+        .bytes
 }
 
 /// The fastest of [`RUNS`] runs of `f`.
@@ -36,7 +45,11 @@ fn time(mut f: impl FnMut()) -> Duration {
 fn load_obj(bytes: &[u8]) -> (Vec<[f32; 8]>, Vec<u32>) {
     let (models, _) = tobj::load_obj_buf(
         &mut &bytes[..],
-        &tobj::LoadOptions { triangulate: true, single_index: true, ..Default::default() },
+        &tobj::LoadOptions {
+            triangulate: true,
+            single_index: true,
+            ..Default::default()
+        },
         |_| Ok(Default::default()),
     )
     .unwrap();
@@ -72,7 +85,11 @@ fn load_fmesh(bytes: &[u8]) -> (Vec<[f32; 8]>, Vec<u32>) {
     let mesh = feather_fmesh::read(bytes).unwrap();
     let vertices = (0..mesh.vertex_count())
         .map(|i| {
-            let (p, n, t) = (&mesh.positions[3 * i..], &mesh.normals[3 * i..], &mesh.uvs[2 * i..]);
+            let (p, n, t) = (
+                &mesh.positions[3 * i..],
+                &mesh.normals[3 * i..],
+                &mesh.uvs[2 * i..],
+            );
             [p[0], p[1], p[2], n[0], n[1], n[2], t[0], t[1]]
         })
         .collect();
@@ -102,16 +119,26 @@ fn main() {
         print!(" {name} | {name}+d |");
     }
     println!(" zstd | lz4 |");
-    println!("|---|---:|---:|{}---:|---:|", "---:|---:|".repeat(encodings.len()));
+    println!(
+        "|---|---:|---:|{}---:|---:|",
+        "---:|---:|".repeat(encodings.len())
+    );
 
     let mut totals = vec![0usize; 4 + 2 * encodings.len()];
     let mut timings = Vec::new();
     for path in &paths {
         let text = std::fs::read_to_string(path).unwrap();
-        let name = path.file_stem().unwrap().to_string_lossy().replace("_mesh", "");
+        let name = path
+            .file_stem()
+            .unwrap()
+            .to_string_lossy()
+            .replace("_mesh", "");
         let data = |bytes: Vec<u8>| bytes[feather_fmesh::HEADER_SIZE..].to_vec();
 
-        let mut sizes = vec![text.len(), miniz_oxide::deflate::compress_to_vec(text.as_bytes(), 9).len()];
+        let mut sizes = vec![
+            text.len(),
+            miniz_oxide::deflate::compress_to_vec(text.as_bytes(), 9).len(),
+        ];
         for (_, encoding) in &encodings {
             sizes.push(data(fmesh(&text, *encoding, Compression::Off)).len());
             sizes.push(data(fmesh(&text, *encoding, Compression::On)).len());
@@ -140,7 +167,11 @@ fn main() {
             let (a, b) = (vertices[*a as usize], obj_vertices[*b as usize]);
             for c in 0..8 {
                 // V: tobj computes 1 - v in f32, the .fmesh has the exact value: one ulp apart at most.
-                let same = if c == 7 { (a[c] - b[c]).abs() <= a[c].abs().max(1.0) * f32::EPSILON } else { a[c] == b[c] };
+                let same = if c == 7 {
+                    (a[c] - b[c]).abs() <= a[c].abs().max(1.0) * f32::EPSILON
+                } else {
+                    a[c] == b[c]
+                };
                 assert!(same, "{name}: {a:?} {b:?}");
             }
         }
@@ -163,10 +194,22 @@ fn main() {
     println!("|---|---:|---:|---:|---:|");
     let mut sum = [Duration::ZERO; 4];
     for (name, obj, int, auto, deflated) in &timings {
-        println!("| {name} | {} | {} | {} | {} |", ms(*obj), ms(*int), ms(*auto), ms(*deflated));
+        println!(
+            "| {name} | {} | {} | {} | {} |",
+            ms(*obj),
+            ms(*int),
+            ms(*auto),
+            ms(*deflated)
+        );
         for (s, t) in sum.iter_mut().zip([obj, int, auto, deflated]) {
             *s += *t;
         }
     }
-    println!("| **Total** | **{}** | **{}** | **{}** | **{}** |", ms(sum[0]), ms(sum[1]), ms(sum[2]), ms(sum[3]));
+    println!(
+        "| **Total** | **{}** | **{}** | **{}** | **{}** |",
+        ms(sum[0]),
+        ms(sum[1]),
+        ms(sum[2]),
+        ms(sum[3])
+    );
 }

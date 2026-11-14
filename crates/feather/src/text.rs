@@ -1174,7 +1174,10 @@ mod tests {
                     identity,
                     texture,
                 );
-                let values = UniformValues { engine: &engine, node: node.dynamic_uniforms() };
+                let values = UniformValues {
+                    engine: &engine,
+                    node: node.dynamic_uniforms(),
+                };
                 pack_draw(shader.get_layout(), &values, &mut arena, &mut issues);
                 issues.clear();
             }

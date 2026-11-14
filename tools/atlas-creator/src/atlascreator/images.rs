@@ -93,45 +93,58 @@ impl Images {
                             (y2 * info.width as usize * 4)..((y2 + 1) * info.width as usize * 4);
                         self.output[output_range].clone_from_slice(&bytes[input_range]);
                     }
-                },
+                }
                 (png::ColorType::Rgb, png::BitDepth::Eight) => {
                     for y in i.rect.y1..i.rect.y2 {
                         let y2 = y - i.rect.y1;
                         for x in i.rect.x1..i.rect.x2 {
                             let x2 = x - i.rect.x1;
-                            self.output[y*input.width*4 + x*4 + 0] = bytes[y2*info.width as usize*3 + x2*3 + 0];
-                            self.output[y*input.width*4 + x*4 + 1] = bytes[y2*info.width as usize*3 + x2*3 + 1];
-                            self.output[y*input.width*4 + x*4 + 2] = bytes[y2*info.width as usize*3 + x2*3 + 2];
-                            self.output[y*input.width*4 + x*4 + 3] = 255;
+                            self.output[y * input.width * 4 + x * 4 + 0] =
+                                bytes[y2 * info.width as usize * 3 + x2 * 3 + 0];
+                            self.output[y * input.width * 4 + x * 4 + 1] =
+                                bytes[y2 * info.width as usize * 3 + x2 * 3 + 1];
+                            self.output[y * input.width * 4 + x * 4 + 2] =
+                                bytes[y2 * info.width as usize * 3 + x2 * 3 + 2];
+                            self.output[y * input.width * 4 + x * 4 + 3] = 255;
                         }
                     }
-                },
+                }
                 (png::ColorType::GrayscaleAlpha, png::BitDepth::Eight) => {
                     for y in i.rect.y1..i.rect.y2 {
                         let y2 = y - i.rect.y1;
                         for x in i.rect.x1..i.rect.x2 {
                             let x2 = x - i.rect.x1;
-                            self.output[y*input.width*4 + x*4 + 0] = bytes[y2*info.width as usize*2 + x2*2 + 0];
-                            self.output[y*input.width*4 + x*4 + 1] = bytes[y2*info.width as usize*2 + x2*2 + 0];
-                            self.output[y*input.width*4 + x*4 + 2] = bytes[y2*info.width as usize*2 + x2*2 + 0];
-                            self.output[y*input.width*4 + x*4 + 3] = bytes[y2*info.width as usize*2 + x2*2 + 1];
+                            self.output[y * input.width * 4 + x * 4 + 0] =
+                                bytes[y2 * info.width as usize * 2 + x2 * 2 + 0];
+                            self.output[y * input.width * 4 + x * 4 + 1] =
+                                bytes[y2 * info.width as usize * 2 + x2 * 2 + 0];
+                            self.output[y * input.width * 4 + x * 4 + 2] =
+                                bytes[y2 * info.width as usize * 2 + x2 * 2 + 0];
+                            self.output[y * input.width * 4 + x * 4 + 3] =
+                                bytes[y2 * info.width as usize * 2 + x2 * 2 + 1];
                         }
                     }
-                },
+                }
                 (png::ColorType::Grayscale, png::BitDepth::Eight) => {
                     for y in i.rect.y1..i.rect.y2 {
                         let y2 = y - i.rect.y1;
                         for x in i.rect.x1..i.rect.x2 {
                             let x2 = x - i.rect.x1;
-                            self.output[y*input.width*4 + x*4 + 0] = bytes[y2*info.width as usize + x2];
-                            self.output[y*input.width*4 + x*4 + 1] = bytes[y2*info.width as usize + x2];
-                            self.output[y*input.width*4 + x*4 + 2] = bytes[y2*info.width as usize + x2];
-                            self.output[y*input.width*4 + x*4 + 3] = 255;
+                            self.output[y * input.width * 4 + x * 4 + 0] =
+                                bytes[y2 * info.width as usize + x2];
+                            self.output[y * input.width * 4 + x * 4 + 1] =
+                                bytes[y2 * info.width as usize + x2];
+                            self.output[y * input.width * 4 + x * 4 + 2] =
+                                bytes[y2 * info.width as usize + x2];
+                            self.output[y * input.width * 4 + x * 4 + 3] = 255;
                         }
                     }
-                },
+                }
                 _ => {
-                    println!("Unsupported color type {:?}, {:?}.", info.color_type, info.bit_depth);
+                    println!(
+                        "Unsupported color type {:?}, {:?}.",
+                        info.color_type, info.bit_depth
+                    );
                     panic!("Unsupported color type.");
                 }
             }

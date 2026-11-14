@@ -130,8 +130,7 @@ impl BouncingBallsDemo {
     /// ball of radius 1), and its shadow on the floor below it.
     fn place_balls(&mut self) {
         for ball in &self.balls {
-            let transform =
-                Mat4::from_translation(ball.position) * Mat4::from_scale(ball.radius);
+            let transform = Mat4::from_translation(ball.position) * Mat4::from_scale(ball.radius);
             self.scene
                 .get_node_mut(ball.node)
                 .unwrap()
@@ -159,8 +158,7 @@ fn step_ball(ball: &mut Ball, dt: f32, random: &mut Random) {
     ball.velocity.z -= GRAVITY * dt;
     ball.position += ball.velocity * dt;
 
-    let over_floor =
-        ball.position.x.abs() <= FLOOR_HALF && ball.position.y.abs() <= FLOOR_HALF;
+    let over_floor = ball.position.x.abs() <= FLOOR_HALF && ball.position.y.abs() <= FLOOR_HALF;
     // Only balls coming down onto the floor's top bounce; a ball that fell past the edge stays
     // below the floor even if it drifts back under it.
     let touches_top = ball.position.z < ball.radius && ball.position.z > ball.radius - 0.5;
@@ -228,8 +226,14 @@ mod tests {
     fn hsv_primaries() {
         let close = |a: Vec3, b: Vec3| (a - b).x.abs() + (a - b).y.abs() + (a - b).z.abs() < 1e-5;
         assert!(close(hsv_to_rgb(0.0, 1.0, 1.0), Vec3::new(1.0, 0.0, 0.0)));
-        assert!(close(hsv_to_rgb(1.0 / 3.0, 1.0, 1.0), Vec3::new(0.0, 1.0, 0.0)));
-        assert!(close(hsv_to_rgb(2.0 / 3.0, 1.0, 1.0), Vec3::new(0.0, 0.0, 1.0)));
+        assert!(close(
+            hsv_to_rgb(1.0 / 3.0, 1.0, 1.0),
+            Vec3::new(0.0, 1.0, 0.0)
+        ));
+        assert!(close(
+            hsv_to_rgb(2.0 / 3.0, 1.0, 1.0),
+            Vec3::new(0.0, 0.0, 1.0)
+        ));
         assert!(close(hsv_to_rgb(0.5, 0.0, 0.5), Vec3::new(0.5, 0.5, 0.5)));
     }
 

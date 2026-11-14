@@ -231,7 +231,13 @@ impl Demo for ScrollingDemo {
         self.hud.mouse_left()
     }
 
-    fn on_mouse_button(&mut self, button: MouseButton, pressed: bool, x: f32, y: f32) -> Result<()> {
+    fn on_mouse_button(
+        &mut self,
+        button: MouseButton,
+        pressed: bool,
+        x: f32,
+        y: f32,
+    ) -> Result<()> {
         if button == MouseButton::Left {
             if pressed {
                 self.hud.mouse_down(x, y)?;

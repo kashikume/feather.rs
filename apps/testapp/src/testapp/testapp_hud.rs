@@ -7,8 +7,8 @@ use feather::scene::Scene;
 use feather::text::{create_text_material, TextBuilder, TextMethod};
 use feather_ui::widget::quad_transform;
 use feather_ui::{
-    Align, Button, Hud, Label, LayoutContext, LayoutNswe, Rect, Slot, UiEvent, Widget,
-    WidgetBase, WidgetId,
+    Align, Button, Hud, Label, LayoutContext, LayoutNswe, Rect, Slot, UiEvent, Widget, WidgetBase,
+    WidgetId,
 };
 
 // The HUD is laid out as if the window were `UI_HEIGHT` pixels high, whatever its real size and
@@ -87,8 +87,14 @@ impl TestHud {
         let text_shader = find("shader `Text`", scene.find_shader("Text"))?;
         let panel_material = find("material `Panel`", scene.find_material("Panel"))?;
         let button_material = find("material `Button`", scene.find_material("Button"))?;
-        let hover = find("material `Button hover`", scene.find_material("Button hover"))?;
-        let pressed = find("material `Button pressed`", scene.find_material("Button pressed"))?;
+        let hover = find(
+            "material `Button hover`",
+            scene.find_material("Button hover"),
+        )?;
+        let pressed = find(
+            "material `Button pressed`",
+            scene.find_material("Button pressed"),
+        )?;
         let mut text_material = |name: &str, color: [f32; 4]| -> Result<usize> {
             let material = create_text_material(&mut scene, Some(name.into()), text_shader, font)?;
             let uniforms = scene.get_material_mut(material).unwrap().uniforms_mut();
@@ -99,7 +105,11 @@ impl TestHud {
         let fps_material = text_material("Frame rate text", FPS_COLOR)?;
         let stats_material = text_material("Frame stats text", STATS_COLOR)?;
 
-        let title = Label::new(TextBuilder::new(font).height(TITLE_HEIGHT), title_material, "");
+        let title = Label::new(
+            TextBuilder::new(font).height(TITLE_HEIGHT),
+            title_material,
+            "",
+        );
         let fps_builder = TextBuilder::new(font)
             .height(FPS_HEIGHT)
             .method(TextMethod::NodePerGlyph);
@@ -121,7 +131,11 @@ impl TestHud {
         .with_margin(MARGIN);
 
         let arrow = |text: &str| {
-            Label::new(TextBuilder::new(font).height(ARROW_HEIGHT), title_material, text)
+            Label::new(
+                TextBuilder::new(font).height(ARROW_HEIGHT),
+                title_material,
+                text,
+            )
         };
         let button = |text: &str, side: Align| {
             Button::new()
@@ -304,9 +318,7 @@ impl TestHud {
             .take_events()
             .into_iter()
             .filter_map(|event| match event {
-                UiEvent::Clicked { widget } if widget == previous => {
-                    Some(HudAction::PreviousDemo)
-                }
+                UiEvent::Clicked { widget } if widget == previous => Some(HudAction::PreviousDemo),
                 UiEvent::Clicked { widget } if widget == next => Some(HudAction::NextDemo),
                 _ => None,
             })

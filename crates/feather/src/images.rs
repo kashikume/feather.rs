@@ -72,7 +72,11 @@ pub unsafe fn create_image(
             height,
             format,
             samples,
-            if lazy { "lazily allocated" } else { "device-local" },
+            if lazy {
+                "lazily allocated"
+            } else {
+                "device-local"
+            },
             requirements.size
         );
     }

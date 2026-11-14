@@ -53,9 +53,7 @@ impl std::error::Error for AtlasError {}
 /// Creates the atlas described by `input`: loads its input list, packs the images and writes
 /// the atlas PNG and the metadata file.
 pub fn run(input: &mut InputParser) -> Result<(), AtlasError> {
-    input
-        .load_input_list()
-        .map_err(|_| AtlasError::InputList)?;
+    input.load_input_list().map_err(|_| AtlasError::InputList)?;
 
     if input.debug {
         println!("Input: {:?}", input);
@@ -64,9 +62,7 @@ pub fn run(input: &mut InputParser) -> Result<(), AtlasError> {
     let mut images = Images::new(input);
     let mut rects = Rects::new(input.width, input.height);
 
-    images
-        .check_images(input)
-        .map_err(|_| AtlasError::Images)?;
+    images.check_images(input).map_err(|_| AtlasError::Images)?;
     images
         .find_positions(input, &mut rects)
         .map_err(|_| AtlasError::DoesNotFit)?;

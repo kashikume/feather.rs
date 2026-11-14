@@ -52,7 +52,10 @@ impl Label {
 
     /// The size of the text shown, in UI units (zero before the first layout).
     pub fn text_size(&self) -> TextSize {
-        self.shown.as_ref().map(|t| t.get_size()).unwrap_or_default()
+        self.shown
+            .as_ref()
+            .map(|t| t.get_size())
+            .unwrap_or_default()
     }
 
     /// Builds the text under the widget's anchor the first time, then updates it to `text`.

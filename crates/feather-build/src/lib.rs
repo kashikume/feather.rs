@@ -158,7 +158,8 @@ pub struct BuiltMesh {
 
 /// Whether `path` is a Wavefront OBJ file (`.obj`), which [`build_meshes`] converts.
 pub fn is_obj(path: &Path) -> bool {
-    path.extension().is_some_and(|e| e.eq_ignore_ascii_case("obj"))
+    path.extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("obj"))
 }
 
 /// Converts every OBJ file directly in `source_dir` into an `.fmesh` file in `out_dir` with

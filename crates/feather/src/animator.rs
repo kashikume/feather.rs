@@ -75,11 +75,7 @@ impl<C> Animator<C> {
 
     /// Adds an animation, which runs from the next update, and returns its handle. `name` lets
     /// `find` look it up.
-    pub fn add(
-        &mut self,
-        name: Option<String>,
-        animation: impl Animation<C> + 'static,
-    ) -> usize {
+    pub fn add(&mut self, name: Option<String>, animation: impl Animation<C> + 'static) -> usize {
         self.add_boxed(name, Box::new(animation))
     }
 

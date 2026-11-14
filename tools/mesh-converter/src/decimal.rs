@@ -13,11 +13,17 @@ pub struct Decimal {
 const MAX_DECIMALS: i64 = 40;
 
 impl Decimal {
-    pub const ZERO: Decimal = Decimal { mantissa: 0, decimals: 0 };
+    pub const ZERO: Decimal = Decimal {
+        mantissa: 0,
+        decimals: 0,
+    };
 
     /// `n / 10^decimals`, normalized.
     pub fn new(n: i64, decimals: u32) -> Decimal {
-        let mut decimal = Decimal { mantissa: n, decimals };
+        let mut decimal = Decimal {
+            mantissa: n,
+            decimals,
+        };
         decimal.normalize();
         decimal
     }
@@ -52,8 +58,8 @@ impl Decimal {
 
         let mut mantissa: u64 = 0;
         let mut digits = 0; // significant digits in the mantissa
-        // Zeros after the last non-zero digit, not in the mantissa (yet): only significant if
-        // another non-zero digit follows.
+                            // Zeros after the last non-zero digit, not in the mantissa (yet): only significant if
+                            // another non-zero digit follows.
         let mut pending_zeros: i64 = 0;
         let mut any_digit = false;
         let mut fraction_digits: i64 = 0;
@@ -71,7 +77,8 @@ impl Decimal {
                         if digits > 18 {
                             return None;
                         }
-                        mantissa = mantissa * 10u64.pow(pending_zeros as u32 + 1) + (c - b'0') as u64;
+                        mantissa =
+                            mantissa * 10u64.pow(pending_zeros as u32 + 1) + (c - b'0') as u64;
                         pending_zeros = 0;
                     }
                     if in_fraction {
@@ -92,7 +99,9 @@ impl Decimal {
         if i < bytes.len() {
             // At 'e' / 'E'.
             let exponent_text = &text[i + 1..];
-            let exponent_digits = exponent_text.strip_prefix(['+', '-']).unwrap_or(exponent_text);
+            let exponent_digits = exponent_text
+                .strip_prefix(['+', '-'])
+                .unwrap_or(exponent_text);
             if exponent_digits.is_empty() || !exponent_digits.bytes().all(|c| c.is_ascii_digit()) {
                 return None;
             }
@@ -133,12 +142,16 @@ impl Decimal {
 
     /// The nearest `f32`, as parsing the number's text gives it.
     pub fn to_f32(self) -> f32 {
-        format!("{}e-{}", self.mantissa, self.decimals).parse().unwrap()
+        format!("{}e-{}", self.mantissa, self.decimals)
+            .parse()
+            .unwrap()
     }
 
     /// The nearest `f64`.
     pub fn to_f64(self) -> f64 {
-        format!("{}e-{}", self.mantissa, self.decimals).parse().unwrap()
+        format!("{}e-{}", self.mantissa, self.decimals)
+            .parse()
+            .unwrap()
     }
 }
 
@@ -187,7 +200,9 @@ mod tests {
 
     #[test]
     fn rejects_what_isnt_a_plain_number() {
-        for text in ["", "-", ".", "e5", "1e", "1e+", "nan", "inf", "-inf", "1.2.3", "1,5", "0x10", "1e5.0"] {
+        for text in [
+            "", "-", ".", "e5", "1e", "1e+", "nan", "inf", "-inf", "1.2.3", "1,5", "0x10", "1e5.0",
+        ] {
             assert_eq!(Decimal::parse(text), None, "{text}");
         }
         // Too many significant digits or decimals.
@@ -209,7 +224,10 @@ mod tests {
 
     #[test]
     fn one_minus_is_exact() {
-        assert_eq!(Decimal::parse("0.637534").unwrap().one_minus(), d(362466, 6));
+        assert_eq!(
+            Decimal::parse("0.637534").unwrap().one_minus(),
+            d(362466, 6)
+        );
         assert_eq!(Decimal::parse("0.25").unwrap().one_minus(), d(75, 2));
         assert_eq!(Decimal::ZERO.one_minus(), d(1, 0));
         assert_eq!(Decimal::new(1, 0).one_minus(), Some(Decimal::ZERO));

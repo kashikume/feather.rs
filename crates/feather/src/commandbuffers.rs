@@ -68,8 +68,8 @@ pub unsafe fn record_command_buffer(
 
     device.reset_command_buffer(command_buffer, vk::CommandBufferResetFlags::empty())?;
 
-    let info = vk::CommandBufferBeginInfo::builder()
-        .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
+    let info =
+        vk::CommandBufferBeginInfo::builder().flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
 
     device.begin_command_buffer(command_buffer, &info)?;
 

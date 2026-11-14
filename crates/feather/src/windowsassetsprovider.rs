@@ -48,14 +48,22 @@ mod tests {
     }
 
     fn expected(name: &str) -> Vec<u8> {
-        fs::read(Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata").join(name)).unwrap()
+        fs::read(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("testdata")
+                .join(name),
+        )
+        .unwrap()
     }
 
     #[test]
     fn new_is_relative_to_executable() {
         let provider = WindowsAssetsProvider::new("assets").unwrap();
         let exe = std::env::current_exe().unwrap();
-        assert_eq!(provider.get_base_dir(), exe.parent().unwrap().join("assets"));
+        assert_eq!(
+            provider.get_base_dir(),
+            exe.parent().unwrap().join("assets")
+        );
     }
 
     #[test]

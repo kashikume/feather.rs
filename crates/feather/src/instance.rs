@@ -49,7 +49,10 @@ pub unsafe fn create_instance(
         .map(|l| l.layer_name)
         .collect::<HashSet<_>>();
 
-    data.validation = use_validation(VALIDATION_REQUESTED, available_layers.contains(&VALIDATION_LAYER))?;
+    data.validation = use_validation(
+        VALIDATION_REQUESTED,
+        available_layers.contains(&VALIDATION_LAYER),
+    )?;
 
     let layers = if data.validation {
         vec![VALIDATION_LAYER.as_ptr()]
@@ -167,6 +170,8 @@ mod tests {
     #[cfg(not(target_os = "android"))]
     fn missing_validation_layer_fails_on_desktop() {
         let err = use_validation(true, false).unwrap_err();
-        assert!(err.to_string().contains("Validation layer requested but not supported."));
+        assert!(err
+            .to_string()
+            .contains("Validation layer requested but not supported."));
     }
 }

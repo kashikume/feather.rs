@@ -448,8 +448,11 @@ impl Scene {
             .get(node_handle)
             .ok_or_else(|| anyhow::anyhow!("Node {node_handle} not found"))?;
         let parent = node.get_parent().and_then(|p| self.nodes.get(p));
-        let inherited = parent.map(|p| p.uniforms_for_children()).unwrap_or_default();
-        let parent_transform = parent.map(|p| p.get_global_transform().unwrap_or(p.get_transform()));
+        let inherited = parent
+            .map(|p| p.uniforms_for_children())
+            .unwrap_or_default();
+        let parent_transform =
+            parent.map(|p| p.get_global_transform().unwrap_or(p.get_transform()));
         self.update_subtree(node_handle, &inherited, parent_transform);
         Ok(())
     }
@@ -520,7 +523,9 @@ impl Scene {
             let mut in_view = true;
             let mut casts_shadow = node.casts_shadow();
             if let Some(culling) = culling.filter(|_| node.is_culled()) {
-                let bounds = node.get_mesh().and_then(|m| self.meshes.get(m)?.get_bounds());
+                let bounds = node
+                    .get_mesh()
+                    .and_then(|m| self.meshes.get(m)?.get_bounds());
                 if let Some(bounds) = bounds {
                     in_view = culling.camera.intersects(bounds, &model);
                     if !in_view {
@@ -1028,8 +1033,12 @@ mod tests {
             .unwrap();
         let material = scene.create_material(None, shader).unwrap();
 
-        assert!(scene.material_set_texture(material, Some(Texture::full(42))).is_err());
-        assert!(scene.material_set_texture(42, Some(Texture::full(atlas))).is_err());
+        assert!(scene
+            .material_set_texture(material, Some(Texture::full(42)))
+            .is_err());
+        assert!(scene
+            .material_set_texture(42, Some(Texture::full(atlas)))
+            .is_err());
         assert_eq!(scene.get_material(material).unwrap().get_texture(), None);
     }
 
@@ -1418,11 +1427,7 @@ mod tests {
         assert_eq!(atlas_obj.get_name(), Some(TEST_PNG.to_string()));
         assert_eq!((atlas_obj.get_width(), atlas_obj.get_height()), (512, 512));
         assert_eq!(
-            scene
-                .atlases
-                .get_by_name(TEST_PNG)
-                .unwrap()
-                .get_handle(),
+            scene.atlases.get_by_name(TEST_PNG).unwrap().get_handle(),
             atlas
         );
     }
@@ -1431,7 +1436,12 @@ mod tests {
     fn create_atlas_from_png_with_name() {
         let mut scene = Scene::new();
         let atlas = scene
-            .create_atlas_from_png(&*test_resources(), TEST_PNG, None, Some("bricks".to_string()))
+            .create_atlas_from_png(
+                &*test_resources(),
+                TEST_PNG,
+                None,
+                Some("bricks".to_string()),
+            )
             .unwrap();
         assert_eq!(
             scene.get_atlas(atlas).unwrap().get_name(),
@@ -1481,7 +1491,10 @@ mod tests {
         let second = scene.add_camera(Camera::perspective().with_name("second"));
         assert_ne!(first, second);
         assert_eq!(scene.active_camera_handle(), Some(first));
-        assert_eq!(scene.active_camera().unwrap().get_name().as_deref(), Some("first"));
+        assert_eq!(
+            scene.active_camera().unwrap().get_name().as_deref(),
+            Some("first")
+        );
         assert_eq!(scene.find_camera("second"), Some(second));
         assert_eq!(scene.find_camera("nope"), None);
     }
@@ -1532,7 +1545,12 @@ mod tests {
         let mut scene = Scene::new();
         let atlas = scene.add_atlas(test_atlas(Some("atlas")));
         let shader = scene
-            .create_shader(Some("shader".to_string()), VERT, FRAG, ShaderUniformNames::default())
+            .create_shader(
+                Some("shader".to_string()),
+                VERT,
+                FRAG,
+                ShaderUniformNames::default(),
+            )
             .unwrap();
         let material = scene
             .create_material(Some("material".to_string()), shader)
@@ -1622,7 +1640,13 @@ mod tests {
             assert!(scene.get_node(removed).is_none());
         }
         assert_eq!(
-            scene.get_node(root).unwrap().get_children().iter().copied().collect::<Vec<_>>(),
+            scene
+                .get_node(root)
+                .unwrap()
+                .get_children()
+                .iter()
+                .copied()
+                .collect::<Vec<_>>(),
             vec![kept]
         );
         assert!(scene.get_mesh(mesh).is_some());
@@ -1644,9 +1668,17 @@ mod tests {
         assert!(scene.get_mesh(m0).is_none());
         assert_eq!(scene.get_node(node).unwrap().get_mesh(), None);
         // The other mesh keeps the buffer, and its place in it.
-        let data = scene.get_mesh(m1).unwrap().mesh_buffer_data.as_ref().unwrap();
+        let data = scene
+            .get_mesh(m1)
+            .unwrap()
+            .mesh_buffer_data
+            .as_ref()
+            .unwrap();
         assert_eq!((data.buffer_handle, data.vertex_begin_index), (buffer, 3));
-        assert_eq!(scene.buffers.get(buffer).unwrap().get_mesh_handles(), vec![m1]);
+        assert_eq!(
+            scene.buffers.get(buffer).unwrap().get_mesh_handles(),
+            vec![m1]
+        );
 
         // The last mesh takes the buffer with it.
         scene.remove_mesh(m1).unwrap();
@@ -1733,7 +1765,9 @@ mod tests {
 
     /// Creates a shader and a material using it; returns (shader, material).
     fn test_material(scene: &mut Scene) -> (usize, usize) {
-        let shader = scene.create_shader(None, VERT, FRAG, ShaderUniformNames::default()).unwrap();
+        let shader = scene
+            .create_shader(None, VERT, FRAG, ShaderUniformNames::default())
+            .unwrap();
         let material = scene.create_material(None, shader).unwrap();
         (shader, material)
     }
@@ -1744,9 +1778,18 @@ mod tests {
         let root = scene.create_root_node(None);
         let child = scene.create_node(None, root).unwrap();
         let grandchild = scene.create_node(None, child).unwrap();
-        scene.get_node_mut(root).unwrap().set_transform(translation(1.0, 0.0, 0.0));
-        scene.get_node_mut(child).unwrap().set_transform(translation(0.0, 2.0, 0.0));
-        scene.get_node_mut(grandchild).unwrap().set_transform(translation(0.0, 0.0, 3.0));
+        scene
+            .get_node_mut(root)
+            .unwrap()
+            .set_transform(translation(1.0, 0.0, 0.0));
+        scene
+            .get_node_mut(child)
+            .unwrap()
+            .set_transform(translation(0.0, 2.0, 0.0));
+        scene
+            .get_node_mut(grandchild)
+            .unwrap()
+            .set_transform(translation(0.0, 0.0, 3.0));
 
         scene.update_nodes();
 
@@ -1762,10 +1805,16 @@ mod tests {
         let root = scene.create_root_node(None);
         let child = scene.create_node(None, root).unwrap();
         let grandchild = scene.create_node(None, child).unwrap();
-        scene.get_node_mut(root).unwrap().set_transform(translation(1.0, 0.0, 0.0));
+        scene
+            .get_node_mut(root)
+            .unwrap()
+            .set_transform(translation(1.0, 0.0, 0.0));
         scene.update_nodes();
 
-        scene.get_node_mut(child).unwrap().set_transform(translation(0.0, 5.0, 0.0));
+        scene
+            .get_node_mut(child)
+            .unwrap()
+            .set_transform(translation(0.0, 5.0, 0.0));
         scene.update_node(child).unwrap();
 
         let global = |h| scene.get_node(h).unwrap().get_global_transform();
@@ -1787,8 +1836,14 @@ mod tests {
         let (shader, material) = test_material(&mut scene);
         scene.node_set_material(a, material).unwrap();
         scene.node_set_material(b, material).unwrap();
-        scene.get_node_mut(a).unwrap().set_transform(translation(1.0, 0.0, 0.0));
-        scene.get_node_mut(b).unwrap().set_transform(translation(0.0, 1.0, 0.0));
+        scene
+            .get_node_mut(a)
+            .unwrap()
+            .set_transform(translation(1.0, 0.0, 0.0));
+        scene
+            .get_node_mut(b)
+            .unwrap()
+            .set_transform(translation(0.0, 1.0, 0.0));
         scene.build_missing_mesh_buffers().unwrap();
         scene.update_nodes();
 
@@ -1797,8 +1852,18 @@ mod tests {
         assert_eq!(items.len(), 2);
 
         let buffer = scene.buffers.iter().next().unwrap().get_handle();
-        let data_a = scene.get_mesh(mesh_a).unwrap().mesh_buffer_data.as_ref().unwrap();
-        let data_b = scene.get_mesh(mesh_b).unwrap().mesh_buffer_data.as_ref().unwrap();
+        let data_a = scene
+            .get_mesh(mesh_a)
+            .unwrap()
+            .mesh_buffer_data
+            .as_ref()
+            .unwrap();
+        let data_b = scene
+            .get_mesh(mesh_b)
+            .unwrap()
+            .mesh_buffer_data
+            .as_ref()
+            .unwrap();
         let item = |node| *items.iter().find(|i| i.node == node).unwrap();
 
         assert_eq!(
@@ -1992,7 +2057,10 @@ mod tests {
         let culling = Culling::new(&Mat4::identity(), None);
         let items = scene.draw_items(Some(&culling));
         let flags = |node| {
-            items.iter().find(|i| i.node == node).map(|i| (i.in_view, i.casts_shadow))
+            items
+                .iter()
+                .find(|i| i.node == node)
+                .map(|i| (i.in_view, i.casts_shadow))
         };
         assert_eq!(flags(seen), Some((true, false)));
         assert_eq!(flags(neither), Some((false, true)));

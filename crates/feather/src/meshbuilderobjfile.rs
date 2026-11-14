@@ -86,8 +86,8 @@ impl MeshBuilderObjFile {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::object::Object;
     use crate::assetsprovider::tests::test_resources;
+    use crate::object::Object;
 
     /// One triangle with texture coordinates and normals.
     const TRIANGLE: &str = "v 0 0 0
@@ -118,7 +118,10 @@ f 1/1/1 2/2/1 3/3/1
         let mesh = MeshBuilderObjFile::from_bytes(TRIANGLE.as_bytes().to_vec())
             .build(&mut scene, Some("triangle".to_string()))
             .unwrap();
-        assert_eq!(scene.meshes.get_by_name("triangle").unwrap().get_handle(), mesh);
+        assert_eq!(
+            scene.meshes.get_by_name("triangle").unwrap().get_handle(),
+            mesh
+        );
     }
 
     #[test]
@@ -168,8 +171,12 @@ f 1/1/1 3/3/1 4/4/1
     #[test]
     fn invalid_obj_fails() {
         let mut scene = Scene::new();
-        let result = MeshBuilderObjFile::from_bytes(b"f 1 2 3
-".to_vec()).build(&mut scene, None);
+        let result = MeshBuilderObjFile::from_bytes(
+            b"f 1 2 3
+"
+            .to_vec(),
+        )
+        .build(&mut scene, None);
         assert!(result.is_err());
     }
 }

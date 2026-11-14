@@ -79,7 +79,9 @@ impl UniformType {
                     [IVec2, IVec3, IVec4],
                     [UVec2, UVec3, UVec4],
                 ];
-                table[kind].get((v.nscalar as usize).checked_sub(2)?).copied()
+                table[kind]
+                    .get((v.nscalar as usize).checked_sub(2)?)
+                    .copied()
             }
             Type::Matrix(m) => {
                 if scalar(&m.vector_ty.scalar_ty)? != 0
@@ -88,7 +90,9 @@ impl UniformType {
                 {
                     return None;
                 }
-                [Mat2, Mat3, Mat4].get((m.nvector as usize).checked_sub(2)?).copied()
+                [Mat2, Mat3, Mat4]
+                    .get((m.nvector as usize).checked_sub(2)?)
+                    .copied()
             }
             _ => None,
         }
@@ -254,7 +258,12 @@ struct LayoutBuilder {
 }
 
 impl LayoutBuilder {
-    fn add_stage(&mut self, spirv: &[u8], model: ExecutionModel, stage: ShaderStages) -> Result<()> {
+    fn add_stage(
+        &mut self,
+        spirv: &[u8],
+        model: ExecutionModel,
+        stage: ShaderStages,
+    ) -> Result<()> {
         let entry_points = ReflectConfig::new()
             .spv(spirv)
             .ref_all_rscs(true)
@@ -282,8 +291,7 @@ impl LayoutBuilder {
                     }
                     match desc_ty {
                         DescriptorType::UniformBuffer() => {
-                            let (size, members) =
-                                struct_members(ty).with_context(|| what())?;
+                            let (size, members) = struct_members(ty).with_context(|| what())?;
                             let block = UniformBlock {
                                 set,
                                 binding,
@@ -366,7 +374,8 @@ fn struct_members(ty: &Type) -> Result<(u32, Vec<UniformMember>)> {
                 .ok_or_else(|| anyhow!("block member has no name (debug info stripped?)"))?;
             let offset = m
                 .offset
-                .ok_or_else(|| anyhow!("member `{name}` has no offset"))? as u32;
+                .ok_or_else(|| anyhow!("member `{name}` has no offset"))?
+                as u32;
             let ty_ = UniformType::from_spirv(&m.ty)
                 .ok_or_else(|| anyhow!("member `{name}` has an unsupported type {:?}", m.ty))?;
             let matrix_stride = match &m.ty {
@@ -536,18 +545,18 @@ mod tests {
         assert!(!UniformType::Float.accepts(&UniformValue::Int(1)));
     }
 
-    const TYPES_VERT: &[u8] =
-        include_bytes!(concat!(env!("OUT_DIR"), "/shaders/types.vert.spv"));
-    const TYPES_FRAG: &[u8] =
-        include_bytes!(concat!(env!("OUT_DIR"), "/shaders/types.frag.spv"));
-    const ARRAY_FRAG: &[u8] =
-        include_bytes!(concat!(env!("OUT_DIR"), "/shaders/array.frag.spv"));
+    const TYPES_VERT: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/shaders/types.vert.spv"));
+    const TYPES_FRAG: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/shaders/types.frag.spv"));
+    const ARRAY_FRAG: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/shaders/array.frag.spv"));
     const DUPLICATE_FRAG: &[u8] =
         include_bytes!(concat!(env!("OUT_DIR"), "/shaders/duplicate.frag.spv"));
 
     fn member(name: &str, offset: u32, ty: UniformType) -> UniformMember {
-        let matrix_stride = matches!(ty, UniformType::Mat2 | UniformType::Mat3 | UniformType::Mat4)
-            .then_some(16);
+        let matrix_stride = matches!(
+            ty,
+            UniformType::Mat2 | UniformType::Mat3 | UniformType::Mat4
+        )
+        .then_some(16);
         UniformMember {
             name: name.into(),
             offset,
@@ -611,7 +620,10 @@ mod tests {
         assert_eq!(push.size, 80);
         assert_eq!(
             push.members,
-            [member("model", 0, UniformType::Mat4), member("tint", 64, UniformType::Vec4)]
+            [
+                member("model", 0, UniformType::Mat4),
+                member("tint", 64, UniformType::Vec4)
+            ]
         );
 
         assert_eq!(
