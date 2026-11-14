@@ -154,7 +154,7 @@ pub struct CityAssetsDemo {
     traffic: Traffic,
     car_nodes: Vec<usize>,
     people: Vec<Person>,
-    lamps: Vec<(usize, Axis, Mat4)>,
+    lamps: Vec<([usize; 2], Axis, Mat4)>,
     last_time: Option<f32>,
 }
 
@@ -278,10 +278,7 @@ impl CityAssetsDemo {
             let node = scene.create_node(Some(node_name.to_string()), statics)?;
             scene.node_set_mesh(node, mesh(&scene, mesh_name)?)?;
             scene.node_set_material(node, material(&scene, material_name)?)?;
-            scene
-                .get_node_mut(node)
-                .unwrap()
-                .set_casts_shadow(true);
+            scene.get_node_mut(node).unwrap().set_casts_shadow(true);
         }
 
         let mut demo = Self {
@@ -334,14 +331,18 @@ impl CityAssetsDemo {
                         CURB,
                     );
                     let head = Mat4::from_translation(base) * Mat4::from_angle_z(Rad(facing));
-                    let lamp = self.scene.create_node(None, city)?;
-                    self.scene.node_set_mesh(lamp, lamp_mesh)?;
-                    self.scene.node_set_material(lamp, metal)?;
-                    self.scene
-                        .get_node_mut(lamp)
-                        .unwrap()
-                        .set_casts_shadow(true);
-                    self.lamps.push((lamp, axis, head));
+                    // Two discs: red and yellow light together before green.
+                    let mut lamps = [0; 2];
+                    for lamp in &mut lamps {
+                        *lamp = self.scene.create_node(None, city)?;
+                        self.scene.node_set_mesh(*lamp, lamp_mesh)?;
+                        self.scene.node_set_material(*lamp, metal)?;
+                        self.scene
+                            .get_node_mut(*lamp)
+                            .unwrap()
+                            .set_casts_shadow(true);
+                    }
+                    self.lamps.push((lamps, axis, head));
                 }
             }
         }
@@ -473,8 +474,7 @@ impl CityAssetsDemo {
                     for leg_node in &mut legs {
                         *leg_node = self.scene.create_node(None, node)?;
                         self.scene.node_set_mesh(*leg_node, leg)?;
-                        self.scene
-                            .node_set_material(*leg_node, person_material)?;
+                        self.scene.node_set_material(*leg_node, person_material)?;
                         self.scene
                             .get_node_mut(*leg_node)
                             .unwrap()
@@ -540,17 +540,31 @@ impl CityAssetsDemo {
             }
         }
 
-        for &(lamp, axis, head) in &self.lamps {
-            let (lens, colour) = match signal(axis, time) {
-                Signal::Red => (0, Vec3::new(4.0, 0.2, 0.12)),
-                Signal::Yellow => (1, Vec3::new(4.0, 2.6, 0.15)),
-                Signal::Green => (2, Vec3::new(0.15, 3.6, 0.8)),
+        const RED_GLOW: (usize, Vec3) = (0, Vec3::new(4.0, 0.2, 0.12));
+        const YELLOW_GLOW: (usize, Vec3) = (1, Vec3::new(4.0, 2.6, 0.15));
+        const GREEN_GLOW: (usize, Vec3) = (2, Vec3::new(0.15, 3.6, 0.8));
+        for &(lamps, axis, head) in &self.lamps {
+            // The second lamp is lit only with red and yellow together.
+            let (first, second) = match signal(axis, time) {
+                Signal::Red => (RED_GLOW, None),
+                Signal::Yellow => (YELLOW_GLOW, None),
+                Signal::Green => (GREEN_GLOW, None),
+                Signal::RedYellow => (RED_GLOW, Some(YELLOW_GLOW)),
             };
-            let node = self.scene.get_node_mut(lamp).unwrap();
-            node.set_transform(
-                head * Mat4::from_translation(Vec3::new(LENS_FRONT, 0.0, LENS_HEIGHTS[lens])),
-            );
-            node.uniforms_mut().set("emissive", colour);
+            for (lamp, glow) in lamps.into_iter().zip([Some(first), second]) {
+                let node = self.scene.get_node_mut(lamp).unwrap();
+                node.set_visible(glow.is_some());
+                if let Some((lens, colour)) = glow {
+                    node.set_transform(
+                        head * Mat4::from_translation(Vec3::new(
+                            LENS_FRONT,
+                            0.0,
+                            LENS_HEIGHTS[lens],
+                        )),
+                    );
+                    node.uniforms_mut().set("emissive", colour);
+                }
+            }
         }
 
         let distance = time * CAMERA_SPEED;
@@ -620,7 +634,8 @@ impl CityAssetsDemo {
         if self.view == View::Chase {
             self.chased = self.pick_chased(self.chased);
         }
-        self.scene.set_active_camera(self.cameras[self.view as usize])?;
+        self.scene
+            .set_active_camera(self.cameras[self.view as usize])?;
         if let Some(time) = self.last_time {
             self.place(time);
         }
@@ -685,7 +700,13 @@ impl Demo for CityAssetsDemo {
     }
 
     /// A tap (or a click): press and release without moving far. Drags don't count.
-    fn on_mouse_button(&mut self, button: MouseButton, pressed: bool, x: f32, y: f32) -> Result<()> {
+    fn on_mouse_button(
+        &mut self,
+        button: MouseButton,
+        pressed: bool,
+        x: f32,
+        y: f32,
+    ) -> Result<()> {
         if button != MouseButton::Left {
             return Ok(());
         }

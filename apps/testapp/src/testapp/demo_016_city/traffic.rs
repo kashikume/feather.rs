@@ -13,12 +13,17 @@ pub enum Signal {
     Green,
     Yellow,
     Red,
+    /// Red and yellow together: about to turn green (the Polish order).
+    RedYellow,
 }
 
-/// Seconds of one traffic light cycle: X streets green, yellow, all red, then the same for Y.
+/// Seconds of one traffic light cycle: X streets green, yellow, red, red and yellow, then
+/// green again; Y streets the same, half a cycle later.
 pub const CYCLE: f32 = 20.0;
 const GREEN: f32 = 7.5;
 const YELLOW: f32 = 1.5;
+/// The red and yellow phase ends the red one: X shows it while Y is already red again.
+const RED_YELLOW: f32 = 1.0;
 
 /// What the lights of streets along `axis` show at `time`.
 pub fn signal(axis: Axis, time: f32) -> Signal {
@@ -31,8 +36,10 @@ pub fn signal(axis: Axis, time: f32) -> Signal {
         Signal::Green
     } else if t < GREEN + YELLOW {
         Signal::Yellow
-    } else {
+    } else if t < CYCLE - RED_YELLOW {
         Signal::Red
+    } else {
+        Signal::RedYellow
     }
 }
 
@@ -148,7 +155,7 @@ impl Traffic {
                 ) {
                     let speed = self.cars[car].speed;
                     let can_stop = stop > speed * speed / (2.0 * BRAKING) + 0.5;
-                    if state == Signal::Red || can_stop {
+                    if state != Signal::Yellow || can_stop {
                         free[car] = free[car].min(stop - 0.3);
                     }
                 }
@@ -178,6 +185,12 @@ mod tests {
                 "{t}: both {x:?} and {y:?}"
             );
         }
+        // Green, yellow, red, red and yellow, green.
+        assert_eq!(signal(Axis::X, 8.0), Signal::Yellow);
+        assert_eq!(signal(Axis::X, 12.0), Signal::Red);
+        assert_eq!(signal(Axis::X, 19.5), Signal::RedYellow);
+        assert_eq!(signal(Axis::X, 20.5), Signal::Green);
+        assert_eq!(signal(Axis::Y, 9.5), Signal::RedYellow);
         assert_eq!(signal(Axis::X, 1.0), Signal::Green);
         assert_eq!(signal(Axis::Y, 1.0), Signal::Red);
         assert_eq!(signal(Axis::Y, 11.0), Signal::Green);
@@ -217,7 +230,7 @@ mod tests {
                 },
             ],
         };
-        // X is red from 9 s to 19 s: run during it.
+        // X is red from 9 s to 19 s, then red and yellow to 20 s: run during it.
         let mut time = 9.0;
         while time < 18.5 {
             traffic.step(time, 1.0 / 60.0);

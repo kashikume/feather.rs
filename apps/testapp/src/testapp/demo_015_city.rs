@@ -54,7 +54,6 @@ pub const INTERSECTION_SHOT: f32 = 6.0;
 const SHADOW_RADIUS: f32 = 75.0;
 const SHADOW_MAP_SIZE: u32 = 4096;
 
-
 /// Longest simulation step; slower frames are split.
 const MAX_STEP: f32 = 1.0 / 30.0;
 
@@ -112,9 +111,9 @@ pub struct CityDemo {
     /// Each car's node and model.
     car_nodes: Vec<(usize, cars::CarModel)>,
     people: Vec<Person>,
-    /// Traffic lights' glowing lamps, the streets they are for, and their lights' housings
+    /// Traffic lights' glowing lamps (two: red and yellow light together), the streets they are for, and their lights' housings
     /// (where the lamp goes in front of the lens of the colour shown).
-    lamps: Vec<(usize, Axis, Mat4)>,
+    lamps: Vec<([usize; 2], Axis, Mat4)>,
     last_time: Option<f32>,
 }
 
@@ -137,8 +136,7 @@ impl CityDemo {
         let city = find("node `City`", scene.find_node("City"))?;
         let sky = find("node `Sky`", scene.find_node("Sky"))?;
         let street_camera = find("camera `Street`", scene.find_camera("Street"))?;
-        let intersection_camera =
-            find("camera `Intersection`", scene.find_camera("Intersection"))?;
+        let intersection_camera = find("camera `Intersection`", scene.find_camera("Intersection"))?;
         scene.add_animation(
             Some("Camera cuts".into()),
             camera_cuts(street_camera, intersection_camera, sky),
@@ -450,8 +448,11 @@ impl CityDemo {
                         CURB,
                     );
                     let head = traffic_light(&mut signals, &mut metal, base, facing);
-                    let lamp = self.scene.create_node(None, city)?;
-                    self.lamps.push((lamp, axis, head));
+                    let lamps = [
+                        self.scene.create_node(None, city)?,
+                        self.scene.create_node(None, city)?,
+                    ];
+                    self.lamps.push((lamps, axis, head));
                 }
             }
         }
@@ -470,7 +471,7 @@ impl CityDemo {
             );
             self.scene.add_mesh(m.into_mesh("Lamp"))
         };
-        for &(lamp, _, _) in &self.lamps {
+        for &lamp in self.lamps.iter().flat_map(|(lamps, _, _)| lamps) {
             self.scene.node_set_mesh(lamp, lamp_mesh)?;
             self.scene.node_set_material(lamp, materials["Metal"])?;
             self.scene
@@ -720,17 +721,31 @@ impl CityDemo {
             }
         }
 
-        for &(lamp, axis, head) in &self.lamps {
-            let (lens, colour) = match signal(axis, time) {
-                Signal::Red => (0, Vec3::new(4.0, 0.2, 0.12)),
-                Signal::Yellow => (1, Vec3::new(4.0, 2.6, 0.15)),
-                Signal::Green => (2, Vec3::new(0.15, 3.6, 0.8)),
+        const RED_GLOW: (usize, Vec3) = (0, Vec3::new(4.0, 0.2, 0.12));
+        const YELLOW_GLOW: (usize, Vec3) = (1, Vec3::new(4.0, 2.6, 0.15));
+        const GREEN_GLOW: (usize, Vec3) = (2, Vec3::new(0.15, 3.6, 0.8));
+        for &(lamps, axis, head) in &self.lamps {
+            // The second lamp is lit only with red and yellow together.
+            let (first, second) = match signal(axis, time) {
+                Signal::Red => (RED_GLOW, None),
+                Signal::Yellow => (YELLOW_GLOW, None),
+                Signal::Green => (GREEN_GLOW, None),
+                Signal::RedYellow => (RED_GLOW, Some(YELLOW_GLOW)),
             };
-            let node = self.scene.get_node_mut(lamp).unwrap();
-            node.set_transform(
-                head * Mat4::from_translation(Vec3::new(LENS_FRONT, 0.0, LENS_HEIGHTS[lens])),
-            );
-            node.uniforms_mut().set("emissive", colour);
+            for (lamp, glow) in lamps.into_iter().zip([Some(first), second]) {
+                let node = self.scene.get_node_mut(lamp).unwrap();
+                node.set_visible(glow.is_some());
+                if let Some((lens, colour)) = glow {
+                    node.set_transform(
+                        head * Mat4::from_translation(Vec3::new(
+                            LENS_FRONT,
+                            0.0,
+                            LENS_HEIGHTS[lens],
+                        )),
+                    );
+                    node.uniforms_mut().set("emissive", colour);
+                }
+            }
         }
 
         // The camera follows the route, looking a little way ahead along it.
@@ -772,8 +787,7 @@ fn follow_active_camera(scene: &mut Scene, sky: usize) {
     );
 
     let forward = target - eye;
-    let centre =
-        eye + Vec3::new(forward.x, forward.y, 0.0).normalize() * (SHADOW_RADIUS * 0.45);
+    let centre = eye + Vec3::new(forward.x, forward.y, 0.0).normalize() * (SHADOW_RADIUS * 0.45);
     let centre = Point3::new(centre.x, centre.y, 6.0);
     scene.set_shadow_light(Some(ShadowLight::directional_snapped(
         -sun(),
