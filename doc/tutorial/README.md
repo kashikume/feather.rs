@@ -11,8 +11,8 @@ GitHub through Cargo, as any app of yours would. It is a handful of Rust, GLSL a
 a 3D model of the feather, and a small Gradle project for Android.
 
 > Every step was done and checked on Windows 11 (ARM64), in November 2026, with feather.rs at
-> commit `92f47eb`. The Android build was checked up to the APK; installing and running it on a
-> phone is still to be checked.
+> commit `366323b`, from an empty directory to the app running on Windows and on an Android
+> phone.
 
 ## Contents
 
@@ -34,7 +34,7 @@ a 3D model of the feather, and a small Gradle project for Android.
 
 For Windows you need:
 
-- **Rust**, stable: <https://rustup.rs>.
+- **Rust**, stable, 1.85 or newer (edition 2024): <https://rustup.rs>.
 - **The Vulkan SDK**: <https://vulkan.lunarg.com>. The build compiles shaders with its `glslc`,
   and debug builds need its validation layer (`VK_LAYER_KHRONOS_validation`).
 - A GPU and driver with Vulkan.
@@ -86,7 +86,7 @@ Replace `Cargo.toml` with:
 [package]
 name = "hello-feather"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 # The app's code is a library: Android loads it as a shared library (libhello_feather_app.so),
 # and the Windows executable (src/main.rs) uses it too. Named apart from the executable, whose
@@ -112,10 +112,12 @@ pretty_env_logger = "0.5"
 android_logger = "0.15"
 ```
 
+- **`edition = "2024"`** is what `cargo new` writes with current Rust; the code in this tutorial
+  is written for it.
 - **`feather`** is the engine, **`feather-build`** the helpers `build.rs` uses (step 7). Both
   come from the feather.rs repository. The first build records the commit in `Cargo.lock`, and
-  later builds stay on it; `cargo update` moves to the latest. To choose a commit yourself, add
-  `rev = "<commit>"` to both.
+  later builds stay on it (see [Updating the engine](#updating-the-engine)). To choose a commit
+  yourself, add `rev = "<commit>"` to both.
 - **The library and the executable.** On Android there is no `main`: the system loads the app as
   a shared library and calls a function in it (step 10). So the app's code is a library,
   `hello_feather_app`: `cdylib` makes the shared library for Android, and `rlib` lets the
@@ -539,7 +541,7 @@ use feather::AndroidApp;
 use crate::FeatherDemo;
 
 /// Called by Android (through GameActivity) when the app starts.
-#[no_mangle]
+#[unsafe(no_mangle)]
 fn android_main(app: AndroidApp) {
     // Log to logcat, under the tag `hello-feather`.
     android_logger::init_once(
@@ -557,7 +559,7 @@ fn android_main(app: AndroidApp) {
     unsafe { _exit(0) }
 }
 
-extern "C" {
+unsafe extern "C" {
     fn _exit(status: i32) -> !;
 }
 
@@ -571,7 +573,7 @@ fn run(app: AndroidApp) -> anyhow::Result<()> {
 }
 
 /// Called by `MainActivity` when back is pressed: ends the engine's event loop.
-#[no_mangle]
+#[unsafe(no_mangle)]
 extern "system" fn Java_com_example_hellofeather_MainActivity_nativeRequestExit(
     _env: *mut std::ffi::c_void,
     _this: *mut std::ffi::c_void,
@@ -582,7 +584,9 @@ extern "system" fn Java_com_example_hellofeather_MainActivity_nativeRequestExit(
 
 (Put `mod android;` in `src/lib.rs` back if you commented it out.)
 
-- **`#[no_mangle]`** keeps the functions' names as they are, so Android finds them.
+- **`#[unsafe(no_mangle)]`** keeps the functions' names as they are, so Android finds them.
+  Edition 2024 marks it `unsafe` (two functions of the same name would clash), as it does the
+  `extern` block declaring C's `_exit`.
 - **The event loop is built with the `AndroidApp`**, the handle to the running activity, so winit
   gets its events. The window takes the whole screen; its title and size don't apply.
 - **`AndroidAssetsProvider`** reads the assets from the APK. `FeatherDemo` is the same as on
@@ -924,3 +928,32 @@ Errors, such as a missing asset or a panic, show here.
   `app/build.gradle.kts` (`namespace`, `applicationId`), in `MainActivity.kt` (its `package` line
   and its folder) and in the JNI name in `src/android.rs`; the library's name
   `hello_feather_app` in `Cargo.toml` and the manifest's `lib_name`.
+
+### Updating the engine
+
+The app stays on the feather.rs commit recorded in `Cargo.lock` until you update it. To move to
+the newest commit on `main`, run in the project's directory (the one with `Cargo.toml`):
+
+```powershell
+cargo update -p feather
+```
+
+```
+    Updating git repository `https://github.com/kashikume/feather.rs`
+    Updating atlas-creator v0.1.0 (https://github.com/kashikume/feather.rs#92f47eba) -> #366323b9
+    Updating feather v0.0.1 (https://github.com/kashikume/feather.rs#92f47eba) -> #366323b9
+    Updating feather-build v0.0.1 (https://github.com/kashikume/feather.rs#92f47eba) -> #366323b9
+    ...
+```
+
+- `feather-build` and the engine's helper crates come from the same repository, so they move
+  together with `feather`.
+- Then build as usual: `cargo run` on Windows; on Android `.\gradlew.bat installDebug`, which
+  runs `cargo ndk` and picks up the new engine by itself.
+- `cargo update` (without `-p`) also updates your other dependencies (`anyhow`, `log`, ...)
+  within their version ranges.
+- To go to a given commit instead: `cargo update -p feather --precise <commit>`. To stay on one
+  for good, add `rev = "<commit>"` to both feather entries in `Cargo.toml` (step 3).
+- If the build breaks after an update, the engine's API or what it needs may have changed: the
+  winit version (step 3), or the GameActivity version in `android/app/build.gradle.kts`
+  (step 11). The feather.rs history on GitHub shows what changed.
