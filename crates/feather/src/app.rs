@@ -37,7 +37,7 @@ use super::colorobjects::create_color_objects;
 use super::commandbuffers::{create_command_buffers, record_command_buffer, GpuDraw};
 use super::commandpool::create_command_pool;
 use super::dephobjects::create_depth_objects;
-use super::featherapp::{FeatherApp, FrameStats, PIXELS_PER_WHEEL_LINE};
+use super::featherapp::{FeatherApp, FrameStats, SceneStats, PIXELS_PER_WHEEL_LINE};
 use super::object::Object;
 use super::framebuffers::create_framebuffers;
 use super::instance::create_instance;
@@ -246,28 +246,40 @@ impl App {
         Ok(())
     }
 
-    /// Collects the draw calls of every rendered scene, scene after scene, each in drawing
-    /// order (`sort_for_rendering`: opaque by shader, then transparent back to front) and seen
-    /// through its active camera, and packs their uniforms into the returned arena; and the shadow
-    /// passes of the scenes with a shadow light. Scenes without a camera are skipped. The first draw of every scene but the first
-    /// clears the depth buffer, so later scenes are drawn over earlier ones. Creates the
-    /// pipelines of shaders drawn for the first time.
-    /// Passes the frame's stats to the app, and logs them at `debug` level about once a second.
+    /// Passes the frame's stats to the app, and logs them at `debug` level about once a second,
+    /// a line per scene.
     fn report_frame_stats(&mut self, stats: &FrameStats) {
         self.data.app.on_frame_stats(stats);
         if self.stats_logged.elapsed().as_secs_f32() >= 1.0 {
             self.stats_logged = Instant::now();
             log::debug!(
-                "Frame: {} draws, {} culled, {} shadow draws, collected in {:.2} ms",
-                stats.draws,
-                stats.culled,
-                stats.shadow_draws,
+                "Frame: {} scenes collected in {:.2} ms",
+                stats.scenes.len(),
                 stats.collect_time * 1000.0
             );
+            for (index, s) in stats.scenes.iter().enumerate() {
+                log::debug!(
+                    "  Scene {index}: {} draws, {} culled, {} shadow draws; {} nodes, {} meshes, \
+                     {} mesh buffers, {} atlases",
+                    s.draws,
+                    s.culled,
+                    s.shadow_draws,
+                    s.nodes,
+                    s.meshes,
+                    s.mesh_buffers,
+                    s.atlases
+                );
+            }
         }
     }
 
-    /// `stats` gets the nodes culled (the other counts are filled in by `render`).
+    /// Collects the draw calls of every rendered scene, scene after scene, each in drawing
+    /// order (`sort_for_rendering`: opaque by shader, then transparent back to front) and seen
+    /// through its active camera, and packs their uniforms into the returned arena; and the
+    /// shadow passes of the scenes with a shadow light. Scenes without a camera are skipped. The
+    /// first draw of every scene but the first clears the depth buffer, so later scenes are
+    /// drawn over earlier ones. Creates the pipelines of shaders drawn for the first time.
+    /// `stats` gets a `SceneStats` per scene (its `collect_time` is filled in by `render`).
     unsafe fn collect_draws(
         &mut self,
         stats: &mut FrameStats,
@@ -277,7 +289,16 @@ impl App {
         let mut shadow_passes = Vec::new();
         for index in 0..self.data.app.get_num_scenes_to_render() {
             let first_draw = draws.len();
-            self.collect_scene_draws(index, &mut draws, &mut shadow_passes, &mut arena, stats)?;
+            let mut scene_stats = SceneStats::default();
+            self.collect_scene_draws(
+                index,
+                &mut draws,
+                &mut shadow_passes,
+                &mut arena,
+                &mut scene_stats,
+            )?;
+            scene_stats.draws = draws.len() - first_draw;
+            stats.scenes.push(scene_stats);
             if index > 0 {
                 if let Some(draw) = draws.get_mut(first_draw) {
                     draw.clear_depth = true;
@@ -288,19 +309,23 @@ impl App {
     }
 
     /// Adds the draws of scene `index` to `draws`, and its shadow pass to `shadow_passes` (see
-    /// `collect_draws`).
+    /// `collect_draws`). `stats` gets the scene's resources, culled nodes and shadow draws.
     unsafe fn collect_scene_draws(
         &mut self,
         index: usize,
         draws: &mut Vec<GpuDraw>,
         shadow_passes: &mut Vec<ShadowPass>,
         arena: &mut UniformArena,
-        stats: &mut FrameStats,
+        stats: &mut SceneStats,
     ) -> Result<()> {
         let extent = self.data.swapchain.swapchain_extent;
         let data = &mut self.data;
         let scene = data.app.get_scene_to_render(index);
         let scene_id = scene.get_id();
+        stats.nodes = scene.nodes.len();
+        stats.meshes = scene.meshes.len();
+        stats.mesh_buffers = scene.buffers.len();
+        stats.atlases = scene.atlases.len();
         let gpu = data.scenes.entry(scene_id).or_default();
 
         // Seen through the scene's active camera; a scene without a camera isn't drawn.
@@ -337,7 +362,7 @@ impl App {
         let light = scene.get_shadow_light().map(|l| l.view_projection);
         let culling = Culling::new(&(proj * view), light.as_ref());
         let items = scene.draw_items(Some(&culling));
-        stats.culled += culling.culled_count();
+        stats.culled = culling.culled_count();
 
         let target = PipelineTarget {
             render_pass: data.render_pass,
@@ -365,7 +390,8 @@ impl App {
                         vertex_offset: item.vertex_offset,
                     })
                 })
-                .collect();
+                .collect::<Vec<_>>();
+            stats.shadow_draws = casters.len();
             shadow_passes.push(ShadowPass {
                 framebuffer: map.framebuffer,
                 size: map.size,
@@ -698,8 +724,6 @@ impl App {
         let collect_start = Instant::now();
         let mut stats = FrameStats::default();
         let (mut draws, shadow_passes, arena) = self.collect_draws(&mut stats)?;
-        stats.draws = draws.len();
-        stats.shadow_draws = shadow_passes.iter().map(|p| p.draws.len()).sum();
         stats.collect_time = collect_start.elapsed().as_secs_f32();
         self.report_frame_stats(&stats);
         self.upload_uniforms(image_index, &arena, &mut draws)?;

@@ -97,7 +97,10 @@ The development app (`apps/testapp`) opens a 1024×768 window and shows one demo
 only command line argument is the number of the demo to start with (default 0). The **left** and
 **right** arrow keys, or the **<** and **>** buttons on the window's left and right edges, switch
 to the previous and next demo; after the last demo comes the first. Over every demo, the bottom
-left corner shows the demo's number and name and the frame rate. Both are the app's own HUD
+left corner shows the demo's number and name, the frame rate, and what the engine draws per frame
+(the time taken to collect the draws, then per scene, the demo's and the HUD's own: main-pass
+draws, i.e. nodes drawn, nodes culled as out of view and shadow draws, and the scene's nodes,
+meshes, mesh buffers and atlases; from `FeatherApp::on_frame_stats`). All are the app's own HUD
 (`apps/testapp/src/testapp/testapp_hud.rs`), made with [`feather-ui`](#ui) and drawn after the
 demo's scenes, so it shows in full screen too. It takes the mouse first; demos get what it
 doesn't take.

@@ -5,7 +5,7 @@ files' `bitmap`, `Scene::create_atlas_from_png`, from bytes in memory), and imag
 atlas creator (`.atlist` lists). Also what GuitarPrompter needs to port its cover images: decode
 a JPEG (or PNG) from memory into RGBA pixels.
 
-Covers item 20 of [missing-features-vs-cpp.md](missing-features-vs-cpp.md) (JPEG loading).
+Covers item 19 of [missing-features-vs-cpp.md](missing-features-vs-cpp.md) (JPEG loading).
 
 ## What the C++ engine does
 
@@ -140,7 +140,7 @@ pub struct Rgba { pub width: u32, pub height: u32, pub pixels: Vec<u8> }
 4. **Test app**: demo 0's texture as JPEG, a JPEG in demo 2's plates; every demo checked on
    Windows and on the S25; sizes and decode times.
 5. **Docs**: README (features, assets), `doc/scene-format.md` (`bitmap`), the atlas creator's
-   help, `missing-features-vs-cpp.md` (item 20 removed, items renumbered), `doc/android.md`
+   help, `missing-features-vs-cpp.md` (item 19 removed, items renumbered), `doc/android.md`
    (APK contents) if the sizes change.
 
 ## Decisions

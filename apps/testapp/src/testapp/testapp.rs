@@ -290,7 +290,8 @@ impl FeatherApp for TestApp {
     }
 
     fn on_frame_stats(&mut self, stats: &FrameStats) {
-        self.hud.set_frame_stats(stats);
+        // The HUD is the last scene drawn (`get_scene_to_render`); show the demo's.
+        self.hud.set_frame_stats(stats, 1);
     }
 }
 
@@ -386,6 +387,7 @@ mod tests {
     use feather::object::Object;
 
     use super::*;
+    use feather::featherapp::SceneStats;
 
     /// The assets the app gets at runtime: `resources/` plus the shaders, atlases and meshes
     /// built by `build.rs`.
@@ -1365,19 +1367,74 @@ mod tests {
     fn hud_shows_the_frame_stats() {
         let mut hud = TestHud::new(&SourceAssets).unwrap();
         hud.set_window_size(1024, 768);
-        // Two frames collected in 1 and 3 ms: the average is shown, with the latest counts.
-        let stats = |draws, collect_time| FrameStats {
+        // Two frames collected in 1 and 3 ms: the average is shown with the frame rate, then
+        // the latest stats of each scene: two demo scenes, then the HUD's.
+        let scene = |draws, nodes| SceneStats {
             draws,
-            culled: 410,
-            shadow_draws: 95,
+            culled: 205,
+            shadow_draws: 40,
+            nodes,
+            meshes: 170,
+            mesh_buffers: 1,
+            atlases: 1,
+        };
+        let stats = |draws, collect_time| FrameStats {
+            scenes: vec![scene(draws, 1000), scene(2, 200), scene(77, 77)],
             collect_time,
         };
+        let panel = hud.panel();
+        let height = |hud: &TestHud| hud.hud().widget(panel).unwrap().base().rect().height();
         hud.update(0.0).unwrap();
-        hud.set_frame_stats(&stats(100, 0.001));
+        let no_scenes = height(&hud);
+        hud.set_frame_stats(&stats(100, 0.001), 1);
         hud.update(0.25).unwrap();
-        hud.set_frame_stats(&stats(182, 0.003));
+        hud.set_frame_stats(&stats(180, 0.003), 1);
         hud.update(0.5).unwrap();
-        assert_eq!(hud.get_frame_stats_text(), "182 draws  410 culled  95 shadow  2.00 ms");
+        assert_eq!(hud.get_frame_rate_text(), "4 fps  2.00 ms");
+        let counts = |nodes| format!("{nodes} nodes  170 meshes  1 buffers  1 atlases");
+        let lines: Vec<(String, String)> = hud
+            .get_scene_lines()
+            .into_iter()
+            .map(|(a, b)| (a.to_string(), b.to_string()))
+            .collect();
+        assert_eq!(
+            lines,
+            [
+                (
+                    "Scene 0: 180 draws  205 culled  40 shadow".into(),
+                    counts(1000)
+                ),
+                (
+                    "Scene 1: 2 draws  205 culled  40 shadow".into(),
+                    counts(200)
+                ),
+                ("HUD: 77 draws  205 culled  40 shadow".into(), counts(77)),
+            ]
+        );
+        // The panel grows by two lines per scene.
+        let three_scenes = height(&hud);
+        assert!(three_scenes > no_scenes);
+
+        // One scene fewer (another demo): its lines go, and the panel shrinks.
+        hud.set_frame_stats(
+            &FrameStats {
+                scenes: vec![scene(3, 3), scene(77, 77)],
+                collect_time: 0.001,
+            },
+            1,
+        );
+        hud.update(1.0).unwrap();
+        assert_eq!(
+            hud.get_scene_lines(),
+            [
+                (
+                    "Scene 0: 3 draws  205 culled  40 shadow",
+                    counts(3).as_str()
+                ),
+                ("HUD: 77 draws  205 culled  40 shadow", counts(77).as_str()),
+            ]
+        );
+        assert!(height(&hud) < three_scenes);
     }
 
     #[test]
@@ -1393,8 +1450,8 @@ mod tests {
             hud.update(frame as f32 / 60.0).unwrap();
         }
         assert_eq!(hud.get_frame_rate_text(), "60 fps");
-        // No frame stats given: no stats line.
-        assert_eq!(hud.get_frame_stats_text(), "");
+        // No frame stats given: no collect time, no scene lines.
+        assert!(hud.get_scene_lines().is_empty());
 
         // The panel grows with a longer title.
         let panel = hud.panel();

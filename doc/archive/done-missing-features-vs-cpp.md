@@ -79,3 +79,13 @@ Removed in 760ae4a (2026-11-12).
   **`MeshLoader`** that picks the loader by file extension.
 - **ObjMeshConverter** (`tools/ObjMeshConverter`): converts OBJ files (with axis order and
   fixed-point factor options) into the binary `.mesh` format, one file per object.
+
+### Rendering statistics
+
+Removed on 2026-11-14. `FrameStats` (`FeatherApp::on_frame_stats`) has a `SceneStats` per scene:
+`draws`, the nodes drawn in the main pass, culled nodes and shadow draws, and the scene's nodes,
+meshes, mesh buffers and atlases (`FrameStats::total` adds them up). The test app's HUD shows
+them for each scene, its own included, and the engine logs them per scene at `debug` level.
+
+- **Rendering statistics** (`RenderingState::m_stats.nodesRendered`,
+  `RenderingBatcher::getNodesCount`): number of nodes drawn in a frame.

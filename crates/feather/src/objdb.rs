@@ -81,6 +81,15 @@ impl<T: Object> ObjDB<T> {
         self.objects.get_mut(handle).and_then(Option::as_mut)
     }
 
+    /// How many objects there are (removed ones not counted).
+    pub fn len(&self) -> usize {
+        self.objects.len() - self.free_indexes.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     pub fn iter(&self) -> impl Iterator<Item = &T> {
         self.into_iter()
     }
@@ -153,6 +162,21 @@ mod tests {
                 value,
             }
         }
+    }
+
+    #[test]
+    fn len_counts_objects_not_removed() {
+        let mut db = ObjDB::new();
+        assert!(db.is_empty());
+        let h1 = db.add(TestObject::new(Some("a"), 1));
+        db.add(TestObject::new(None, 2));
+        assert_eq!(db.len(), 2);
+        db.remove(h1);
+        db.remove(h1); // Already removed: ignored.
+        db.remove(99); // Never added: ignored.
+        assert_eq!(db.len(), 1);
+        db.add(TestObject::new(None, 3)); // Reuses h1's slot.
+        assert_eq!(db.len(), 2);
     }
 
     #[test]

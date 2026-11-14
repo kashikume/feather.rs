@@ -78,18 +78,60 @@ pub trait FeatherApp {
     fn on_frame_stats(&mut self, _stats: &FrameStats) {}
 }
 
-/// What the engine draws in a frame, over all its scenes (`FeatherApp::on_frame_stats`).
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+/// What the engine draws in a frame (`FeatherApp::on_frame_stats`): the stats of each scene,
+/// and the time taken to collect the draws.
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct FrameStats {
-    /// Draw calls in the main pass.
+    /// The stats of every scene, by index (`FeatherApp::get_scene_to_render`). A scene without
+    /// a camera isn't drawn: it has no draws, but its resources are counted.
+    pub scenes: Vec<SceneStats>,
+    /// How long the engine took to collect the draws of every scene and pack their uniforms, in
+    /// seconds.
+    pub collect_time: f32,
+}
+
+impl FrameStats {
+    /// The stats of every scene added together.
+    pub fn total(&self) -> SceneStats {
+        SceneStats::sum(&self.scenes)
+    }
+}
+
+/// What the engine draws of one scene in a frame, and the scene's resources (`FrameStats`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct SceneStats {
+    /// Draw calls in the main pass: the nodes drawn, one draw per node (the C++ engine's
+    /// `nodesRendered`).
     pub draws: usize,
     /// Nodes left out of the main pass because their mesh is outside the camera's view
     /// (frustum culling, see `bounds`).
     pub culled: usize,
-    /// Draw calls into shadow maps.
+    /// Draw calls into the scene's shadow map.
     pub shadow_draws: usize,
-    /// How long the engine took to collect the draws and pack their uniforms, in seconds.
-    pub collect_time: f32,
+    /// Nodes in the scene (`Scene::nodes`), visible or not.
+    pub nodes: usize,
+    /// Meshes in the scene (`Scene::meshes`).
+    pub meshes: usize,
+    /// Mesh buffers in the scene (`Scene::buffers`): the vertex and index buffers its meshes
+    /// are packed into.
+    pub mesh_buffers: usize,
+    /// Atlases (textures) in the scene (`Scene::atlases`).
+    pub atlases: usize,
+}
+
+impl SceneStats {
+    /// `stats` added together.
+    pub fn sum(stats: &[SceneStats]) -> SceneStats {
+        stats.iter().fold(SceneStats::default(), |a, b| SceneStats {
+            draws: a.draws + b.draws,
+            culled: a.culled + b.culled,
+            shadow_draws: a.shadow_draws + b.shadow_draws,
+            nodes: a.nodes + b.nodes,
+            meshes: a.meshes + b.meshes,
+            mesh_buffers: a.mesh_buffers + b.mesh_buffers,
+            atlases: a.atlases + b.atlases,
+        })
+    }
 }
 
 /// How the engine renders (`FeatherApp::render_settings`).
