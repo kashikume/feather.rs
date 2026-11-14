@@ -326,7 +326,8 @@ the phone does the same.
   **optimized** (`--release`) even for the debug APK: unoptimized Rust is too slow on a phone.
   For a Rust debug build: `.\gradlew.bat installDebug -Pfeather.rustProfile=debug`.
 - The debug APK is signed with Android's debug key, created on first use in
-  `%USERPROFILE%\.android\debug.keystore`. A release APK needs a key of its own (not set up yet).
+  `%USERPROFILE%\.android\debug.keystore`. A release APK needs a key of its own (see
+  *A release APK*).
 
 The build ends with two notices that need no action:
 
@@ -342,6 +343,78 @@ once Gradle strips its symbols); and the meshes, 9.8 MB of uncompressed `.fmesh`
 APK deflates to 1.1 MB (as OBJ files they were 32 MB, 6 MB deflated; see
 [fmesh-format.md](fmesh-format.md)). After incremental builds the file itself can be larger
 than its contents (28.9 MB on 2026-11-12).
+
+### A release APK
+
+**For release speed, the debug APK is enough.** Gradle builds the Rust library with `--release`
+for both variants (unless `-Pfeather.rustProfile=debug`), so `.\gradlew.bat installDebug`
+already gives optimized Rust, with the validation layers off (see *Validation layers*). The
+only differences in a debug APK are Android's own: it is marked debuggable and signed with the
+debug key. The frame rates and memory measurements in this document were taken that way.
+
+**A real release APK** (to share, or for a store) must be signed with a key of its own. Signing
+isn't set up in the Gradle project yet; a script builds and signs instead.
+
+1. Make a key, once, with `keytool` from Android Studio's JDK. Keep it outside the repository,
+   with a backup: an app signed with a lost key can't be updated.
+
+   ```powershell
+   & "$env:JAVA_HOME\bin\keytool.exe" -genkeypair -v -keystore <path>\android-feather-rs-testapp.ks `
+     -alias feather-testapp -keyalg RSA -keysize 4096 -validity 10000
+   ```
+
+   It asks for a password and the certificate's name fields.
+
+2. Build, sign and install, from `apps\testapp\android`:
+
+   ```powershell
+   .\build-release.ps1 -Keystore <path>\android-feather-rs-testapp.ks -Install
+   ```
+
+   It asks for the key's password and leaves the signed APK in
+   `app\build\outputs\apk\release\app-release.apk` (18 MB on 2026-11-14). Without `-Install` it
+   only builds and signs.
+
+`build-release.ps1` takes:
+
+| Parameter | Environment variable | Default |
+|---|---|---|
+| `-Keystore` | `FEATHER_RELEASE_KEYSTORE` | none: required |
+| `-Alias` | `FEATHER_RELEASE_KEY_ALIAS` | `feather-testapp` |
+| (password) | `FEATHER_RELEASE_KEY_PASSWORD` | `apksigner` asks for it |
+
+With the keystore in `FEATHER_RELEASE_KEYSTORE` (set it for the user like `JAVA_HOME` in
+*Setup*), `.\build-release.ps1 -Install` is enough. The password variable is read by
+`apksigner` itself (`--ks-pass env:...`), so it never appears on a command line; still, prefer
+the prompt on a shared machine. The SDK is found through `ANDROID_HOME`, else `local.properties`,
+else `%LOCALAPPDATA%\Android\Sdk`.
+
+The script does what these commands do by hand:
+
+```powershell
+.\gradlew.bat assembleRelease                      # app\build\outputs\apk\release\app-release-unsigned.apk
+$bt = (Get-ChildItem "$env:LOCALAPPDATA\Android\Sdk\build-tools" | Sort-Object Name | Select-Object -Last 1).FullName
+& "$bt\apksigner.bat" sign --ks <path>\android-feather-rs-testapp.ks --ks-key-alias feather-testapp `
+  --out app\build\outputs\apk\release\app-release.apk app\build\outputs\apk\release\app-release-unsigned.apk
+& "$bt\apksigner.bat" verify --print-certs app\build\outputs\apk\release\app-release.apk
+adb install -r app\build\outputs\apk\release\app-release.apk
+```
+
+- Android doesn't install the unsigned APK.
+- `--ks-key-alias` must match `keytool`'s `-alias`; `apksigner` picks the alias itself only when
+  the keystore holds one key.
+- With build-tools 37.0.0, `apksigner` prints `WARNING: A restricted method in java.lang.System
+  has been called` (from its own Java library, on a newer JDK): harmless.
+- If the debug build is already on the phone, uninstall it first (`adb uninstall
+  com.kashikume.feather.testapp`): Android refuses to replace an app signed with a different
+  key, and the other way round when going back to the debug build. The script stops with this
+  hint when `adb install` fails.
+
+**Later: signing in Gradle.** A `signingConfigs { create("release") { ... } }` block in
+`app/build.gradle.kts`, reading the keystore's path and passwords from
+`%USERPROFILE%\.gradle\gradle.properties` (so no secrets go into the repository), would let
+`.\gradlew.bat installRelease` build, sign and install in one step. It is in the open Android
+items ([todo/android-plan.md](todo/android-plan.md), *Release signing*).
 
 ### Checking that the code compiles for Android
 
@@ -686,6 +759,7 @@ apps/testapp/android/
   gradle.properties             memory for Gradle
   gradle/libs.versions.toml     every version, in one place
   gradlew, gradlew.bat, gradle/wrapper/   the Gradle wrapper (downloads Gradle 9.9.1)
+  build-release.ps1             builds and signs the release APK (see *A release APK*)
   local.properties              where the SDK is (per machine, not committed)
   .gitignore, .gitattributes
   app/
