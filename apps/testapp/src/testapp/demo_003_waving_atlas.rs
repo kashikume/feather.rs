@@ -73,6 +73,8 @@ impl WavingAtlasDemo {
             );
             let node = scene.get_node_mut(node).unwrap();
             node.set_transform(Mat4::from_translation(top));
+            // The shader bends the flat plate out of its mesh's (flat) bounds: never cull it.
+            node.set_culled(false);
             node.uniforms_mut()
                 .set("phase", random.next() * TAU)
                 .set("speed", 1.0 + random.next() * 1.2)

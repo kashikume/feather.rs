@@ -60,7 +60,8 @@
 //! - A node transform is either `matrix` (16 numbers, column-major) or any of `translation`
 //!   `[x, y, z]`, `rotation` `[x, y, z]` in degrees (applied around X, then Y, then Z) and
 //!   `scale` (a number or `[x, y, z]`). Nodes may also set `"visible": false`,
-//!   `"transparent": true` (see `Node::set_transparent`) and `"casts_shadow": true`.
+//!   `"transparent": true` (see `Node::set_transparent`), `"casts_shadow": true` and
+//!   `"culled": false` (see `Node::set_culled`).
 //! - `shadow_light` (optional) is a directional light casting the scene's shadows
 //!   (`ShadowLight::directional`): its `direction`, the `center` (default the origin) and
 //!   `radius` of the area it covers, and an optional `map_size` in pixels (default 2048).
@@ -273,6 +274,8 @@ struct NodeEntry {
     transparent: bool,
     #[serde(default)]
     casts_shadow: bool,
+    #[serde(default = "default_culled")]
+    culled: bool,
     #[serde(default)]
     uniforms: BTreeMap<String, UniformEntry>,
     #[serde(default)]
@@ -280,6 +283,10 @@ struct NodeEntry {
 }
 
 fn default_visible() -> bool {
+    true
+}
+
+fn default_culled() -> bool {
     true
 }
 
@@ -610,6 +617,7 @@ fn setup_node(scene: &mut Scene, handle: usize, entry: &NodeEntry, names: &Names
         node.set_visible(entry.visible);
         node.set_transparent(entry.transparent);
         node.set_casts_shadow(entry.casts_shadow);
+        node.set_culled(entry.culled);
         set_uniforms(node.uniforms_mut(), &entry.uniforms)
     })()
     .with_context(what)?;
@@ -925,7 +933,7 @@ mod tests {
                 "name": "Root",
                 "children": [
                     { "name": "Caster", "mesh": "Triangle", "casts_shadow": true },
-                    { "name": "Receiver", "mesh": "Triangle" }
+                    { "name": "Receiver", "mesh": "Triangle", "culled": false }
                 ]
             }
         }"#;
@@ -938,6 +946,8 @@ mod tests {
         let node = |name| scene.get_node(scene.find_node(name).unwrap()).unwrap();
         assert!(node("Caster").casts_shadow());
         assert!(!node("Receiver").casts_shadow());
+        assert!(node("Caster").is_culled());
+        assert!(!node("Receiver").is_culled());
 
         let shader = scene.shaders.get_by_name("Shadowed").unwrap();
         assert_eq!(shader.get_uniform_shadow_matrix_name(), Some("view"));

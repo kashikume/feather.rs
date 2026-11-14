@@ -128,6 +128,20 @@ the per-node test as a cost.
     block and texture; measure with culling off and on.
 7. Measure (see *Check*), write the results into the done note when archiving.
 
+## Status (2026-11-14)
+
+Steps 1–6b done. First numbers, Windows, release, from the `debug` log line (per frame, a few
+seconds into each demo, camera moving):
+
+| Demo | Main-pass draws | Culled | Shadow draws | Collect time |
+|---|---|---|---|---|
+| 15 (statics split per block, ~1150 nodes) | 175–210 | 940–975 | 355–395 | 0.35–0.7 ms |
+| 16 (~720 nodes) | 110–150 | 570–610 | 190–235 | 0.3–0.4 ms |
+| 11 (crawl) | 43 | 0 | 0 | 0.06 ms |
+
+Demo 11 culls nothing: its text is a few meshes, not a node per glyph. Still to do: step 7
+(before/after on the S25, the visual checks below).
+
 ## Check
 
 - Demo 16 and demo 11 on Windows and the Galaxy S25: draws per frame and `collect_draws` time

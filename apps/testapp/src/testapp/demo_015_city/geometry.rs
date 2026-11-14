@@ -28,6 +28,37 @@ impl MeshData {
         self.indices.is_empty()
     }
 
+    /// Splits the triangles into square cells of the ground, `size` wide with a corner at
+    /// `origin` (x, y), by where each triangle's centre is; returns the cells' meshes, each
+    /// with its cell's (column, row), in order. So a big mesh becomes pieces that frustum
+    /// culling can leave out one by one.
+    pub fn split_into_cells(self, origin: Vec2, size: f32) -> Vec<((i32, i32), MeshData)> {
+        let mut cells: std::collections::BTreeMap<(i32, i32), (MeshData, Vec<u32>)> =
+            Default::default();
+        for triangle in self.indices.chunks_exact(3) {
+            let centre = triangle
+                .iter()
+                .map(|&i| self.vertices[i as usize].pos)
+                .fold(Vec3::new(0.0, 0.0, 0.0), |sum, p| sum + p)
+                / 3.0;
+            let cell = (
+                ((centre.x - origin.x) / size).floor() as i32,
+                ((centre.y - origin.y) / size).floor() as i32,
+            );
+            let (mesh, remap) = cells
+                .entry(cell)
+                .or_insert_with(|| (MeshData::default(), vec![u32::MAX; self.vertices.len()]));
+            for &i in triangle {
+                if remap[i as usize] == u32::MAX {
+                    remap[i as usize] = mesh.vertices.len() as u32;
+                    mesh.vertices.push(self.vertices[i as usize]);
+                }
+                mesh.indices.push(remap[i as usize]);
+            }
+        }
+        cells.into_iter().map(|(cell, (mesh, _))| (cell, mesh)).collect()
+    }
+
     /// A flat quad; corners counter-clockwise seen from the front: bottom left, bottom right,
     /// top right, top left.
     pub fn quad(&mut self, corners: [Vec3; 4], uvs: [Vec2; 4]) {
@@ -440,6 +471,39 @@ mod tests {
             let n = (b - a).cross(c - a);
             n.magnitude() < 1e-9 || n.dot((a + b + c) / 3.0 - inside((a + b + c) / 3.0)) > 0.0
         })
+    }
+
+    #[test]
+    fn split_into_cells_keeps_every_triangle() {
+        let mut m = MeshData::default();
+        // A box in cell (0, 0), one in cell (1, 0), and a quad in cell (-1, 2).
+        m.walls(Vec3::new(1.0, 1.0, 0.0), Vec3::new(3.0, 3.0, 2.0), Vec2::new(1.0, 1.0));
+        m.walls(Vec3::new(11.0, 1.0, 0.0), Vec3::new(13.0, 3.0, 2.0), Vec2::new(1.0, 1.0));
+        m.top(Vec2::new(-8.0, 21.0), Vec2::new(-6.0, 23.0), 0.0, 1.0);
+        let (vertices, indices) = (m.vertices.clone(), m.indices.clone());
+        let cells = m.split_into_cells(Vec2::new(0.0, 0.0), 10.0);
+        let keys: Vec<_> = cells.iter().map(|(cell, _)| *cell).collect();
+        assert_eq!(keys, [(-1, 2), (0, 0), (1, 0)]);
+        // The same triangles, vertex for vertex.
+        let triangles = |vertices: &[Vertex], indices: &[u32]| -> Vec<[f32; 9]> {
+            let mut t: Vec<[f32; 9]> = indices
+                .chunks_exact(3)
+                .map(|tri| {
+                    let p = |k: usize| vertices[tri[k] as usize].pos;
+                    let (a, b, c) = (p(0), p(1), p(2));
+                    [a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z]
+                })
+                .collect();
+            t.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            t
+        };
+        let mut split = Vec::new();
+        for (_, mesh) in &cells {
+            assert!(mesh.indices.iter().all(|&i| (i as usize) < mesh.vertices.len()));
+            split.extend(triangles(&mesh.vertices, &mesh.indices));
+        }
+        split.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        assert_eq!(split, triangles(&vertices, &indices));
     }
 
     #[test]

@@ -305,6 +305,7 @@ material without a texture draws magenta, and a warning is logged.
 | `visible`   | boolean          | no       | `false` hides the node and its descendants (default `true`) |
 | `transparent` | boolean        | no       | `true` blends the node over what is behind it, using its shader's output alpha; drawn after opaque nodes, back to front (default `false`, not inherited) |
 | `casts_shadow` | boolean       | no       | `true` makes the node's mesh cast a shadow when the scene has a `shadow_light` (default `false`, not inherited) |
+| `culled`    | boolean          | no       | `false` draws the node even when its mesh is outside the camera's (or the shadow light's) view; for shaders that move vertices beyond the mesh (default `true`, not inherited) |
 | `uniforms`  | object           | no       | Uniform values, see [Uniforms](#uniforms)      |
 | `children`  | array of nodes   | no       | Child nodes                                    |
 

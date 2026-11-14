@@ -91,8 +91,9 @@ struct Person {
 /// the surfaces (the texture sampler wraps). Their alpha says where a node's `tint` colours
 /// them: walls, car paint and shirts vary, windows don't.
 ///
-/// The static city is a few big meshes, one per texture (`geometry`), so it costs a few draws;
-/// cars, people (a body and two swinging legs each) and traffic lights' lamps are nodes. The
+/// The static city is one mesh per texture and block (`geometry`, split street to street), so
+/// frustum culling leaves out the blocks out of view, and draws into the shadow map only the
+/// blocks the shadow light covers; cars, people (a body and two swinging legs each) and traffic lights' lamps are nodes. The
 /// shadow light follows the camera, snapped to the shadow map's texels so shadows don't
 /// shimmer (`ShadowLight::directional_snapped`). The shader (`demo_015_city_shader.frag`) adds
 /// light from the sky and the ground, darker street level, sky reflections on glass and fog
@@ -208,23 +209,31 @@ impl CityDemo {
         Ok(demo)
     }
 
-    /// Adds `mesh` as a node with `material`, casting shadows.
+    /// Adds `mesh` as nodes with `material`, casting shadows: one per block (the square from
+    /// street to street, see `MeshData::split_into_cells`), so frustum culling leaves out the
+    /// blocks out of view. Returns the nodes.
     fn add_static(
         &mut self,
         parent: usize,
         name: &str,
         mesh: MeshData,
         material: usize,
-    ) -> Result<usize> {
-        let mesh = self.scene.add_mesh(mesh.into_mesh(name));
-        let node = self.scene.create_node(Some(name.to_string()), parent)?;
-        self.scene.node_set_mesh(node, mesh)?;
-        self.scene.node_set_material(node, material)?;
-        self.scene
-            .get_node_mut(node)
-            .unwrap()
-            .set_casts_shadow(true);
-        Ok(node)
+    ) -> Result<Vec<usize>> {
+        let mut nodes = Vec::new();
+        for ((column, row), piece) in mesh.split_into_cells(Vec2::new(street(0), street(0)), PITCH)
+        {
+            let name = format!("{name} ({column}, {row})");
+            let mesh = self.scene.add_mesh(piece.into_mesh(&name));
+            let node = self.scene.create_node(Some(name), parent)?;
+            self.scene.node_set_mesh(node, mesh)?;
+            self.scene.node_set_material(node, material)?;
+            self.scene
+                .get_node_mut(node)
+                .unwrap()
+                .set_casts_shadow(true);
+            nodes.push(node);
+        }
+        Ok(nodes)
     }
 
     /// The buildings, streets, sidewalks, park, trees, lamps and traffic lights.
@@ -473,7 +482,7 @@ impl CityDemo {
         let statics = self.scene.create_node(Some("Static".into()), city)?;
         for (i, mesh) in facades.into_iter().enumerate() {
             if !mesh.is_empty() {
-                let node = self.add_static(statics, styles[i], mesh, materials[styles[i]])?;
+                let nodes = self.add_static(statics, styles[i], mesh, materials[styles[i]])?;
                 // Each style in its own wall colour (glass facades stay neutral).
                 let tint = [
                     Vec3::new(1.0, 1.0, 1.0),
@@ -481,11 +490,13 @@ impl CityDemo {
                     Vec3::new(0.95, 0.97, 1.0),
                     Vec3::new(1.0, 0.96, 0.9),
                 ][i];
-                self.scene
-                    .get_node_mut(node)
-                    .unwrap()
-                    .uniforms_mut()
-                    .set("tint", tint);
+                for node in nodes {
+                    self.scene
+                        .get_node_mut(node)
+                        .unwrap()
+                        .uniforms_mut()
+                        .set("tint", tint);
+                }
             }
         }
         for (name, mesh, material) in [

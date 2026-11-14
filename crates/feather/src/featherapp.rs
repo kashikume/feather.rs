@@ -72,6 +72,24 @@ pub trait FeatherApp {
     fn render_settings(&self) -> RenderSettings {
         RenderSettings::default()
     }
+
+    /// Called every frame, once the engine has collected what to draw, with how much it draws
+    /// (e.g. to show it on screen).
+    fn on_frame_stats(&mut self, _stats: &FrameStats) {}
+}
+
+/// What the engine draws in a frame, over all its scenes (`FeatherApp::on_frame_stats`).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct FrameStats {
+    /// Draw calls in the main pass.
+    pub draws: usize,
+    /// Nodes left out of the main pass because their mesh is outside the camera's view
+    /// (frustum culling, see `bounds`).
+    pub culled: usize,
+    /// Draw calls into shadow maps.
+    pub shadow_draws: usize,
+    /// How long the engine took to collect the draws and pack their uniforms, in seconds.
+    pub collect_time: f32,
 }
 
 /// How the engine renders (`FeatherApp::render_settings`).

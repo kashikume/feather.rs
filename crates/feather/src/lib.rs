@@ -8,6 +8,7 @@ pub mod appdata;
 pub mod assetsprovider;
 pub mod atlas;
 pub mod bufferdata;
+pub mod bounds;
 pub mod buffers;
 pub mod camera;
 pub mod colorobjects;

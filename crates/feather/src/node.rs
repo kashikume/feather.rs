@@ -18,6 +18,7 @@ pub struct Node {
     global_transform: Option<Mat4>,
     transparent: bool,
     casts_shadow: bool,
+    culled: bool,
     visible: bool,
     mesh: Option<usize>,
     material: Option<usize>,
@@ -56,6 +57,7 @@ impl Node {
             global_transform: None,
             transparent,
             casts_shadow: false,
+            culled: true,
             visible: true,
             mesh: None,
             material: None,
@@ -144,6 +146,19 @@ impl Node {
 
     pub fn casts_shadow(&self) -> bool {
         self.casts_shadow
+    }
+
+    /// Sets whether the node may be left out of a frame when its mesh is outside the camera's
+    /// view (or, for a shadow caster, the shadow light's view): frustum culling, on by default
+    /// (see `bounds`). Turn it off for a node whose vertex shader moves vertices beyond the
+    /// mesh (waving, billboards), so the mesh's bounds don't hold what is drawn. Applies to this
+    /// node only, not to its children.
+    pub fn set_culled(&mut self, culled: bool) {
+        self.culled = culled;
+    }
+
+    pub fn is_culled(&self) -> bool {
+        self.culled
     }
 
     pub fn set_mesh(&mut self, mesh: usize) {

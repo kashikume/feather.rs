@@ -1,3 +1,4 @@
+use std::cell::Cell;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use anyhow::Result;
@@ -9,6 +10,7 @@ use crate::{
     animator::Animator,
     assetsprovider::AssetsProvider,
     atlas::Atlas,
+    bounds::Frustum,
     camera::Camera,
     material::Material,
     object::Object,
@@ -29,8 +31,12 @@ pub struct DrawItem {
     /// Whether the node is transparent (`Node::is_transparent`): blended, and drawn after the
     /// opaque nodes, back to front.
     pub transparent: bool,
-    /// Whether the node casts a shadow (`Node::casts_shadow`).
+    /// Whether the node casts a shadow (`Node::casts_shadow`) and, when culling, may be in the
+    /// shadow light's view: whether to draw it into the shadow map.
     pub casts_shadow: bool,
+    /// Whether the node may be in the camera's view (always, without culling): whether to draw
+    /// it in the main pass.
+    pub in_view: bool,
     /// Handle of the node's material (in `Scene::materials`).
     pub material: usize,
     /// Handle of the shader (in `Scene::shaders`) of the node's material.
@@ -43,6 +49,35 @@ pub struct DrawItem {
     pub index_count: u32,
     /// Added to every index: where the mesh's vertices start in the buffer's vertex buffer.
     pub vertex_offset: i32,
+}
+
+/// What `Scene::draw_items` leaves out: nodes outside the camera's view, and shadow casters
+/// outside the shadow light's view (see `bounds`).
+#[derive(Debug, Clone)]
+pub struct Culling {
+    /// The camera's frustum (from its projection × view).
+    pub camera: Frustum,
+    /// The shadow light's frustum (from `ShadowLight::view_projection`), when the scene has one.
+    pub light: Option<Frustum>,
+    /// Nodes found outside the camera's view, by every `draw_items` call with this culling.
+    culled: Cell<usize>,
+}
+
+impl Culling {
+    /// Culling for a camera's view-projection and, if any, a shadow light's.
+    pub fn new(camera_view_projection: &Mat4, light_view_projection: Option<&Mat4>) -> Self {
+        Self {
+            camera: Frustum::from_matrix(camera_view_projection),
+            light: light_view_projection.map(Frustum::from_matrix),
+            culled: Cell::new(0),
+        }
+    }
+
+    /// How many nodes `draw_items` found outside the camera's view with this culling (left out
+    /// of the main pass; some may still be drawn into the shadow map).
+    pub fn culled_count(&self) -> usize {
+        self.culled.get()
+    }
 }
 
 /// Puts draw items in the order to draw them:
@@ -450,7 +485,12 @@ impl Scene {
     /// Lists what to draw: every visible node that has a material with an existing shader and
     /// a mesh already placed in a mesh buffer. A hidden node hides its descendants too. Uses
     /// the global transforms computed by `update_nodes`.
-    pub fn draw_items(&self) -> Vec<DrawItem> {
+    ///
+    /// With `culling`, each item says whether its mesh may be in the camera's view (`in_view`)
+    /// and whether it casts a shadow that may be in the light's view (`casts_shadow`); nodes
+    /// that are neither aren't listed. Nodes with `Node::set_culled(false)` are never culled.
+    /// Without `culling`, every item is `in_view`.
+    pub fn draw_items(&self, culling: Option<&Culling>) -> Vec<DrawItem> {
         let mut items = Vec::new();
         let mut stack = self.root_nodes();
         while let Some(handle) = stack.pop() {
@@ -476,14 +516,32 @@ impl Scene {
             if self.shaders.get(shader).is_none() {
                 continue;
             }
+            let model = node.get_global_transform().unwrap_or(node.get_transform());
+            let mut in_view = true;
+            let mut casts_shadow = node.casts_shadow();
+            if let Some(culling) = culling.filter(|_| node.is_culled()) {
+                let bounds = node.get_mesh().and_then(|m| self.meshes.get(m)?.get_bounds());
+                if let Some(bounds) = bounds {
+                    in_view = culling.camera.intersects(bounds, &model);
+                    if !in_view {
+                        culling.culled.set(culling.culled.get() + 1);
+                    }
+                    casts_shadow = casts_shadow
+                        && culling.light.map_or(true, |f| f.intersects(bounds, &model));
+                }
+                if !in_view && !casts_shadow {
+                    continue;
+                }
+            }
             items.push(DrawItem {
                 node: handle,
                 transparent: node.is_transparent(),
-                casts_shadow: node.casts_shadow(),
+                casts_shadow,
+                in_view,
                 material: material.get_handle(),
                 shader,
                 mesh_buffer: data.buffer_handle,
-                model: node.get_global_transform().unwrap_or(node.get_transform()),
+                model,
                 first_index: data.index_begin_index as u32,
                 index_count: data.index_size as u32,
                 vertex_offset: data.vertex_begin_index as i32,
@@ -640,6 +698,7 @@ mod tests {
     use crate::math::{Vec2, Vec3};
     use crate::uniform::UniformValue;
     use crate::vertex::Vertex;
+    use cgmath::SquareMatrix;
 
     /// Mesh with `num_vertices` dummy vertices and `num_indices` indices.
     fn test_mesh(num_vertices: usize, num_indices: usize) -> Mesh {
@@ -1733,7 +1792,7 @@ mod tests {
         scene.build_missing_mesh_buffers().unwrap();
         scene.update_nodes();
 
-        let mut items = scene.draw_items();
+        let mut items = scene.draw_items(None);
         items.sort_by_key(|i| i.node);
         assert_eq!(items.len(), 2);
 
@@ -1748,6 +1807,7 @@ mod tests {
                 node: a,
                 transparent: false,
                 casts_shadow: false,
+                in_view: true,
                 material,
                 shader,
                 mesh_buffer: buffer,
@@ -1763,6 +1823,7 @@ mod tests {
                 node: b,
                 transparent: false,
                 casts_shadow: false,
+                in_view: true,
                 material,
                 shader,
                 mesh_buffer: buffer,
@@ -1784,7 +1845,7 @@ mod tests {
         scene.node_set_material(root, material).unwrap();
         scene.update_nodes();
 
-        assert!(scene.draw_items().is_empty());
+        assert!(scene.draw_items(None).is_empty());
     }
 
     #[test]
@@ -1796,7 +1857,7 @@ mod tests {
         scene.build_missing_mesh_buffers().unwrap();
         scene.update_nodes();
 
-        assert!(scene.draw_items().is_empty());
+        assert!(scene.draw_items(None).is_empty());
     }
 
     #[test]
@@ -1811,7 +1872,7 @@ mod tests {
         scene.build_missing_mesh_buffers().unwrap();
         scene.update_nodes();
 
-        assert!(scene.draw_items().is_empty());
+        assert!(scene.draw_items(None).is_empty());
     }
 
     #[test]
@@ -1830,7 +1891,7 @@ mod tests {
         scene.build_missing_mesh_buffers().unwrap();
         scene.update_nodes();
 
-        let items = scene.draw_items();
+        let items = scene.draw_items(None);
         let shader_of = |node| items.iter().find(|i| i.node == node).unwrap().shader;
         assert_eq!(shader_of(a), shader_a);
         assert_eq!(shader_of(b), shader_b);
@@ -1854,7 +1915,7 @@ mod tests {
         scene.build_missing_mesh_buffers().unwrap();
         scene.update_nodes();
 
-        let items = scene.draw_items();
+        let items = scene.draw_items(None);
         let item = |node| items.iter().find(|i| i.node == node).unwrap();
         assert!(!item(opaque).transparent);
         assert!(item(glass).transparent);
@@ -1876,7 +1937,7 @@ mod tests {
         scene.build_missing_mesh_buffers().unwrap();
         scene.update_nodes();
 
-        let items = scene.draw_items();
+        let items = scene.draw_items(None);
         let item = |node| items.iter().find(|i| i.node == node).unwrap();
         assert!(item(caster).casts_shadow);
         assert!(!item(other).casts_shadow);
@@ -1887,11 +1948,88 @@ mod tests {
         assert_eq!(scene.get_shadow_light(), Some(&light));
     }
 
+    #[test]
+    fn draw_items_cull_by_camera_and_light() {
+        let mut scene = Scene::new();
+        let root = scene.create_root_node(None);
+        // Vertices at x = 0, 1, 2.
+        let mesh = scene.add_mesh(test_mesh(3, 3));
+        let (_, material) = test_material(&mut scene);
+        let node = |scene: &mut Scene, x: f32, casts_shadow: bool| {
+            let node = scene.create_node(None, root).unwrap();
+            scene.node_set_mesh(node, mesh).unwrap();
+            scene.node_set_material(node, material).unwrap();
+            let n = scene.get_node_mut(node).unwrap();
+            n.set_transform(translation(x, 0.0, 0.5));
+            n.set_casts_shadow(casts_shadow);
+            node
+        };
+        // The camera sees x in -1..1, the light x in 99..101 (y -1..1, z 0..1 for both).
+        let seen = node(&mut scene, 0.0, false);
+        let seen_caster = node(&mut scene, 0.0, true);
+        let lit_caster = node(&mut scene, 99.5, true);
+        let lit_not_caster = node(&mut scene, 99.5, false);
+        let neither = node(&mut scene, 50.0, true);
+        let unculled = node(&mut scene, 50.0, true);
+        scene.get_node_mut(unculled).unwrap().set_culled(false);
+        scene.build_missing_mesh_buffers().unwrap();
+        scene.update_nodes();
+
+        let light = translation(-100.0, 0.0, 0.0);
+        let culling = Culling::new(&Mat4::identity(), Some(&light));
+        let items = scene.draw_items(Some(&culling));
+        let item = |node| items.iter().find(|i: &&DrawItem| i.node == node);
+        let flags = |node| item(node).map(|i| (i.in_view, i.casts_shadow));
+        assert_eq!(culling.culled_count(), 3);
+        assert_eq!(flags(seen), Some((true, false)));
+        assert_eq!(flags(seen_caster), Some((true, false)));
+        assert_eq!(flags(lit_caster), Some((false, true)));
+        assert_eq!(flags(lit_not_caster), None);
+        assert_eq!(flags(neither), None);
+        assert_eq!(flags(unculled), Some((true, true)));
+
+        // Without a shadow light, casters keep casting wherever they are.
+        let culling = Culling::new(&Mat4::identity(), None);
+        let items = scene.draw_items(Some(&culling));
+        let flags = |node| {
+            items.iter().find(|i| i.node == node).map(|i| (i.in_view, i.casts_shadow))
+        };
+        assert_eq!(flags(seen), Some((true, false)));
+        assert_eq!(flags(neither), Some((false, true)));
+        assert_eq!(flags(lit_not_caster), None);
+
+        // Without culling, everything is listed and in view.
+        let items = scene.draw_items(None);
+        assert_eq!(items.len(), 6);
+        assert!(items.iter().all(|i| i.in_view));
+    }
+
+    #[test]
+    fn draw_items_culling_keeps_hidden_nodes_hidden() {
+        let mut scene = Scene::new();
+        let root = scene.create_root_node(None);
+        let mesh = scene.add_mesh(test_mesh(3, 3));
+        let (_, material) = test_material(&mut scene);
+        let node = scene.create_node(None, root).unwrap();
+        scene.node_set_mesh(node, mesh).unwrap();
+        scene.node_set_material(node, material).unwrap();
+        let n = scene.get_node_mut(node).unwrap();
+        n.set_transform(translation(0.0, 0.0, 0.5));
+        n.set_culled(false);
+        n.set_visible(false);
+        scene.build_missing_mesh_buffers().unwrap();
+        scene.update_nodes();
+
+        let culling = Culling::new(&Mat4::identity(), None);
+        assert!(scene.draw_items(Some(&culling)).is_empty());
+    }
+
     fn item_at(node: usize, shader: usize, transparent: bool, y: f32) -> DrawItem {
         DrawItem {
             node,
             transparent,
             casts_shadow: false,
+            in_view: true,
             material: 0,
             shader,
             mesh_buffer: 0,
@@ -1955,7 +2093,7 @@ mod tests {
         scene.build_missing_mesh_buffers().unwrap();
         scene.update_nodes();
 
-        let nodes: Vec<usize> = scene.draw_items().iter().map(|i| i.node).collect();
+        let nodes: Vec<usize> = scene.draw_items(None).iter().map(|i| i.node).collect();
         assert_eq!(nodes, [shown]);
     }
 

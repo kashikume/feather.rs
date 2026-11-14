@@ -1,6 +1,7 @@
 use anyhow::{anyhow, Result};
 
 use feather::assetsprovider::AssetsProvider;
+use feather::featherapp::FrameStats;
 use feather::math::Vec4;
 use feather::scene::Scene;
 use feather::text::{create_text_material, TextBuilder, TextMethod};
@@ -17,20 +18,24 @@ const UI_HEIGHT: f32 = 768.0;
 const MARGIN: f32 = 12.0;
 /// Distance of the texts from the panel's edges.
 const PADDING: f32 = 10.0;
-/// Text heights, and the space between the two lines.
+/// Text heights, and the space between the lines.
 const TITLE_HEIGHT: f32 = 24.0;
 const FPS_HEIGHT: f32 = 20.0;
+const STATS_HEIGHT: f32 = 16.0;
 const LINE_GAP: f32 = 4.0;
 /// How often the frame rate shown is updated, in seconds.
 const FPS_PERIOD: f32 = 0.5;
 /// The widest frame rate text the panel leaves room for.
 const WIDEST_FPS: &str = "8888 fps";
+/// The widest frame stats text the panel leaves room for.
+const WIDEST_STATS: &str = "88888 draws  88888 culled  88888 shadow  88.88 ms";
 /// The previous / next demo buttons, and their arrows' height.
 const BUTTON_WIDTH: f32 = 48.0;
 const BUTTON_HEIGHT: f32 = 96.0;
 const ARROW_HEIGHT: f32 = 40.0;
 const TITLE_COLOR: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 const FPS_COLOR: [f32; 4] = [0.55, 0.95, 0.6, 1.0];
+const STATS_COLOR: [f32; 4] = [0.75, 0.8, 0.85, 1.0];
 
 /// What the HUD's buttons ask the app to do.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -42,7 +47,8 @@ pub enum HudAction {
 /// The test app's HUD, drawn over every demo (a `feather_ui::Hud`):
 ///
 /// - in the bottom left corner, on a see-through panel, the demo's number and name and, below,
-///   the frame rate (`InfoPanel`);
+///   the frame rate and what the engine draws: draw calls, nodes culled (outside the camera's
+///   view), shadow draws and the time taken to collect them (`InfoPanel`);
 /// - on the left and right edges, halfway up, buttons switching to the previous and next demo.
 ///
 /// Being part of the picture (not the window title), it shows in full screen too. It belongs
@@ -58,6 +64,11 @@ pub struct TestHud {
     seconds: f32,
     /// The time of the last `update`.
     last_time: Option<f32>,
+    /// The engine's latest frame stats, and the collect time summed over the frames since
+    /// they were last shown.
+    stats: FrameStats,
+    collect_time: f32,
+    stats_frames: u32,
 }
 
 impl TestHud {
@@ -80,6 +91,7 @@ impl TestHud {
         };
         let title_material = text_material("Title text", TITLE_COLOR)?;
         let fps_material = text_material("Frame rate text", FPS_COLOR)?;
+        let stats_material = text_material("Frame stats text", STATS_COLOR)?;
 
         let title = Label::new(TextBuilder::new(font).height(TITLE_HEIGHT), title_material, "");
         let fps_builder = TextBuilder::new(font)
@@ -87,7 +99,12 @@ impl TestHud {
             .method(TextMethod::NodePerGlyph);
         let fps_width = fps_builder.measure(&scene, WIDEST_FPS)?.width;
         let fps = Label::new(fps_builder, fps_material, "-- fps");
-        let panel = InfoPanel::new(title, fps, fps_width, panel_material)
+        let stats_builder = TextBuilder::new(font)
+            .height(STATS_HEIGHT)
+            .method(TextMethod::NodePerGlyph);
+        let stats_width = stats_builder.measure(&scene, WIDEST_STATS)?.width;
+        let stats = Label::new(stats_builder, stats_material, "");
+        let panel = InfoPanel::new(title, fps, stats, fps_width.max(stats_width), panel_material)
             .with_align(Align::Start, Align::End)
             .with_margin(MARGIN);
 
@@ -129,6 +146,9 @@ impl TestHud {
             frames: 0,
             seconds: 0.0,
             last_time: None,
+            stats: FrameStats::default(),
+            collect_time: 0.0,
+            stats_frames: 0,
         })
     }
 
@@ -150,6 +170,20 @@ impl TestHud {
 
     pub fn scene(&mut self) -> &mut Scene {
         self.hud.scene_mut()
+    }
+
+    #[cfg(test)]
+    /// The frame stats text shown.
+    pub fn get_frame_stats_text(&self) -> &str {
+        self.hud.get(self.panel).unwrap().stats.text()
+    }
+
+    /// The engine's stats of the frame just collected; shown with the frame rate, the collect
+    /// time averaged over the frames since the last time.
+    pub fn set_frame_stats(&mut self, stats: &FrameStats) {
+        self.stats = *stats;
+        self.collect_time += stats.collect_time;
+        self.stats_frames += 1;
     }
 
     #[cfg(test)]
@@ -185,6 +219,17 @@ impl TestHud {
             if self.seconds >= FPS_PERIOD {
                 let shown = format!("{:.0} fps", self.frames as f32 / self.seconds);
                 self.panel_mut().fps.set_text(shown);
+                if self.stats_frames > 0 {
+                    let s = self.stats;
+                    let ms = self.collect_time / self.stats_frames as f32 * 1000.0;
+                    let shown = format!(
+                        "{} draws  {} culled  {} shadow  {ms:.2} ms",
+                        s.draws, s.culled, s.shadow_draws
+                    );
+                    self.panel_mut().stats.set_text(shown);
+                    self.collect_time = 0.0;
+                    self.stats_frames = 0;
+                }
                 self.frames = 0;
                 self.seconds = 0.0;
             }
@@ -237,24 +282,27 @@ impl TestHud {
     }
 }
 
-/// The panel in the bottom left corner: a see-through background around two lines, the title
-/// and the frame rate. It is as wide as the title or the widest frame rate (so it doesn't
-/// change size with the frame rate), and ignores the mouse.
+/// The panel in the bottom left corner: a see-through background around three lines, the
+/// title, the frame rate and the frame stats. It is as wide as the title or the widest frame
+/// rate and stats (so it doesn't change size with them), and ignores the mouse.
 pub struct InfoPanel {
     base: WidgetBase,
     title: Label,
     fps: Label,
+    stats: Label,
+    /// The width of the widest frame rate or stats line.
     fps_width: f32,
     material: usize,
     background: Option<usize>,
 }
 
 impl InfoPanel {
-    fn new(title: Label, fps: Label, fps_width: f32, material: usize) -> Self {
+    fn new(title: Label, fps: Label, stats: Label, fps_width: f32, material: usize) -> Self {
         Self {
             base: WidgetBase::new(),
             title,
             fps,
+            stats,
             fps_width,
             material,
             background: None,
@@ -274,8 +322,10 @@ impl Widget for InfoPanel {
     fn measure(&mut self, cx: &mut LayoutContext) -> Result<()> {
         let title = self.title.update_text(cx)?;
         self.fps.update_text(cx)?;
+        self.stats.update_text(cx)?;
         let width = title.width.max(self.fps_width) + 2.0 * PADDING;
-        let height = TITLE_HEIGHT + LINE_GAP + FPS_HEIGHT + 2.0 * PADDING;
+        let height =
+            TITLE_HEIGHT + LINE_GAP + FPS_HEIGHT + LINE_GAP + STATS_HEIGHT + 2.0 * PADDING;
         self.base.set_size(width, height);
         Ok(())
     }
@@ -289,8 +339,10 @@ impl Widget for InfoPanel {
         let local = Rect::from_size(0.0, 0.0, rect.width(), rect.height());
         cx.set_transform(background, quad_transform(local, 0.0))?;
         self.title.place_text(cx, PADDING, PADDING)?;
-        self.fps
-            .place_text(cx, PADDING, PADDING + TITLE_HEIGHT + LINE_GAP)?;
+        let fps_top = PADDING + TITLE_HEIGHT + LINE_GAP;
+        self.fps.place_text(cx, PADDING, fps_top)?;
+        self.stats
+            .place_text(cx, PADDING, fps_top + FPS_HEIGHT + LINE_GAP)?;
         Ok(Vec::new())
     }
 }

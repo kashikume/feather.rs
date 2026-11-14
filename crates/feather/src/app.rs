@@ -37,7 +37,7 @@ use super::colorobjects::create_color_objects;
 use super::commandbuffers::{create_command_buffers, record_command_buffer, GpuDraw};
 use super::commandpool::create_command_pool;
 use super::dephobjects::create_depth_objects;
-use super::featherapp::{FeatherApp, PIXELS_PER_WHEEL_LINE};
+use super::featherapp::{FeatherApp, FrameStats, PIXELS_PER_WHEEL_LINE};
 use super::object::Object;
 use super::framebuffers::create_framebuffers;
 use super::instance::create_instance;
@@ -45,7 +45,7 @@ use super::logicaldevice::create_logical_device;
 use super::physicaldevice::{pick_physical_device, DeviceFeatures};
 use super::queuefamilyindices::QueueFamilyIndices;
 use super::pipeline::{create_render_pass, PipelineKey, PipelineTarget, ShaderPipeline};
-use super::scene::sort_for_rendering;
+use super::scene::{sort_for_rendering, Culling};
 use super::swapchain::Swapchain;
 use super::surface;
 use super::syncobjects::create_sync_objects;
@@ -72,6 +72,8 @@ pub struct App {
     queue_families: QueueFamilyIndices,
     /// Whether the window's surface is gone (`suspend`): nothing is drawn until `resume`.
     suspended: bool,
+    /// When the frame stats were last logged (at `debug` level, about once a second).
+    stats_logged: Instant,
 }
 
 impl App {
@@ -153,6 +155,7 @@ impl App {
             start: Instant::now(),
             queue_families,
             suspended: false,
+            stats_logged: Instant::now(),
         })
     }
 
@@ -249,13 +252,32 @@ impl App {
     /// passes of the scenes with a shadow light. Scenes without a camera are skipped. The first draw of every scene but the first
     /// clears the depth buffer, so later scenes are drawn over earlier ones. Creates the
     /// pipelines of shaders drawn for the first time.
-    unsafe fn collect_draws(&mut self) -> Result<(Vec<GpuDraw>, Vec<ShadowPass>, UniformArena)> {
+    /// Passes the frame's stats to the app, and logs them at `debug` level about once a second.
+    fn report_frame_stats(&mut self, stats: &FrameStats) {
+        self.data.app.on_frame_stats(stats);
+        if self.stats_logged.elapsed().as_secs_f32() >= 1.0 {
+            self.stats_logged = Instant::now();
+            log::debug!(
+                "Frame: {} draws, {} culled, {} shadow draws, collected in {:.2} ms",
+                stats.draws,
+                stats.culled,
+                stats.shadow_draws,
+                stats.collect_time * 1000.0
+            );
+        }
+    }
+
+    /// `stats` gets the nodes culled (the other counts are filled in by `render`).
+    unsafe fn collect_draws(
+        &mut self,
+        stats: &mut FrameStats,
+    ) -> Result<(Vec<GpuDraw>, Vec<ShadowPass>, UniformArena)> {
         let mut arena = UniformArena::new(self.data.min_uniform_alignment as usize);
         let mut draws = Vec::new();
         let mut shadow_passes = Vec::new();
         for index in 0..self.data.app.get_num_scenes_to_render() {
             let first_draw = draws.len();
-            self.collect_scene_draws(index, &mut draws, &mut shadow_passes, &mut arena)?;
+            self.collect_scene_draws(index, &mut draws, &mut shadow_passes, &mut arena, stats)?;
             if index > 0 {
                 if let Some(draw) = draws.get_mut(first_draw) {
                     draw.clear_depth = true;
@@ -273,6 +295,7 @@ impl App {
         draws: &mut Vec<GpuDraw>,
         shadow_passes: &mut Vec<ShadowPass>,
         arena: &mut UniformArena,
+        stats: &mut FrameStats,
     ) -> Result<()> {
         let extent = self.data.swapchain.swapchain_extent;
         let data = &mut self.data;
@@ -310,9 +333,11 @@ impl App {
         gpu.failed_pipelines
             .retain(|key| scene.get_shader(key.shader).is_some());
 
-        // Opaque nodes first, by shader; then transparent ones, back to front.
-        let mut items = scene.draw_items();
-        sort_for_rendering(&mut items, &view);
+        // What may be seen: by the camera (the main pass) or by the shadow light (casters).
+        let light = scene.get_shadow_light().map(|l| l.view_projection);
+        let culling = Culling::new(&(proj * view), light.as_ref());
+        let items = scene.draw_items(Some(&culling));
+        stats.culled += culling.culled_count();
 
         let target = PipelineTarget {
             render_pass: data.render_pass,
@@ -324,7 +349,6 @@ impl App {
 
         // Shadows: the casters, drawn from the light into the scene's shadow map. Shaders
         // sample the map (or a map lit everywhere) with the shadow sampler.
-        let light = scene.get_shadow_light().map(|l| l.view_projection);
         let shadow_matrix = light.unwrap_or_else(Mat4::identity);
         if let (Some(light), Some(map)) = (light, &gpu.shadow_map) {
             let casters = items
@@ -354,6 +378,11 @@ impl App {
             .as_ref()
             .map_or(data.fallback_shadow_map.as_ref().unwrap().view, |m| m.view);
         let shadow_sampler = data.shadow_renderer.as_ref().unwrap().sampler;
+
+        // The main pass: what the camera may see. Opaque nodes first, by shader; then
+        // transparent ones, back to front.
+        let mut items: Vec<_> = items.into_iter().filter(|item| item.in_view).collect();
+        sort_for_rendering(&mut items, &view);
 
         draws.reserve(items.len());
         let mut issues = Vec::new();
@@ -666,7 +695,13 @@ impl App {
 
         self.data.images_in_flight[image_index] = in_flight_fence;
 
-        let (mut draws, shadow_passes, arena) = self.collect_draws()?;
+        let collect_start = Instant::now();
+        let mut stats = FrameStats::default();
+        let (mut draws, shadow_passes, arena) = self.collect_draws(&mut stats)?;
+        stats.draws = draws.len();
+        stats.shadow_draws = shadow_passes.iter().map(|p| p.draws.len()).sum();
+        stats.collect_time = collect_start.elapsed().as_secs_f32();
+        self.report_frame_stats(&stats);
         self.upload_uniforms(image_index, &arena, &mut draws)?;
         record_command_buffer(&self.device, &self.data, image_index, &shadow_passes, &draws)?;
 

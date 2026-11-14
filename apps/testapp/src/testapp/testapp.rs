@@ -5,7 +5,7 @@ use winit::keyboard::KeyCode;
 #[cfg(windows)]
 use feather::assetsprovider::create_assets_provider;
 use feather::assetsprovider::AssetsProvider;
-use feather::featherapp::FeatherApp;
+use feather::featherapp::{FeatherApp, FrameStats};
 use feather::scene::Scene;
 
 use super::demo_000_viking_room::VikingRoomDemo;
@@ -287,6 +287,10 @@ impl FeatherApp for TestApp {
 
     fn window_title(&self) -> Option<String> {
         Some(demo_window_title(self.demo_index))
+    }
+
+    fn on_frame_stats(&mut self, stats: &FrameStats) {
+        self.hud.set_frame_stats(stats);
     }
 }
 
@@ -1021,7 +1025,7 @@ mod tests {
 
         // Everything but the floor casts a shadow; the floor receives them.
         let casters: Vec<String> = scene
-            .draw_items()
+            .draw_items(None)
             .iter()
             .filter(|item| item.casts_shadow)
             .map(|item| scene.get_node(item.node).unwrap().get_name().unwrap())
@@ -1057,7 +1061,7 @@ mod tests {
         scene.update_nodes();
 
         assert!(scene.get_shadow_light().is_some());
-        let items = scene.draw_items();
+        let items = scene.draw_items(None);
         assert_eq!(items.len(), 2);
         let node = |name| scene.get_node(scene.find_node(name).unwrap()).unwrap();
         assert!(node("Human").casts_shadow());
@@ -1085,7 +1089,7 @@ mod tests {
 
         // Every drawn thing but the sky is textured and casts a shadow.
         let sky = scene.find_node("Sky").unwrap();
-        let items = scene.draw_items();
+        let items = scene.draw_items(None);
         assert!(items.len() > 500, "{} draws", items.len());
         for item in items.iter().filter(|i| i.node != sky) {
             let node = scene.get_node(item.node).unwrap();
@@ -1190,7 +1194,7 @@ mod tests {
         scene.update_nodes();
 
         let sky = scene.find_node("Sky").unwrap();
-        let items = scene.draw_items();
+        let items = scene.draw_items(None);
         assert!(items.len() > 500, "{} draws", items.len());
         for item in items.iter().filter(|i| i.node != sky) {
             let node = scene.get_node(item.node).unwrap();
@@ -1253,7 +1257,7 @@ mod tests {
             assert_eq!(shader.get_shadow_map_sampler_name(), Some("shadowMap"));
 
             let floor = scene.find_node("Floor").unwrap();
-            let items = scene.draw_items();
+            let items = scene.draw_items(None);
             assert!(items.iter().any(|item| item.casts_shadow), "demo {index}");
             assert!(items.iter().filter(|item| item.node == floor).all(|item| !item.casts_shadow));
             assert!(items.iter().filter(|item| item.node != floor).all(|item| item.casts_shadow));
@@ -1358,6 +1362,25 @@ mod tests {
     }
 
     #[test]
+    fn hud_shows_the_frame_stats() {
+        let mut hud = TestHud::new(&SourceAssets).unwrap();
+        hud.set_window_size(1024, 768);
+        // Two frames collected in 1 and 3 ms: the average is shown, with the latest counts.
+        let stats = |draws, collect_time| FrameStats {
+            draws,
+            culled: 410,
+            shadow_draws: 95,
+            collect_time,
+        };
+        hud.update(0.0).unwrap();
+        hud.set_frame_stats(&stats(100, 0.001));
+        hud.update(0.25).unwrap();
+        hud.set_frame_stats(&stats(182, 0.003));
+        hud.update(0.5).unwrap();
+        assert_eq!(hud.get_frame_stats_text(), "182 draws  410 culled  95 shadow  2.00 ms");
+    }
+
+    #[test]
     fn hud_shows_the_title_and_the_frame_rate() {
         let mut hud = TestHud::new(&SourceAssets).unwrap();
         hud.set_window_size(1024, 768);
@@ -1370,6 +1393,8 @@ mod tests {
             hud.update(frame as f32 / 60.0).unwrap();
         }
         assert_eq!(hud.get_frame_rate_text(), "60 fps");
+        // No frame stats given: no stats line.
+        assert_eq!(hud.get_frame_stats_text(), "");
 
         // The panel grows with a longer title.
         let panel = hud.panel();

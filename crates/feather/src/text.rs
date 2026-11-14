@@ -1134,7 +1134,7 @@ mod tests {
             .collect();
         scene.build_missing_mesh_buffers().unwrap();
         scene.update_nodes();
-        assert_eq!(scene.draw_items().len(), LINES * 50);
+        assert_eq!(scene.draw_items(None).len(), LINES * 50);
 
         let ms = |start: Instant| start.elapsed().as_secs_f64() * 1000.0 / ROUNDS as f64;
 
@@ -1157,7 +1157,7 @@ mod tests {
 
         // Packing every draw's uniforms, as `collect_draws` does.
         let shader = scene.get_shader(shader).unwrap();
-        let items = scene.draw_items();
+        let items = scene.draw_items(None);
         let identity = Mat4::from_scale(1.0);
         let mut issues = Vec::new();
         let start = Instant::now();
