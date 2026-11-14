@@ -16,6 +16,8 @@ Ordered by expected gain for the cost of the change. File references are relativ
 
 ### 1. Frustum culling
 
+Planned in [frustum-culling-plan.md](frustum-culling-plan.md).
+
 **Problem**: `Scene::draw_items` (`scene.rs:453`) returns every visible node, so off-screen nodes
 are packed, bound and drawn. Shadow casters are all drawn into the shadow map too.
 
