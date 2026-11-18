@@ -187,8 +187,8 @@ mat3 frame = tangentFrame(normalize(worldNormal), worldPosition, uv);
 vec3 bent = normalize(frame[0] * n.x - frame[1] * n.y + frame[2] * n.z);
 ```
 
-`position` and `normal` must be in the same space (e.g. world space). Demo 23 (the tennis ball,
-`demo_023_tennis_ball_shader.frag`) uses it.
+`position` and `normal` must be in the same space (e.g. world space). Demo 22 (the tennis ball,
+`demo_022_tennis_ball_shader.frag`) uses it.
 
 ## Meshes
 

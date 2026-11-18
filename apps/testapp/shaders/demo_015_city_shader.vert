@@ -1,6 +1,6 @@
 #version 450
 
-// The city's textured, shadowed objects.
+// Demo 16 city: textured, shadowed objects from OBJ meshes and a PNG atlas.
 
 layout(binding = 0) uniform Camera {
     mat4 view;

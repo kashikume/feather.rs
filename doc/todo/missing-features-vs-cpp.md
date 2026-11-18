@@ -92,8 +92,8 @@ Features feather.rs already covers are listed in
 - Generation counters in handles, so stale handles are detected (would apply to every `ObjDB`).
 - Animations declared in scene files (target node, uniform or transform, duration, easing).
 - Reaching app state from scene animations: their callbacks only get `&mut Scene`, so anything
-  else must be moved into the closure (like the `Text`s of demos 11 and 12) or handled by a
-  standalone `Animator` with its own context. Demo 11's episode spawning stays in `update`
+  else must be moved into the closure (like the `Text`s of demos 10 and 11) or handled by a
+  standalone `Animator` with its own context. Demo 10's episode spawning stays in `update`
   because it needs the demo's random generator and counter. If this comes up often, consider
   storing `Text`s in the scene, or letting scenes hold user data.
 
@@ -102,7 +102,7 @@ Features feather.rs already covers are listed in
 - **9-patch track and knob** (item 26): rounded knobs and buttons that don't stretch their
   corners.
 - **Clipping**: a scissor rectangle per scene or per node, so a scrolled list is cut at the
-  view's edges. Today widgets must stay in their rectangle themselves (demo 22's list hides the
+  view's edges. Today widgets must stay in their rectangle themselves (demo 21's list hides the
   lines and letters outside its view).
 - **Buttons that fade in**: the test app's side buttons could show only while the pointer is
   near their edge, with a scene animation on their `alpha`.
@@ -119,7 +119,7 @@ Features feather.rs already covers are listed in
 - The same scene drawn through two cameras (split screen, minimap, mirror): a camera override in
   `FeatherApp`, or the renderer drawing each of the scene's enabled cameras into its own
   viewport. Today a scene is drawn once, through its active camera.
-- A camera attached to a node, following its global transform (e.g. riding a car in demo 15).
+- A camera attached to a node, following its global transform (e.g. riding a car in demo 14).
 - Transitions between cameras: blend view and projection over time instead of cutting.
 - `Projection::Custom(Mat4)` for projections the app computes itself.
 - Only the active camera gets the image size each frame, so an inactive orthographic camera's

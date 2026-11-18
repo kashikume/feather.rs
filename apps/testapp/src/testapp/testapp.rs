@@ -14,24 +14,23 @@ use super::demo_002_atlas::AtlasDemo;
 use super::demo_003_waving_atlas::WavingAtlasDemo;
 use super::demo_004_lit_cuboid::LitCuboidDemo;
 use super::demo_005_globe::GlobeDemo;
-use super::demo_006_bouncing_balls::BouncingBallsDemo;
-use super::demo_007_vases::VasesDemo;
-use super::demo_008_walker::WalkerDemo;
-use super::demo_009_spider::SpiderDemo;
-use super::demo_010_text::TextDemo;
-use super::demo_011_crawl::CrawlDemo;
-use super::demo_012_overlay::OverlayDemo;
-use super::demo_013_simple_shadow::SimpleShadowDemo;
-use super::demo_014_shadows::ShadowsDemo;
-use super::demo_015_city::CityDemo;
-use super::demo_016_city::CityAssetsDemo;
-use super::demo_017_bouncing_balls::BouncingBallsShadowDemo;
-use super::demo_018_vases::VasesShadowDemo;
-use super::demo_019_walker::WalkerShadowDemo;
-use super::demo_020_spider::SpiderShadowDemo;
-use super::demo_021_animation::AnimationDemo;
-use super::demo_022_scrolling::ScrollingDemo;
-use super::demo_023_tennis_ball::TennisBallDemo;
+use super::demo_006_vases::VasesDemo;
+use super::demo_007_walker::WalkerDemo;
+use super::demo_008_spider::SpiderDemo;
+use super::demo_009_text::TextDemo;
+use super::demo_010_crawl::CrawlDemo;
+use super::demo_011_overlay::OverlayDemo;
+use super::demo_012_simple_shadow::SimpleShadowDemo;
+use super::demo_013_shadows::ShadowsDemo;
+use super::demo_014_city::CityDemo;
+use super::demo_015_city::CityAssetsDemo;
+use super::demo_016_bouncing_balls::BouncingBallsShadowDemo;
+use super::demo_017_vases::VasesShadowDemo;
+use super::demo_018_walker::WalkerShadowDemo;
+use super::demo_019_spider::SpiderShadowDemo;
+use super::demo_020_animation::AnimationDemo;
+use super::demo_021_scrolling::ScrollingDemo;
+use super::demo_022_tennis_ball::TennisBallDemo;
 use super::testapp_hud::{HudAction, TestHud};
 
 /// One demo of the test app: a scene, seen through its active camera, and its animation. A
@@ -116,10 +115,6 @@ pub const DEMOS: &[DemoInfo] = &[
     DemoInfo {
         name: "Globe",
         create: |assets| Ok(Box::new(GlobeDemo::new(assets)?)),
-    },
-    DemoInfo {
-        name: "Bouncing balls",
-        create: |assets| Ok(Box::new(BouncingBallsDemo::new(assets)?)),
     },
     DemoInfo {
         name: "Vases",
@@ -317,7 +312,7 @@ pub fn demo_window_title(index: usize) -> String {
     format!("Feather development app - {}", demo_label(index))
 }
 
-/// Demo `index`'s number and name, e.g. "21 Animation".
+/// Demo `index`'s number and name, e.g. "20 Animation".
 pub fn demo_label(index: usize) -> String {
     format!("{index} {}", DEMOS[index].name)
 }
@@ -460,13 +455,10 @@ mod tests {
             demo_window_title(0),
             "Feather development app - 0 Viking room"
         );
+        assert_eq!(demo_window_title(6), "Feather development app - 6 Vases");
         assert_eq!(
-            demo_window_title(6),
-            "Feather development app - 6 Bouncing balls"
-        );
-        assert_eq!(
-            demo_window_title(17),
-            "Feather development app - 17 Bouncing balls (shadows)"
+            demo_window_title(16),
+            "Feather development app - 16 Bouncing balls (shadows)"
         );
     }
 
@@ -519,7 +511,7 @@ mod tests {
 
     #[test]
     fn tennis_ball_demo_has_a_colour_texture_and_a_normal_map() {
-        let mut demo = demo(23);
+        let mut demo = demo(22);
         let scene = demo.scene();
 
         let ball = scene.get_node(scene.find_node("Ball").unwrap()).unwrap();
@@ -632,56 +624,8 @@ mod tests {
     }
 
     #[test]
-    fn bouncing_balls_have_no_textures_and_their_own_colours() {
-        let mut demo = demo(6);
-        let scene = demo.scene();
-
-        let floor = scene.get_node(scene.find_node("Floor").unwrap()).unwrap();
-        let balls = scene.get_node(scene.find_node("Balls").unwrap()).unwrap();
-        assert_eq!(balls.get_children().len(), 12);
-
-        let mut colours = vec![format!("{:?}", floor.uniforms().get("color").unwrap())];
-        for &ball in balls.get_children() {
-            let ball = scene.get_node(ball).unwrap();
-            assert!(ball.get_mesh().is_some());
-            colours.push(format!("{:?}", ball.uniforms().get("color").unwrap()));
-        }
-        colours.sort();
-        colours.dedup();
-        assert_eq!(colours.len(), 13, "colours are not all different");
-        assert!(scene.materials.iter().all(|m| m.get_texture().is_none()));
-
-        // Only the shadows are transparent, and their material lets the floor show through.
-        assert!(!floor.is_transparent());
-        let shadows = scene.get_node(scene.find_node("Shadows").unwrap()).unwrap();
-        assert_eq!(shadows.get_children().len(), 12);
-        for &shadow in shadows.get_children() {
-            let shadow = scene.get_node(shadow).unwrap();
-            assert!(shadow.is_transparent());
-            let material = scene.get_material(shadow.get_material().unwrap()).unwrap();
-            let opacity = material.uniforms().get("opacity").unwrap();
-            assert!(matches!(opacity, feather::uniform::UniformValue::Float(o) if *o < 1.0));
-        }
-        for &ball in balls.get_children() {
-            assert!(!scene.get_node(ball).unwrap().is_transparent());
-        }
-        assert_eq!(scene.atlases.iter().count(), 0);
-
-        // The balls move.
-        let first = scene
-            .get_node(*balls.get_children().iter().next().unwrap())
-            .unwrap();
-        let (handle, before) = (first.get_handle(), first.get_transform());
-        demo.update(0.5).unwrap();
-        assert_ne!(
-            demo.scene().get_node(handle).unwrap().get_transform(),
-            before
-        );
-    }
-
-    #[test]
     fn vases_have_three_shapes_own_colours_and_some_are_transparent() {
-        let mut demo = demo(7);
+        let mut demo = demo(6);
         let scene = demo.scene();
 
         let vases = scene.get_node(scene.find_node("Vases").unwrap()).unwrap();
@@ -741,7 +685,7 @@ mod tests {
     fn walker_is_textured_from_one_atlas_and_walks() {
         use cgmath::InnerSpace;
 
-        let mut demo = demo(8);
+        let mut demo = demo(7);
         let scene = demo.scene();
 
         // Every body part has a texture from the `Walker` atlas.
@@ -799,7 +743,7 @@ mod tests {
     fn spider_walks_with_alternating_legs() {
         use cgmath::InnerSpace;
 
-        let mut demo = demo(9);
+        let mut demo = demo(8);
         {
             let scene = demo.scene();
             for leg in ["L1", "L2", "L3", "L4", "R1", "R2", "R3", "R4"] {
@@ -967,7 +911,7 @@ mod tests {
 
     #[test]
     fn text_demo_shows_texts_and_updates_the_clock() {
-        let mut demo = demo(10);
+        let mut demo = demo(9);
         let scene = demo.scene();
 
         // Every character of the font creator's default set is in both fonts.
@@ -1047,7 +991,7 @@ mod tests {
 
     #[test]
     fn crawl_never_ends_and_cleans_up_after_itself() {
-        let mut demo = demo(11);
+        let mut demo = demo(10);
         let episodes = |scene: &Scene| {
             let crawl = scene.get_node(scene.find_node("Crawl").unwrap()).unwrap();
             let mut names: Vec<String> = crawl
@@ -1098,7 +1042,7 @@ mod tests {
 
     #[test]
     fn overlay_demo_draws_two_scenes_with_their_own_cameras() {
-        let mut demo = demo(12);
+        let mut demo = demo(11);
         assert_eq!(demo.scene_count(), 2);
         let (room, overlay) = (demo.scene_at(0).get_id(), demo.scene_at(1).get_id());
         assert_ne!(room, overlay);
@@ -1147,8 +1091,8 @@ mod tests {
 
     #[test]
     fn overlay_demo_slides_and_fades_its_panels_in() {
-        use super::super::demo_012_overlay::{INTRO_DURATION, INTRO_OFFSET, INTRO_RIGHT_DELAY};
-        let mut demo = demo(12);
+        use super::super::demo_011_overlay::{INTRO_DURATION, INTRO_OFFSET, INTRO_RIGHT_DELAY};
+        let mut demo = demo(11);
         let overlay = demo.scene_at(1);
         let node = |scene: &Scene, name: &str| scene.find_node(name).unwrap();
         let (left, right) = (node(overlay, "Left"), node(overlay, "Right slide"));
@@ -1194,7 +1138,7 @@ mod tests {
 
     #[test]
     fn shadows_demo_has_casters_and_a_moving_sun() {
-        let mut demo = demo(14);
+        let mut demo = demo(13);
         let scene = demo.scene();
         scene.build_missing_mesh_buffers().unwrap();
         scene.update_nodes();
@@ -1236,7 +1180,7 @@ mod tests {
 
     #[test]
     fn simple_shadow_demo_has_a_figure_casting_on_a_floor() {
-        let mut demo = demo(13);
+        let mut demo = demo(12);
         let scene = demo.scene();
         scene.build_missing_mesh_buffers().unwrap();
         scene.update_nodes();
@@ -1272,7 +1216,7 @@ mod tests {
 
     #[test]
     fn city_demo_is_busy_textured_and_casts_shadows() {
-        let mut demo = demo(15);
+        let mut demo = demo(14);
         let scene = demo.scene();
         scene.build_missing_mesh_buffers().unwrap();
         scene.update_nodes();
@@ -1334,8 +1278,8 @@ mod tests {
 
     #[test]
     fn city_demo_cuts_between_its_cameras() {
-        use super::super::demo_015_city::{INTERSECTION_SHOT, STREET_SHOT};
-        let mut demo = demo(15);
+        use super::super::demo_014_city::{INTERSECTION_SHOT, STREET_SHOT};
+        let mut demo = demo(14);
         let scene = demo.scene();
         let street = scene.find_camera("Street").unwrap();
         let intersection = scene.find_camera("Intersection").unwrap();
@@ -1356,7 +1300,7 @@ mod tests {
 
     #[test]
     fn city_assets_demo_switches_cameras_on_taps() {
-        let mut demo = demo(16);
+        let mut demo = demo(15);
         demo.on_resized(1000, 800).unwrap();
         demo.update(0.5).unwrap();
         let active = |demo: &mut Box<dyn Demo>| demo.scene().active_camera_handle().unwrap();
@@ -1398,7 +1342,7 @@ mod tests {
 
     #[test]
     fn city_assets_demo_loads_objs_and_moves() {
-        let mut demo = demo(16);
+        let mut demo = demo(15);
         let scene = demo.scene();
         scene.build_missing_mesh_buffers().unwrap();
         scene.update_nodes();
@@ -1448,9 +1392,9 @@ mod tests {
 
     #[test]
     fn shadow_recreations_cast_real_shadows() {
-        // Demos 17-20 are demos 6-9 with a shadow map: a light, casters, a floor that only
-        // receives, and no flat shadow disc.
-        for index in 17..=20 {
+        // Demos 16-19 have a shadow map: a light, casters, a floor that only receives, and no
+        // flat shadow disc. Demos 17-19 are demos 6-8 again.
+        for index in 16..=19 {
             let mut demo = demo(index);
             let scene = demo.scene();
             scene.build_missing_mesh_buffers().unwrap();
@@ -1479,7 +1423,7 @@ mod tests {
         }
 
         // The balls bounce, and each one casts.
-        let mut balls = demo(17);
+        let mut balls = demo(16);
         let scene = balls.scene();
         let group = scene.get_node(scene.find_node("Balls").unwrap()).unwrap();
         assert_eq!(group.get_children().len(), 12);
@@ -1495,7 +1439,7 @@ mod tests {
         );
 
         // The vases still turn, and the glass ones stay see-through while they cast.
-        let mut vases = demo(18);
+        let mut vases = demo(17);
         let scene = vases.scene();
         let group = scene.get_node(scene.find_node("Vases").unwrap()).unwrap();
         assert_eq!(group.get_children().len(), 12);
@@ -1516,11 +1460,11 @@ mod tests {
         assert_ne!(turned, <Mat4 as cgmath::SquareMatrix>::identity());
 
         // The walker and the spider move, and nothing of them is a transparent disc.
-        for index in [19, 20] {
+        for index in [18, 19] {
             let mut demo = demo(index);
             let start = {
                 let scene = demo.scene();
-                let root = if index == 19 { "Walker" } else { "Spider" };
+                let root = if index == 18 { "Walker" } else { "Spider" };
                 scene
                     .get_node(scene.find_node(root).unwrap())
                     .unwrap()
@@ -1528,7 +1472,7 @@ mod tests {
             };
             demo.update(1.0).unwrap();
             let scene = demo.scene();
-            let root = if index == 19 { "Walker" } else { "Spider" };
+            let root = if index == 18 { "Walker" } else { "Spider" };
             let later = scene
                 .get_node(scene.find_node(root).unwrap())
                 .unwrap()
@@ -1540,7 +1484,7 @@ mod tests {
 
     #[test]
     fn animation_demo_moves_everything_with_animations() {
-        let mut demo = demo(21);
+        let mut demo = demo(20);
         let scene = demo.scene();
         let lane = scene.find_node("Lane 0").unwrap();
         let x_of = |scene: &Scene, node| scene.get_node(node).unwrap().get_transform().w.x;
@@ -1667,8 +1611,8 @@ mod tests {
     fn hud_shows_the_title_and_the_frame_rate() {
         let mut hud = TestHud::new(&SourceAssets).unwrap();
         hud.set_window_size(1024, 768);
-        hud.set_title("21 Animation");
-        assert_eq!(hud.get_title(), "21 Animation");
+        hud.set_title("20 Animation");
+        assert_eq!(hud.get_title(), "20 Animation");
         assert_eq!(hud.get_frame_rate_text(), "-- fps");
 
         // 60 frames a second for one second: the text changes to "60 fps".
@@ -1769,8 +1713,8 @@ mod tests {
 
     #[test]
     fn the_hud_is_drawn_after_the_demo_scenes() {
-        let mut app = TestApp::with_assets(Box::new(SourceAssets), 12).unwrap();
-        // Demo 12 has two scenes; the HUD is the third, with its own camera.
+        let mut app = TestApp::with_assets(Box::new(SourceAssets), 11).unwrap();
+        // Demo 11 has two scenes; the HUD is the third, with its own camera.
         assert_eq!(app.get_num_scenes_to_render(), 3);
         let hud = app.get_scene_to_render(2).get_id();
         assert_ne!(hud, app.get_scene_to_render(0).get_id());
@@ -1779,18 +1723,18 @@ mod tests {
             .get_scene_to_render(2)
             .find_camera("UI camera")
             .is_some());
-        assert_eq!(app.hud.get_title(), "12 Overlay");
+        assert_eq!(app.hud.get_title(), "11 Overlay");
 
         // Switching demos keeps the HUD and changes its title.
         app.on_key_pressed(KeyCode::ArrowRight).unwrap();
         assert_eq!(app.get_num_scenes_to_render(), 2);
         assert_eq!(app.get_scene_to_render(1).get_id(), hud);
-        assert_eq!(app.hud.get_title(), "13 Simple shadow");
+        assert_eq!(app.hud.get_title(), "12 Simple shadow");
     }
 
     #[test]
     fn scrolling_demo_scrolls_its_list_with_scrollbars_and_the_wheel() {
-        use super::super::demo_022_scrolling::ScrollingDemo;
+        use super::super::demo_021_scrolling::ScrollingDemo;
         use feather_ui::Widget;
         let mut demo = ScrollingDemo::new(&SourceAssets).unwrap();
         demo.on_resized(1024, 768).unwrap();

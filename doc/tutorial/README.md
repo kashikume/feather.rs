@@ -919,7 +919,7 @@ Errors, such as a missing asset or a panic, show here.
 - **Textures, lighting, shadows, text, UI, several scenes, animation**: the README's
   [Writing an application](../../README.md#writing-an-application) and the test app's demos
   (`apps/testapp/src/testapp/demo_*.rs` in feather.rs). Demo 1 is a textured cube; demo 4 adds
-  lighting with a highlight; demo 7 loads OBJ meshes like this feather.
+  lighting with a highlight; demo 6 loads OBJ meshes like this feather.
 - **The scene file format**: [../scene-format.md](../scene-format.md).
 - **Meshes**: the `.fmesh` format and the mesh converter: [../fmesh-format.md](../fmesh-format.md).
 - **Android in depth**: the lifecycle (what happens when the app goes to the background), touch

@@ -1,4 +1,4 @@
-"""Writes the tennis ball demo's textures (demo 23): tennis_ball.png and tennis_ball_normal.png.
+"""Writes the tennis ball demo's textures (demo 22): tennis_ball.png and tennis_ball_normal.png.
 
 Usage: python tools/scripts/make_tennis_ball_textures.py <output dir> [width]
 

@@ -18,7 +18,7 @@ done about the findings.
   setting uniforms by name costs more than generating the vertices.
 
 Use one mesh by default, and a node per glyph only for short texts whose letters move or are
-coloured one by one (demo 10's wave: about 40 nodes, roughly 0.3 ms per frame).
+coloured one by one (demo 9's wave: about 40 nodes, roughly 0.3 ms per frame).
 
 ## Setup
 
@@ -26,7 +26,7 @@ coloured one by one (demo 10's wave: about 40 nodes, roughly 0.3 ms per frame).
   uncommitted text work.
 - Snapdragon X Elite (X1E78100) with an Adreno X1-85 GPU, Windows 11; 1024×768 window, MSAA.
   The swapchain uses MAILBOX, so frames are not capped by vsync.
-- A temporary demo (not in the repository) with demo 10's scene, shader and regular font:
+- A temporary demo (not in the repository) with demo 9's scene, shader and regular font:
   40 lines × 50 characters, 2,000 glyphs, filling the window. "Changing" runs replace every
   line's text every frame with a string of the same length (all characters change).
 - Each run: 2 s of warm-up, then 6 s measured. Frame time is the time between `update` calls;
@@ -111,7 +111,7 @@ In these runs the wait mostly replaced time that would otherwise be spent waitin
 so the frame time grew only from 4.2 to 4.6–5.3 ms. In a scene where the GPU has real work, the
 same wait would stop the CPU from preparing the next frame while the GPU draws the current one.
 
-Demo 10's clock changes ten times a second, so it pays this about ten times a second.
+Demo 9's clock changes ten times a second, so it pays this about ten times a second.
 
 ### Updating text
 

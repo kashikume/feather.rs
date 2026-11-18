@@ -113,24 +113,23 @@ doesn't take.
 | 3    | Waving atlas | The same plates waving in the wind, bent by the vertex shader       |
 | 4    | Lit cuboid  | The tumbling cuboid of demo 1 with diffuse and specular lighting, from the direction in the `light` uniform set on the scene's root node |
 | 5    | Globe       | A world map on a ball, spinning around its tilted axis while drifting along an oval path, with a cratered moon going around it; both lit by a strong light from the side: a dark night side, a highlight on water only and a glowing atmosphere on the globe |
-| 6    | Bouncing balls | Balls dropping onto a floor plate, bouncing off its edge and out of the screen, in a loop, with semi-transparent shadows; no textures, every object has its own `color` uniform |
-| 7    | Vases       | 12 vases of 3 shapes (generated OBJ files with thick walls) in different sizes and colours on a turning floor plate; some opaque, some see-through glass, all from the scene file |
-| 8    | Walker      | A textured person walking in a circle: body parts hang from bones, moved by a walk-cycle animation clip |
-| 9    | Spider      | A textured spider walking in a circle with the same bone system: 8 legs of 4 bones each, in the alternating tetrapod gait |
-| 10   | Text        | Text in two fonts (Segoe UI and Segoe UI Bold, made with the font creator): a title changing colour, lines aligned left, centred and right, Polish, German and Spanish letters, a clock updated ten times a second, a line whose letters (a node each) bob in a wave in their own colours, and text lying on a turning floor |
-| 11   | Crawl       | An endless crawl: made-up episodes (number, title, justified paragraphs) sliding away over a twinkling star field and fading out towards the horizon; each episode is added when there is room and removed once it is gone |
-| 12   | Overlay     | Two scenes together: demo 0's spinning room behind, and in front a 2D overlay seen by an orthographic camera, with see-through panels, text and the room's texture as an image, which slide and fade in at the start with eased scene animations |
-| 13   | Simple shadow | A human figure (a generated mesh) standing on a floor, casting its shadow from a fixed light; nothing moves, the shader takes one shadow-map sample |
-| 14   | Shadows     | A sun going round the sky over a ring of stone pillars, a spinning golden cube on a pedestal and bouncing balls; their soft-edged shadows turn and stretch with it |
-| 15   | City        | A busy city a camera glides through, with cuts to a second camera above an intersection (a scene animation switching the active camera): 5 x 5 blocks of buildings in four styles, streets with lanes, crosswalks and traffic lights, trees, lamps and a park; over 100 cars stopping at red lights and keeping their distance, over 100 people walking; everything textured (textures painted in code, no image files) and casting shadows from the afternoon sun, with sky reflections on glass and fog into a sky dome |
-| 16   | City (assets) | The same city as demo 15, but every model is an OBJ and every texture is a PNG packed into an atlas at build time (`tools/generate_demo_016_city_assets.py`); denser geometry (recessed windows, richer people and trees); eight low-poly vehicles (cars, a van, a bus, trucks) imported from one OBJ, with a generated texture and per-car paint. A tap or click switches cameras: through the streets, above a crossroads, chasing a car, circling above the city |
-| 17   | Bouncing balls (shadows) | Demo 6 again, with real shadows: the balls cast into a shadow map instead of sitting on flat discs |
-| 18   | Vases (shadows) | Demo 7 again, with real shadows: the vases, glass included, cast onto the turning floor |
-| 19   | Walker (shadows) | Demo 8 again, with real shadows: the walking person's body casts onto the floor, with no shadow disc |
-| 20   | Spider (shadows) | Demo 9 again, with real shadows: the spider's body and legs cast onto the floor, with no shadow disc |
-| 21   | Animation   | A lane per kind of easing with a cube sliding across, round after round (in, out, in-out); a cube spinning forever; a cube fading in and out, then removed and replaced; the scene's camera dollying in and swaying |
-| 22   | Scrolling   | A list of 80 lines of text with a vertical and a horizontal scrollbar, made with `feather-ui`: drag the knobs, click the tracks to page, turn the wheel; the scrollbars hide when everything fits. Lines and letters outside the view are hidden (there is no clipping) |
-| 23   | Tennis ball | A tennis ball turning under a light from the side: a material with two textures, the felt's colours and a normal map (a linear atlas) that gives the seam its groove and the felt its fuzz, with the tangent frame computed in the fragment shader. Both images are made by `tools/scripts/make_tennis_ball_textures.py` |
+| 6    | Vases       | 12 vases of 3 shapes (generated OBJ files with thick walls) in different sizes and colours on a turning floor plate; some opaque, some see-through glass, all from the scene file |
+| 7    | Walker      | A textured person walking in a circle: body parts hang from bones, moved by a walk-cycle animation clip |
+| 8    | Spider      | A textured spider walking in a circle with the same bone system: 8 legs of 4 bones each, in the alternating tetrapod gait |
+| 9    | Text        | Text in two fonts (Segoe UI and Segoe UI Bold, made with the font creator): a title changing colour, lines aligned left, centred and right, Polish, German and Spanish letters, a clock updated ten times a second, a line whose letters (a node each) bob in a wave in their own colours, and text lying on a turning floor |
+| 10   | Crawl       | An endless crawl: made-up episodes (number, title, justified paragraphs) sliding away over a twinkling star field and fading out towards the horizon; each episode is added when there is room and removed once it is gone |
+| 11   | Overlay     | Two scenes together: demo 0's spinning room behind, and in front a 2D overlay seen by an orthographic camera, with see-through panels, text and the room's texture as an image, which slide and fade in at the start with eased scene animations |
+| 12   | Simple shadow | A human figure (a generated mesh) standing on a floor, casting its shadow from a fixed light; nothing moves, the shader takes one shadow-map sample |
+| 13   | Shadows     | A sun going round the sky over a ring of stone pillars, a spinning golden cube on a pedestal and bouncing balls; their soft-edged shadows turn and stretch with it |
+| 14   | City        | A busy city a camera glides through, with cuts to a second camera above an intersection (a scene animation switching the active camera): 5 x 5 blocks of buildings in four styles, streets with lanes, crosswalks and traffic lights, trees, lamps and a park; over 100 cars stopping at red lights and keeping their distance, over 100 people walking; everything textured (textures painted in code, no image files) and casting shadows from the afternoon sun, with sky reflections on glass and fog into a sky dome |
+| 15   | City (assets) | The same city as demo 14, but every model is an OBJ and every texture is a PNG packed into an atlas at build time (`tools/generate_demo_015_city_assets.py`); denser geometry (recessed windows, richer people and trees); eight low-poly vehicles (cars, a van, a bus, trucks) imported from one OBJ, with a generated texture and per-car paint. A tap or click switches cameras: through the streets, above a crossroads, chasing a car, circling above the city |
+| 16   | Bouncing balls (shadows) | Balls dropping onto a floor plate, bouncing off its edge and out of the screen, in a loop, casting real shadows into a shadow map; no textures, every object has its own `color` uniform |
+| 17   | Vases (shadows) | Demo 6 again, with real shadows: the vases, glass included, cast onto the turning floor |
+| 18   | Walker (shadows) | Demo 7 again, with real shadows: the walking person's body casts onto the floor, with no shadow disc |
+| 19   | Spider (shadows) | Demo 8 again, with real shadows: the spider's body and legs cast onto the floor, with no shadow disc |
+| 20   | Animation   | A lane per kind of easing with a cube sliding across, round after round (in, out, in-out); a cube spinning forever; a cube fading in and out, then removed and replaced; the scene's camera dollying in and swaying |
+| 21   | Scrolling   | A list of 80 lines of text with a vertical and a horizontal scrollbar, made with `feather-ui`: drag the knobs, click the tracks to page, turn the wheel; the scrollbars hide when everything fits. Lines and letters outside the view are hidden (there is no clipping) |
+| 22   | Tennis ball | A tennis ball turning under a light from the side: a material with two textures, the felt's colours and a normal map (a linear atlas) that gives the seam its groove and the felt its fuzz, with the tangent frame computed in the fragment shader. Both images are made by `tools/scripts/make_tennis_ball_textures.py` |
 
 Each demo is in its own file, `apps/testapp/src/testapp/demo_NNN_<name>.rs`, and its own
 resources are named `demo_NNN_<name>_<kind>` (`scene`, `atlas`, `shader`, ...). Models and images
@@ -201,7 +200,7 @@ Font atlases are made entirely during the build: an `apps/testapp/atlases/<name>
 describes one, and `build_atlases` renders the font's characters with the font creator
 (`tools/font-creator`, used as a library) into `$OUT_DIR/atlases/<name>/`, lists them in
 `$OUT_DIR/atlases/<name>.atlist` and packs them like any other atlas into `<name>.png` and
-`<name>.atlas`. No character images are in the repository. Demo 10's regular font:
+`<name>.atlas`. No character images are in the repository. Demo 9's regular font:
 
 ```
 # Segoe UI, 64 pixels high, with the default characters.
@@ -464,7 +463,7 @@ engine sorts the draws (`scene::sort_for_rendering`):
 
 Transparent nodes are drawn with a second pipeline of their shader: blending on, and the depth
 test on but depth writes off, so they are hidden by opaque objects in front of them but don't hide
-each other. The bouncing balls demo uses this for its shadows.
+each other. The vases demos (6 and 17) use this for their glass vases.
 
 ### Shadows
 
@@ -494,17 +493,17 @@ float lit = p.z - bias <= texture(shadowMap, p.xy * 0.5 + 0.5).r ? 1.0 : 0.0;
 The map is cleared to depth 1 and sampled with nearest filtering and a white border, so places
 outside it are lit; in a scene without a light, the sampler gets a map that is lit everywhere.
 For a large scene, the light can follow the camera: `ShadowLight::directional_snapped` moves
-the shadow map's area by whole texels only, so shadows don't shimmer as it moves (demo 15).
-Demo 13 is the simplest use: one caster, one fixed light, one shadow-map sample per fragment
-(`demo_013_simple_shadow_shader.frag`). Demo 14's shader averages 3x3 samples for soft edges
-(`demo_014_shadows_shader.frag`).
+the shadow map's area by whole texels only, so shadows don't shimmer as it moves (demo 14).
+Demo 12 is the simplest use: one caster, one fixed light, one shadow-map sample per fragment
+(`demo_012_simple_shadow_shader.frag`). Demo 13's shader averages 3x3 samples for soft edges
+(`demo_013_shadows_shader.frag`).
 
 ### Cameras
 
 Cameras are scene objects: `Scene::add_camera` returns a handle, `get_camera_mut` and
 `find_camera` reach them, and `remove_camera` removes one. A scene is drawn through its active
 camera; the first camera added is active until `set_active_camera` picks another, so cutting
-between cameras is one call, e.g. from a scene animation (demo 15). A scene without a camera
+between cameras is one call, e.g. from a scene animation (demo 14). A scene without a camera
 isn't drawn.
 
 A `Camera` has a position, a target and an up direction (`set_view`), a depth range
@@ -539,7 +538,7 @@ scene after the first, so a later scene is drawn over the earlier ones, whatever
 Each scene keeps its own GPU state (mesh buffers, atlases, pipelines), released when the app
 stops drawing it.
 
-The test app's demos draw one scene, unless they override `Demo::scene_count` and `scene_at`. Demo 12 draws demo 0's room with a 2D overlay over it.
+The test app's demos draw one scene, unless they override `Demo::scene_count` and `scene_at`. Demo 11 draws demo 0's room with a 2D overlay over it.
 
 ### Bones and animation
 
@@ -550,7 +549,7 @@ from the rest position. It loops, interpolated smoothly between keys.
 
 ```rust
 let skeleton = Skeleton::from_nodes(&scene, walker_node)?;
-let walk = AnimationClip::load(assets, "demo_008_walker_walk.json")?;
+let walk = AnimationClip::load(assets, "demo_007_walker_walk.json")?;
 skeleton.check(&walk)?; // every animated bone exists
 // every frame:
 skeleton.apply(&mut scene, &walk.sample(time))?;
@@ -569,8 +568,8 @@ skeleton.apply(&mut scene, &walk.sample(time))?;
 
 Each key is `[time, [x, y, z]]`, times in seconds in `0..duration`, in increasing order. The
 animation is rigid: meshes hang from bones as child nodes (unnamed, so they aren't bones) and move
-as a whole; they don't bend at the joints (there is no mesh skinning). Demo 8 builds a person this
-way (`demo_008_walker_scene.json`), and demo 9 a spider (`demo_009_spider_scene.json`).
+as a whole; they don't bend at the joints (there is no mesh skinning). Demo 7 builds a person this
+way (`demo_007_walker_scene.json`), and demo 8 a spider (`demo_008_spider_scene.json`).
 
 ### Text
 
@@ -615,7 +614,7 @@ Uniforms set on a text's node, like a colour, reach its glyph nodes too.
 A `\n` starts a new line (a new paragraph, with wrapping); characters missing from the font take
 a quarter of the line height and aren't drawn. `HorizontalAlign::Justify` stretches the lines
 broken by wrapping to the wrap width, widening their spaces. `Text::remove` removes a text with
-its node and mesh. Demo 11's crawl uses wrapped, justified text. Demo 10 shows both methods with one shader (`demo_010_text_shader.frag`, coloured
+its node and mesh. Demo 10's crawl uses wrapped, justified text. Demo 9 shows both methods with one shader (`demo_009_text_shader.frag`, coloured
 with a `color` uniform): the wave is a node per glyph, everything else one mesh per text.
 [doc/text-performance.md](doc/text-performance.md) compares the two methods' performance.
 
@@ -652,7 +651,7 @@ for event in hud.take_events() {
   `Clicked` event when released over it), `Scrollbar` (vertical or horizontal: range, page,
   value, knob dragging, paging clicks, wheel, `ValueChanged` events, hiding itself when there is
   nothing to scroll). Apps can write their own by implementing `Widget`, like the test app's
-  info panel and demo 22's list.
+  info panel and demo 21's list.
 - **Layout**: each widget has a preferred size, an alignment per axis (`Fill`, `Start`,
   `Center`, `End`), a margin and a visibility (`Automatic`, `Gone`, `Invisible`, `Visible`). The
   hud measures the tree (children first), then arranges it (parents first).
@@ -716,7 +715,7 @@ shows magenta, and a warning is logged.
 
 A normal map goes in its own slot, from a `Linear` atlas. Meshes have no tangents: the shader
 builds the tangent frame from screen-space derivatives (see
-[doc/scene-format.md](doc/scene-format.md#normal-maps) and demo 23).
+[doc/scene-format.md](doc/scene-format.md#normal-maps) and demo 22).
 
 When drawing, the engine adds the node's global transform, the camera's view and projection and
 the edges of each of the material's textures under the names given to `create_shader`, then writes every value into the shader's uniform

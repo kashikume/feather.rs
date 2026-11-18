@@ -1,0 +1,47 @@
+{
+  "atlases": [
+    {
+      "name": "Regular",
+      "bitmap": "demo_009_text_regular_atlas.png",
+      "metadata": "demo_009_text_regular_atlas.atlas"
+    },
+    {
+      "name": "Bold",
+      "bitmap": "demo_009_text_bold_atlas.png",
+      "metadata": "demo_009_text_bold_atlas.atlas"
+    }
+  ],
+  "shaders": [
+    {
+      "name": "Text",
+      "vertex": "demo_009_text_shader.vert.spv",
+      "fragment": "demo_009_text_shader.frag.spv",
+      "model_uniform": "model",
+      "view_uniform": "view",
+      "projection_uniform": "proj",
+      "texture_samplers": ["font"]
+    }
+  ],
+  "cameras": [
+    {
+      "name": "Camera",
+      "perspective": { "fov": 45 },
+      "eye": [0, 0.4, 11],
+      "target": [0, 0.4, 0],
+      "up": [0, 1, 0],
+      "near": 0.1,
+      "far": 50
+    }
+  ],
+  "root": {
+    "name": "Scene root",
+    "uniforms": { "color": { "vec4": [1.0, 1.0, 1.0, 1.0] } },
+    "children": [
+      { "name": "Texts" },
+      {
+        "name": "Turntable",
+        "transform": { "translation": [0, -3.1, 0.5] }
+      }
+    ]
+  }
+}

@@ -303,11 +303,11 @@ A few files:
 | File | OBJ | OBJ+deflate | int | delta | delta+deflate |
 |---|---:|---:|---:|---:|---:|
 | demo_000_viking_room | 484.0 | 123.5 | 142.4 | 89.7 | 62.7 |
-| demo_007_vases_classic | 754.8 | 105.7 | 205.9 | 94.1 | 33.4 |
-| demo_013_simple_shadow_human | 745.5 | 99.0 | 209.9 | 102.1 | 29.1 |
-| demo_016_city_glass_facade | 5 590.1 | 1 146.7 | 4 840.5 | 2 162.6 | 28.6 |
-| demo_016_city_tree_tops | 8 238.3 | 1 387.4 | 3 481.7 | 1 525.5 | 433.8 |
-| demo_016_city_sedan | 86.1 | 23.3 | 47.1 | 28.2 | 13.0 |
+| demo_006_vases_classic | 754.8 | 105.7 | 205.9 | 94.1 | 33.4 |
+| demo_012_simple_shadow_human | 745.5 | 99.0 | 209.9 | 102.1 | 29.1 |
+| demo_015_city_glass_facade | 5 590.1 | 1 146.7 | 4 840.5 | 2 162.6 | 28.6 |
+| demo_015_city_tree_tops | 8 238.3 | 1 387.4 | 3 481.7 | 1 525.5 | 433.8 |
+| demo_015_city_sedan | 86.1 | 23.3 | 47.1 | 28.2 | 13.0 |
 
 **Load times** on the desktop, from memory, fastest of 15 runs, all 43 files together: the OBJ
 the way `MeshBuilderObjFile` reads it (tobj, then merging vertices), against reading the
@@ -328,7 +328,7 @@ from the `.fmesh`, 8.2 ms deflated. The slowest, the glass facades (185 002 vert
 --release -p mesh-converter --example measure`) and run on the phone with `adb shell`, on the
 same files:
 
-| | All 43 files | Demo 16's 27 |
+| | All 43 files | Demo 15's 27 |
 |---|---:|---:|
 | OBJ (tobj + merging) | 505.4 ms | 481.5 ms |
 | `.fmesh`, `int` | 24.2 ms | 23.6 ms |
@@ -336,7 +336,7 @@ same files:
 | `.fmesh`, auto (delta), deflated | 63.0 ms | 60.5 ms |
 
 In the app, reading the assets from the APK (which inflates them) and adding the meshes to the
-scene included, demo 16 logs "`27 meshes built in 64.7 ms`" (logcat, tag `feather`, level
+scene included, demo 15 logs "`27 meshes built in 64.7 ms`" (logcat, tag `feather`, level
 info): about a seventh of parsing its OBJs alone. Every demo draws as before.
 
 **Decisions**:

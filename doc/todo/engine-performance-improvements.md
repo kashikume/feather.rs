@@ -5,8 +5,8 @@ check once it is done. Done items (MSAA store, cheaper MSAA, lazily allocated at
 frustum culling), with their measurements, are in
 [../archive/done-engine-performance-improvements.md](../archive/done-engine-performance-improvements.md).
 
-**Still to measure**: frustum culling on the Galaxy S25 (frame rate and GPU time in demos 15 and
-16 before and after, no popping at the screen edges, shadows of buildings out of view), see
+**Still to measure**: frustum culling on the Galaxy S25 (frame rate and GPU time in demos 14 and
+15 before and after, no popping at the screen edges, shadows of buildings out of view), see
 [../archive/done-frustum-culling-plan.md](../archive/done-frustum-culling-plan.md).
 
 Items already planned in [text-performance-improvements.md](text-performance-improvements.md)
@@ -28,7 +28,7 @@ own uniform packing and descriptor binding.
 with per-instance data (model matrix, a few uniforms) in a storage or vertex buffer. This changes
 how shaders read their per-node values, so it needs a design of its own.
 
-**Check**: draw count and collect time in demo 16.
+**Check**: draw count and collect time in demo 15.
 
 ## Pipelines and swapchain
 
@@ -153,7 +153,7 @@ its mipmaps. Devices limit the number of allocations (4,096 on many), and each o
 Together with item 1 of [text-performance-improvements.md](text-performance-improvements.md)
 (uploads without waiting), this also helps text that changes every frame.
 
-**Check**: load time of demo 16; "sync" time for changing one-mesh text.
+**Check**: load time of demo 15; "sync" time for changing one-mesh text.
 
 ## Suggested order
 
