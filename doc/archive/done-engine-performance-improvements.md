@@ -93,3 +93,32 @@ to 84 MB and the total PSS from 233 MB to 155 MB. Background and back still draw
 the guess above, Windows changes too on this machine: the Adreno X1-85 is a tiled GPU and has
 lazily allocated memory, so both images are lazily allocated there as well (image unchanged,
 no validation errors).
+
+### 4. Frustum culling
+
+**Problem**: `Scene::draw_items` (`scene.rs:453`) returned every visible node, so off-screen
+nodes were packed, bound and drawn. Shadow casters were all drawn into the shadow map too.
+
+**Proposal**: a bounding volume per mesh, tested against the planes of the active camera's
+view-projection in `draw_items`; shadow casters tested against the light's view-projection
+instead. Optionally whole subtrees.
+
+**Check**: in the city demos, the number of draws and the collect time drop when the camera
+looks at part of the city; nothing visible pops at the screen edges.
+
+**Done** (2026-11-14), planned in [done-frustum-culling-plan.md](done-frustum-culling-plan.md):
+each `Mesh` keeps a box around its vertices (`Mesh::get_bounds`, `bounds.rs`), and
+`draw_items(Some(&Culling))` tests it, moved by the node's global transform, against the
+camera's frustum (`DrawItem::in_view`) and, for casters, against the shadow light's
+(`casts_shadow`). The shadow pass takes casters from all items, so buildings out of view still
+cast shadows into it; the main pass keeps only `in_view` items, before sorting.
+`Node::set_culled(false)` (scene files: `"culled": false`) opts a node out, for shaders that
+move vertices beyond the mesh (demo 3's waving plates). No subtree culling. The engine reports
+main-pass draws, culled nodes, shadow draws and collect time every frame
+(`FeatherApp::on_frame_stats`, a `debug` log line about once a second), and the test app's HUD
+shows them. Demo 15's static meshes are split per block so culling applies to them.
+
+On Windows (release, camera moving): demo 15 draws 175–210 of about 1150 nodes (355–395 shadow
+draws), collected in 0.35–0.7 ms; demo 16 draws 110–150 of about 720 (190–235 shadow draws),
+0.3–0.4 ms. **Not measured yet** on the Galaxy S25 (frame rate and GPU time before and after),
+nor checked by eye for popping and for shadows from out of view.

@@ -1,10 +1,15 @@
-# Frustum culling: plan
+# Frustum culling: plan (done)
+
+Implemented on 2026-11-14 (commit `0c4aad7`); see *Done* below for what changed from the plan
+and what is still to measure. The plan is kept as written; file and line references are from
+before the change.
 
 Goal: **don't pack, bind and draw nodes that can't be seen**: nodes outside the active camera's
 view are left out of the scene's draws, and shadow casters outside the shadow light's view are
 left out of the shadow pass.
 
-Covers item 1 of [engine-performance-improvements.md](engine-performance-improvements.md).
+Covered item 1 of [../todo/engine-performance-improvements.md](../todo/engine-performance-improvements.md),
+now item 4 of [done-engine-performance-improvements.md](done-engine-performance-improvements.md).
 File references are relative to `crates/feather/src/`.
 
 ## What the C++ engine does
@@ -14,7 +19,7 @@ bounding volumes or culling of any kind. The only "cull" in the C++ code is back
 (`glCullFace`), which feather.rs already does in the pipeline. So there is nothing to port and
 no C++ behaviour to keep; this is new work.
 
-## What feather.rs does today
+## What feather.rs did before
 
 - `Mesh` (`mesh.rs`) keeps its vertices (`Vec<Vertex>`, position, normal, UV) and indices on
   the CPU after upload, and never changes them: text and other dynamic geometry make a new mesh
@@ -128,10 +133,22 @@ the per-node test as a cost.
     block and texture; measure with culling off and on.
 7. Measure (see *Check*), write the results into the done note when archiving.
 
-## Status (2026-11-14)
+## Done
 
-Steps 1–6b done. First numbers, Windows, release, from the `debug` log line (per frame, a few
-seconds into each demo, camera moving):
+All steps but 7 (2026-11-14), as planned, with these differences:
+
+- The culled count is kept in `Culling` (`Culling::culled_count`, counted by `draw_items`), and
+  `FrameStats` has no "nodes listed" count: main-pass draws, culled nodes, shadow draws and
+  collect time (seconds, `f32`).
+- Demo 15's statics are split with `MeshData::split_into_cells` (by each triangle's centre, in
+  cells street to street, `PITCH` wide), named e.g. `Roofs (2, 3)`. That makes several hundred
+  static nodes, not "a few dozen" as estimated in decision 1 (about 1150 drawable nodes in all,
+  with cars, people and lamps); about 200 are drawn at a time.
+  If that turns out slower on the S25 than the few merged meshes, larger cells (2×2 blocks)
+  are a change of one argument.
+
+First numbers, Windows, release, from the `debug` log line (per frame, a few seconds into each
+demo, camera moving):
 
 | Demo | Main-pass draws | Culled | Shadow draws | Collect time |
 |---|---|---|---|---|
@@ -139,8 +156,13 @@ seconds into each demo, camera moving):
 | 16 (~720 nodes) | 110–150 | 570–610 | 190–235 | 0.3–0.4 ms |
 | 11 (crawl) | 43 | 0 | 0 | 0.06 ms |
 
-Demo 11 culls nothing: its text is a few meshes, not a node per glyph. Still to do: step 7
-(before/after on the S25, the visual checks below).
+Demo 11 culls nothing: its text is a few meshes, not a node per glyph, so it is no test case
+for culling (contrary to *What culling would act on* above).
+
+**Not done yet** (step 7): before/after numbers on the Galaxy S25 (frame rate and GPU time in
+demos 15 and 16), and the visual checks below (no popping at the screen edges; buildings out of
+view still cast their shadows into it). Listed in
+[../todo/engine-performance-improvements.md](../todo/engine-performance-improvements.md).
 
 ## Check
 
@@ -155,7 +177,7 @@ Demo 11 culls nothing: its text is a few meshes, not a node per glyph. Still to 
 
 ## Decisions
 
-All open questions answered (2026-11-14).
+All open questions answered (2026-11-14) before implementing.
 
 1. **Demo 15's merged statics** — *decided: split them.* The static meshes are split per block
    (25 blocks × textures, a few dozen draws instead of a few), so culling shows in demo 15 too.
