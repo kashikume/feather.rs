@@ -32,6 +32,7 @@ use super::demo_020_animation::AnimationDemo;
 use super::demo_021_scrolling::ScrollingDemo;
 use super::demo_022_tennis_ball::TennisBallDemo;
 use super::demo_023_drive_in::DriveInDemo;
+use super::demo_024_drive_in_spider::DriveInSpiderDemo;
 use super::testapp_hud::{HudAction, TestHud};
 
 /// One demo of the test app: a scene, seen through its active camera, and its animation. A
@@ -198,6 +199,10 @@ pub const DEMOS: &[DemoInfo] = &[
     DemoInfo {
         name: "Drive-in",
         create: |assets| Ok(Box::new(DriveInDemo::new(assets)?)),
+    },
+    DemoInfo {
+        name: "Drive-in (spider)",
+        create: |assets| Ok(Box::new(DriveInSpiderDemo::new(assets)?)),
     },
 ];
 
@@ -644,6 +649,44 @@ mod tests {
         demo.update(3.0).unwrap();
         assert_ne!(room(&mut demo), room1, "the room doesn't turn");
         assert_ne!(eye(&mut demo), eye1, "the camera doesn't sway");
+    }
+
+    #[test]
+    fn drive_in_spider_demo_shows_the_spider_on_a_waving_canvas() {
+        let mut demo = demo(24);
+        assert_eq!(demo.texture_scene_count(), 1);
+        let drive_in = demo.scene();
+        let drive_in_id = drive_in.get_id();
+        let screen = drive_in.find_atlas("Screen").unwrap();
+        let canvas = drive_in.find_node("Canvas").unwrap();
+        // The shader moves the canvas's vertices: it is never culled.
+        assert!(!drive_in.get_node(canvas).unwrap().is_culled());
+
+        // The movie is demo 19's scene: the spider, casting shadows from its shadow light.
+        let (movie, target) = demo.texture_scene_at(0);
+        assert_eq!(
+            target,
+            SceneTextureTarget {
+                scene: drive_in_id,
+                atlas: screen
+            }
+        );
+        assert!(movie.get_shadow_light().is_some());
+        let spider = movie.find_node("Spider").unwrap();
+        let start = movie.get_node(spider).unwrap().get_transform();
+
+        // The spider walks, and the canvas gets the time.
+        demo.update(2.0).unwrap();
+        let movie = demo.texture_scene_at(0).0;
+        assert_ne!(movie.get_node(spider).unwrap().get_transform(), start);
+        let time = demo
+            .scene()
+            .get_node(canvas)
+            .unwrap()
+            .uniforms()
+            .get("time")
+            .cloned();
+        assert_eq!(time, Some(feather::uniform::UniformValue::Float(2.0)));
     }
 
     #[test]

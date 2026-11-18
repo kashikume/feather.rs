@@ -1,0 +1,175 @@
+{
+  "atlases": [
+    {
+      "name": "City",
+      "bitmap": "demo_015_city_atlas.png",
+      "metadata": "demo_015_city_atlas.atlas"
+    },
+    { "name": "Screen", "scene_texture": { "width": 1280, "height": 544 } }
+  ],
+  "meshes": [
+    { "name": "Sedan", "file": "city_sedan.fmesh" },
+    { "name": "Hatchback", "file": "city_hatchback.fmesh" },
+    { "name": "Ground", "plane": { "x": [-60, 60], "y": [-30, 70] } },
+    { "name": "Canvas", "plane": { "x": [-7, 7], "y": [-5.95, 0], "segments": [70, 30] } },
+    { "name": "Beam", "cuboid": { "x": [-7.6, 7.6], "y": [0.0, 0.8], "z": [0, 0.4] } },
+    { "name": "Post", "cuboid": { "x": [-0.18, 0.18], "y": [-0.18, 0.18], "z": [0, 9.0] } },
+    { "name": "Stripe", "cuboid": { "x": [-0.06, 0.06], "y": [0, 6.5], "z": [0, 0.01] } }
+  ],
+  "shaders": [
+    {
+      "name": "Canvas",
+      "vertex": "demo_024_drive_in_spider_screen_shader.vert.spv",
+      "fragment": "demo_024_drive_in_spider_screen_shader.frag.spv",
+      "model_uniform": "model",
+      "view_uniform": "view",
+      "projection_uniform": "proj",
+      "texture_samplers": ["movie"]
+    },
+    {
+      "name": "Lit",
+      "vertex": "demo_023_drive_in_shader.vert.spv",
+      "fragment": "demo_023_drive_in_lit_shader.frag.spv",
+      "model_uniform": "model",
+      "view_uniform": "view",
+      "projection_uniform": "proj",
+      "texture_samplers": ["movie"]
+    },
+    {
+      "name": "Car",
+      "vertex": "demo_023_drive_in_shader.vert.spv",
+      "fragment": "demo_023_drive_in_car_shader.frag.spv",
+      "model_uniform": "model",
+      "view_uniform": "view",
+      "projection_uniform": "proj",
+      "texture_samplers": [
+        { "sampler": "albedoMap", "umin": "umin", "umax": "umax", "vmin": "vmin", "vmax": "vmax" },
+        "movie"
+      ]
+    }
+  ],
+  "materials": [
+    {
+      "name": "Canvas",
+      "shader": "Canvas",
+      "texture": { "atlas": "Screen" },
+      "uniforms": {
+        "brightness": { "float": 1.2 },
+        "projector": { "vec3": [0, -12, 4] },
+        "width": { "float": 14 },
+        "height": { "float": 5.95 },
+        "strength": { "float": 1.1 }
+      }
+    },
+    {
+      "name": "Asphalt",
+      "shader": "Lit",
+      "texture": { "atlas": "Screen" },
+      "uniforms": { "color": { "vec3": [0.07, 0.07, 0.075] } }
+    },
+    {
+      "name": "Frame",
+      "shader": "Lit",
+      "texture": { "atlas": "Screen" },
+      "uniforms": { "color": { "vec3": [0.025, 0.025, 0.03] } }
+    },
+    {
+      "name": "Paint",
+      "shader": "Lit",
+      "texture": { "atlas": "Screen" },
+      "uniforms": { "color": { "vec3": [0.55, 0.55, 0.5] } }
+    },
+    {
+      "name": "Car",
+      "shader": "Car",
+      "textures": [{ "atlas": "City", "name": "vehicles" }, { "atlas": "Screen" }],
+      "uniforms": {
+        "shininess": { "float": 60.0 },
+        "specularStrength": { "float": 0.6 }
+      }
+    }
+  ],
+  "cameras": [
+    {
+      "name": "Camera",
+      "perspective": { "fov": 45 },
+      "eye": [0, -3.5, 2.5],
+      "target": [0, 20, 5.0],
+      "up": [0, 0, 1],
+      "near": 0.1,
+      "far": 150
+    }
+  ],
+  "root": {
+    "name": "Scene root",
+    "children": [
+      {
+        "name": "Canvas",
+        "mesh": "Canvas",
+        "material": "Canvas",
+        "culled": false,
+        "transform": { "translation": [0, 20, 8.55], "rotation": [90, 0, 0] },
+        "uniforms": { "time": { "float": 0 } }
+      },
+      {
+        "name": "Lot",
+        "uniforms": {
+          "moonDirection": { "vec3": [-0.4, -0.6, 0.7] },
+          "moonColor": { "vec3": [0.05, 0.06, 0.1] },
+          "screenCenter": { "vec3": [0, 20, 5.575] },
+          "screenHalfSize": { "vec2": [7, 2.975] },
+          "screenStrength": { "float": 7.0 },
+          "screenReach": { "float": 14.0 }
+        },
+        "children": [
+          { "name": "Ground", "mesh": "Ground", "material": "Asphalt" },
+          {
+            "name": "Beam",
+            "mesh": "Beam",
+            "material": "Frame",
+            "transform": { "translation": [0, 20.0, 8.55] }
+          },
+          {
+            "name": "Left post",
+            "mesh": "Post",
+            "material": "Frame",
+            "transform": { "translation": [-7.4, 20.6, 0] }
+          },
+          {
+            "name": "Right post",
+            "mesh": "Post",
+            "material": "Frame",
+            "transform": { "translation": [7.4, 20.6, 0] }
+          },
+          {
+            "name": "Stripes",
+            "children": [
+              { "name": "Stripe 1", "mesh": "Stripe", "material": "Paint", "transform": { "translation": [-4.6, 1.2, 0] } },
+              { "name": "Stripe 2", "mesh": "Stripe", "material": "Paint", "transform": { "translation": [0, 1.2, 0] } },
+              { "name": "Stripe 3", "mesh": "Stripe", "material": "Paint", "transform": { "translation": [4.6, 1.2, 0] } }
+            ]
+          },
+          {
+            "name": "Cars",
+            "children": [
+              {
+                "name": "Sedan",
+                "mesh": "Sedan",
+                "material": "Car",
+                "transform": { "translation": [-2.3, 4.6, 0], "rotation": [0, 0, 90] },
+                "uniforms": { "tint": { "vec3": [0.45, 0.03, 0.03] } }
+              },
+              {
+                "name": "Hatchback",
+                "mesh": "Hatchback",
+                "material": "Car",
+                "transform": { "translation": [2.3, 4.1, 0], "rotation": [0, 0, 90] },
+                "uniforms": { "tint": { "vec3": [0.04, 0.12, 0.35] } }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

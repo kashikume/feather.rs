@@ -133,6 +133,7 @@ doesn't take.
 | 21   | Scrolling   | A list of 80 lines of text with a vertical and a horizontal scrollbar, made with `feather-ui`: drag the knobs, click the tracks to page, turn the wheel; the scrollbars hide when everything fits. Lines and letters outside the view are hidden (there is no clipping) |
 | 22   | Tennis ball | A tennis ball turning under a light from the side: a material with two textures, the felt's colours and a normal map (a linear atlas) that gives the seam its groove and the felt its fuzz, with the tangent frame computed in the fragment shader. Both images are made by `tools/scripts/make_tennis_ball_textures.py` |
 | 23   | Drive-in    | A drive-in cinema at night: two of the city's cars parked before a big screen that shows demo 0's turning room, live: the room's scene is drawn into a scene texture every frame. The screen lights the lot and the cars with the movie's average colour (the texture's smallest mipmap); the camera sways behind the cars |
+| 24   | Drive-in (spider) | The drive-in again, showing demo 19's walking spider with its shadow (the movie has its own shadow pass) on a canvas screen hanging from a beam and waving in the wind like demo 3's plates; its folds turn brighter or darker towards the projector |
 
 Each demo is in its own file, `apps/testapp/src/testapp/demo_NNN_<name>.rs`, and its own
 resources are named `demo_NNN_<name>_<kind>` (`scene`, `atlas`, `shader`, ...). Models and images
@@ -574,7 +575,8 @@ The target must be one of the window's scenes; a texture scene's own scene textu
 `FrameStats::texture_scenes` has the stats of each texture scene.
 
 In the test app, a demo lists its texture scenes with `Demo::texture_scene_count` and
-`texture_scene_at`. Demo 23 (the drive-in) shows demo 0's room on a cinema screen.
+`texture_scene_at`. Demo 23 (the drive-in) shows demo 0's room on a cinema screen; demo 24
+shows demo 19's spider, with its shadow, on a waving canvas.
 
 ### Bones and animation
 
