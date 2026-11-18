@@ -119,7 +119,7 @@ pub struct Rgba { pub width: u32, pub height: u32, pub pixels: Vec<u8> }
 
 ### Test app
 
-- Demo 0's room texture (`demo_000_viking_room_atlas.png`, 1.0 MB, a photo-like texture)
+- Demo 0's room texture (`viking_room.png`, 1.0 MB, a photo-like texture)
   becomes a JPEG (quality 90), so a demo shows a JPEG atlas from a scene file; and a JPEG
   image in one `.atlist` (demo 2's plates) shows the atlas creator path. Before and after sizes
   and load times recorded (Windows and S25).

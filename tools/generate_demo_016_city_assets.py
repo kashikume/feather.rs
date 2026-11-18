@@ -21,8 +21,14 @@ from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[1]
 ATLAS_DIR = ROOT / "apps" / "testapp" / "atlases"
-TEX_DIR = ATLAS_DIR / "demo_016_city"
+TEX_DIR = ATLAS_DIR / "images" / "city"
 RES_DIR = ROOT / "apps" / "testapp" / "resources"
+
+
+def mesh_file(name):
+    """The file name (without extension) of the city mesh `name`, e.g. `roads_mesh` ->
+    `city_roads`: named after the city, not the demo, so other demos can use it too."""
+    return "city_" + name.removesuffix("_mesh")
 
 BLOCKS = 5
 PITCH = 50.0
@@ -35,8 +41,8 @@ FLOOR = 3.5
 PARK = (3, 1)
 LANE_LENGTH = 360.0
 
-# Demo 016's vehicles, imported from a model: meshes `demo_016_city_<name>_mesh.obj` and the
-# texture `vehicles.png`. Not generated here.
+# Demo 016's vehicles, imported from a model: meshes `city_<name>.obj` and the texture
+# `vehicles.png`. Not generated here.
 VEHICLES = ["truck", "bus", "van", "sedan", "pickup", "suv", "delivery", "hatchback"]
 
 PERSON = {
@@ -749,7 +755,7 @@ def sky_dome():
 def make_scene_files(mesh_names):
     stems = ["glass_facade", "brick_facade", "concrete_facade", "stone_facade", "roof", "road", "intersection", "crosswalk", "sidewalk", "concrete", "grass", "bark", "leaves", "metal", "signal", "vehicles", "person"]
     with open(ATLAS_DIR / "demo_016_city_atlas.atlist", "w", encoding="ascii", newline="\n") as f:
-        f.write("\n".join(f"demo_016_city/{s}.png" for s in stems) + "\n")
+        f.write("\n".join(f"images/city/{s}.png" for s in stems) + "\n")
     mats = []
     for s in stems:
         if s == "glass_facade":
@@ -767,7 +773,7 @@ def make_scene_files(mesh_names):
         mats.append({"name": s, "shader": "Lit", "texture": {"atlas": "City", "name": s}, "uniforms": {"shininess": {"float": vals[0]}, "specularStrength": {"float": vals[1]}, "reflectivity": {"float": vals[2]}}})
     scene = {
         "atlases": [{"name": "City", "bitmap": "demo_016_city_atlas.png", "metadata": "demo_016_city_atlas.atlas"}],
-        "meshes": [{"name": name, "file": f"demo_016_city_{name}.fmesh"} for name in mesh_names],
+        "meshes": [{"name": name, "file": f"{mesh_file(name)}.fmesh"} for name in mesh_names],
         "shaders": [
             {"name": "Lit", "vertex": "demo_016_city_shader.vert.spv", "fragment": "demo_016_city_shader.frag.spv", "model_uniform": "model", "view_uniform": "view", "projection_uniform": "proj", "umin_uniform": "umin", "umax_uniform": "umax", "vmin_uniform": "vmin", "vmax_uniform": "vmax", "shadow_matrix_uniform": "lightViewProj", "shadow_map_sampler": "shadowMap"},
             {"name": "Sky", "vertex": "demo_016_city_sky_shader.vert.spv", "fragment": "demo_016_city_sky_shader.frag.spv", "model_uniform": "model", "view_uniform": "view", "projection_uniform": "proj"},
@@ -801,11 +807,11 @@ def main():
         "sky_dome_mesh": sky_dome(),
     })
     for name, mesh in meshes.items():
-        mesh.write(RES_DIR / f"demo_016_city_{name}.obj")
+        mesh.write(RES_DIR / f"{mesh_file(name)}.obj")
     make_scene_files(list(meshes.keys()) + [f"{name}_mesh" for name in VEHICLES])
     total = 0
     for name, mesh in meshes.items():
-        path = RES_DIR / f"demo_016_city_{name}.obj"
+        path = RES_DIR / f"{mesh_file(name)}.obj"
         size = path.stat().st_size
         total += size
         print(f"{name:24s} vertices={len(mesh.verts):7d} triangles={len(mesh.faces):7d} size={size/1048576:6.2f} MiB")

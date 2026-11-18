@@ -9,10 +9,10 @@ a delivery truck and a hatchback. It has texture coordinates but no normals, and
 library (`cars.mtl`) isn't needed: the materials are named after colours, which are chosen here
 to match the original renders.
 
-For each vehicle this writes `resources/demo_016_city_<name>_mesh.obj`: Z up, the front towards
+For each vehicle this writes `resources/city_<name>.obj`: Z up, the front towards
 +X, centred on the origin at ground level, triangulated, with flat normals. (The test app's build
-converts it into `demo_016_city_<name>_mesh.fmesh`, which the scene loads.) All of them share one
-texture, `atlases/demo_016_city/vehicles.png`, generated here: a swatch per colour (paint shaded
+converts it into `city_<name>.fmesh`, which the scene loads.) All of them share one
+texture, `atlases/images/city/vehicles.png`, generated here: a swatch per colour (paint shaded
 darker towards the ground, glass reflecting the sky, rubber, ...). Each face is mapped onto its
 swatch by where it lies on its vehicle, so the shading runs across the whole body. The body paint
 of every vehicle uses a white swatch with alpha 1, so the demo can paint each car with `tint`.
@@ -38,6 +38,7 @@ from generate_demo_016_city_assets import (  # noqa: E402
     Mesh,
     Noise,
     clamp8,
+    mesh_file,
     glass,
 )
 
@@ -329,7 +330,7 @@ def main():
     built = []
     for name, objects in zip(VEHICLES, groups):
         mesh, size, faces, flip = build_vehicle(source, objects, PAINTS[name])
-        path = RES_DIR / f"demo_016_city_{name}_mesh.obj"
+        path = RES_DIR / f"{mesh_file(name)}.obj"
         mesh.write(path)
         built.append((name, (mesh, size, faces, flip)))
         print(f"{name:10s} {size.x:5.2f} x {size.y:4.2f} x {size.z:4.2f} m  triangles={len(mesh.faces):5d}  flipped={flip}  {objects}")

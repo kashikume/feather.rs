@@ -131,9 +131,13 @@ doesn't take.
 | 21   | Animation   | A lane per kind of easing with a cube sliding across, round after round (in, out, in-out); a cube spinning forever; a cube fading in and out, then removed and replaced; the scene's camera dollying in and swaying |
 | 22   | Scrolling   | A list of 80 lines of text with a vertical and a horizontal scrollbar, made with `feather-ui`: drag the knobs, click the tracks to page, turn the wheel; the scrollbars hide when everything fits. Lines and letters outside the view are hidden (there is no clipping) |
 
-Each demo is in its own file, `apps/testapp/src/testapp/demo_NNN_<name>.rs`, and its resources
-are named `demo_NNN_<name>_<kind>` (`scene`, `atlas`, `mesh`, `shader`, ...). Demos are listed in
-`DEMOS` in `apps/testapp/src/testapp/testapp.rs`.
+Each demo is in its own file, `apps/testapp/src/testapp/demo_NNN_<name>.rs`, and its own
+resources are named `demo_NNN_<name>_<kind>` (`scene`, `atlas`, `shader`, ...). Models and images
+are shared: they are named after what they show, not after a demo, so any demo can use them:
+meshes `apps/testapp/resources/<name>.obj` (e.g. `viking_room.obj`, `walker_thigh.obj`,
+`city_bus.obj`), images used whole as atlases `resources/<name>.png` (e.g. `earth.png`), and the
+images packed into atlases `atlases/images/<subject>/<name>.png`. Demos are listed in `DEMOS` in
+`apps/testapp/src/testapp/testapp.rs`.
 
 Everything the app loads comes from the `assets/` directory next to the executable, so it can be
 started from any directory.
@@ -181,8 +185,14 @@ list. The result is `<name>.png` (the atlas) and `<name>.atlas` (its metadata: o
 smallest size from 64×32, 64×64, 128×64, ... that its images fit in, with a 1-pixel frame
 around every image. The generated atlases are not in the repository, only the images and lists:
 demo 2's are `apps/testapp/atlases/demo_002_atlas_atlas.atlist` and
-`apps/testapp/atlases/demo_002_atlas/plate_01.png` ... `plate_16.png` (demo 3 has its own copy
-under `demo_003_waving_atlas`).
+`apps/testapp/atlases/images/plates/plate_01.png` ... `plate_16.png`.
+
+Each atlas has its own list, but the images are kept once, in `apps/testapp/atlases/images/`, one
+directory per subject (`plates`, `walker`, `spider`, `city`), and lists name them from there
+(`images/plates/plate_01.png`): demo 3's list packs the same plates as demo 2's. A texture is named
+after its image's file name without the directory (`plate_01`), so two subjects may each have a
+`floor.png` (the walker's and the spider's differ), but one list shouldn't name both: their
+textures would have the same name.
 
 ### Fonts
 
@@ -232,7 +242,7 @@ compute normals for an OBJ without them:
 
 ```powershell
 cargo run --release -p mesh-converter -- --help
-cargo run --release -p mesh-converter -- apps/testapp/resources/demo_016_city_sedan_mesh.obj out.fmesh --stats --check
+cargo run --release -p mesh-converter -- apps/testapp/resources/city_sedan.obj out.fmesh --stats --check
 cargo run --release -p mesh-converter -- model.obj --soft-normals --split --out-dir meshes
 ```
 
@@ -257,9 +267,9 @@ the assets root and use `/`, e.g. `"textures/wall.png"`.
 let assets = create_assets_provider("assets")?;
 
 let bytes = assets.get_asset("demo_000_viking_room_shader.vert.spv")?;
-let mesh = MeshBuilderFmeshFile::new(&*assets, "demo_000_viking_room_mesh.fmesh")?
+let mesh = MeshBuilderFmeshFile::new(&*assets, "viking_room.fmesh")?
     .build(&mut scene, Some("Room".to_string()))?;
-let atlas = scene.create_atlas_from_png(&*assets, "demo_000_viking_room_atlas.png", None, None)?;
+let atlas = scene.create_atlas_from_png(&*assets, "viking_room.png", None, None)?;
 let plates = scene.create_atlas_from_png(
     &*assets,
     "demo_002_atlas_atlas.png",
@@ -353,10 +363,10 @@ apps/
     src/testapp/     one file per demo, testapp.rs switches them, testapp_hud.rs is the HUD
                      over them
     shaders/         GLSL sources, compiled by build.rs
-    atlases/         .atlist image lists and their images, and .font font descriptions, made
-                     into atlases by build.rs
-    resources/       scene files, models (OBJ, converted into .fmesh) and textures, copied to
-                     assets/ by build.rs
+    atlases/         .atlist image lists and .font font descriptions, made into atlases by
+                     build.rs; images/ holds the listed images, shared between the lists
+    resources/       scene files, models (OBJ, converted into .fmesh) and images used whole,
+                     copied to assets/ by build.rs; models and images are shared between demos
     build.rs         compiles shaders, builds atlases, converts meshes and copies assets next
                      to the executable
 tools/
@@ -708,8 +718,8 @@ so the scene file holds no binary data. The viking room:
 
 ```json
 {
-  "atlases":  [{ "name": "Room atlas", "bitmap": "demo_000_viking_room_atlas.png" }],
-  "meshes":   [{ "name": "Room", "file": "demo_000_viking_room_mesh.obj" }],
+  "atlases":  [{ "name": "Room atlas", "bitmap": "viking_room.png" }],
+  "meshes":   [{ "name": "Room", "file": "viking_room.obj" }],
   "shaders":  [{
     "name": "Basic",
     "vertex": "demo_000_viking_room_shader.vert.spv", "fragment": "demo_000_viking_room_shader.frag.spv",

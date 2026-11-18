@@ -10,14 +10,14 @@
     { "name": "Plate", "cuboid": { "x": [-4, 4], "y": [-4, 4], "z": [-0.25, 0] } },
     { "name": "Shadow disc", "plane": {} },
     { "name": "Ball", "sphere": { "radius": 1.0, "segments": 32, "rings": 16 } },
-    { "name": "Pelvis", "file": "demo_008_walker_pelvis_mesh.fmesh" },
-    { "name": "Torso", "file": "demo_008_walker_torso_mesh.fmesh" },
-    { "name": "Neck", "file": "demo_008_walker_neck_mesh.fmesh" },
-    { "name": "Upper arm", "file": "demo_008_walker_upper_arm_mesh.fmesh" },
-    { "name": "Forearm", "file": "demo_008_walker_forearm_mesh.fmesh" },
-    { "name": "Thigh", "file": "demo_008_walker_thigh_mesh.fmesh" },
-    { "name": "Shin", "file": "demo_008_walker_shin_mesh.fmesh" },
-    { "name": "Foot", "file": "demo_008_walker_foot_mesh.fmesh" }
+    { "name": "Pelvis", "file": "walker_pelvis.fmesh" },
+    { "name": "Torso", "file": "walker_torso.fmesh" },
+    { "name": "Neck", "file": "walker_neck.fmesh" },
+    { "name": "Upper arm", "file": "walker_upper_arm.fmesh" },
+    { "name": "Forearm", "file": "walker_forearm.fmesh" },
+    { "name": "Thigh", "file": "walker_thigh.fmesh" },
+    { "name": "Shin", "file": "walker_shin.fmesh" },
+    { "name": "Foot", "file": "walker_foot.fmesh" }
   ],
   "shaders": [
     {

@@ -15,7 +15,7 @@ pub struct MeshBuilderObjFile {
 }
 
 impl MeshBuilderObjFile {
-    /// Reads the OBJ asset `asset` (e.g. `"demo_000_viking_room_mesh.obj"`) from `assets`.
+    /// Reads the OBJ asset `asset` (e.g. `"viking_room.obj"`) from `assets`.
     pub fn new(assets: &dyn AssetsProvider, asset: &str) -> Result<Self> {
         Ok(Self::from_bytes(assets.get_asset(asset)?))
     }

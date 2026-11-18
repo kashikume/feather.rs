@@ -17,7 +17,7 @@ use super::testapp::Demo;
 ///
 /// The shader (`demo_013_simple_shadow_shader.frag`) looks up each fragment in the shadow map
 /// once and keeps the light off where something nearer to the light was drawn. The figure
-/// (`demo_013_simple_shadow_human_mesh.obj`) is one generated mesh of overlapping ellipsoids.
+/// (`human.obj`) is one generated mesh of overlapping ellipsoids.
 pub struct SimpleShadowDemo {
     scene: Scene,
 }

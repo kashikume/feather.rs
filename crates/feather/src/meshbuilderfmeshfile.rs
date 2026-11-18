@@ -19,7 +19,7 @@ pub struct MeshBuilderFmeshFile {
 }
 
 impl MeshBuilderFmeshFile {
-    /// Reads the asset `asset` (e.g. `"demo_000_viking_room_mesh.fmesh"`) from `assets`.
+    /// Reads the asset `asset` (e.g. `"viking_room.fmesh"`) from `assets`.
     pub fn new(assets: &dyn AssetsProvider, asset: &str) -> Result<Self> {
         Ok(Self {
             bytes: assets.get_asset(asset)?,

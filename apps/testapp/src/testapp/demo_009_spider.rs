@@ -23,7 +23,7 @@ const WALK_SPEED: f32 = 0.6;
 /// from bones. Each leg has four bones: `<leg>Hip` turns it forward and back around the
 /// vertical axis, `<leg>Femur` raises it, `<leg>Knee` and `<leg>Ankle` bend it down to the floor
 /// (legs are `L1`..`L4` on the left and `R1`..`R4` on the right, front to back). All parts share
-/// one atlas, built during the build from images in `atlases/demo_009_spider/`.
+/// one atlas, built during the build from images in `atlases/images/spider/`.
 ///
 /// The walk cycle (`demo_009_spider_walk.json`) is the alternating tetrapod gait of real
 /// spiders: L1, R2, L3 and R4 step together, then the other four, so four feet are always on

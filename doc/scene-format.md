@@ -24,7 +24,7 @@ The loader is in [`crates/feather/src/scenefile.rs`](../crates/feather/src/scene
 - **No binary data.** Images, atlas metadata, meshes and shaders are separate files. The scene file holds only
   their asset names, which are read through the `AssetsProvider`. On Windows that means paths
   relative to the `assets/` directory next to the executable, e.g.
-  `"demo_000_viking_room_atlas.png"` or `"textures/wall.png"` (always with `/`).
+  `"viking_room.png"` or `"textures/wall.png"` (always with `/`).
 - **Strict.** Unknown fields, duplicate names, unknown names and wrong value types are errors.
   The error message says where the problem is, so a typo never goes unnoticed.
 
@@ -35,10 +35,10 @@ The viking room used by the test app ([`apps/testapp/resources/demo_000_viking_r
 ```json
 {
   "atlases": [
-    { "name": "Room atlas", "bitmap": "demo_000_viking_room_atlas.png" }
+    { "name": "Room atlas", "bitmap": "viking_room.png" }
   ],
   "meshes": [
-    { "name": "Room", "file": "demo_000_viking_room_mesh.fmesh" }
+    { "name": "Room", "file": "viking_room.fmesh" }
   ],
   "shaders": [
     {

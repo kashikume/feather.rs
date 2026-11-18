@@ -21,7 +21,7 @@ const WALK_SPEED: f32 = 1.15;
 /// `demo_008_walker_scene.json` builds the person from body parts (generated OBJ meshes and
 /// spheres) hanging from bones: the named nodes under `Walker` (`Hips`, `Spine`, `LeftHip`,
 /// `LeftKnee`, ...), placed at the joints. All parts share one atlas, built during the build
-/// from images in `atlases/demo_008_walker/`; each material shows one texture of it.
+/// from images in `atlases/images/walker/`; each material shows one texture of it.
 ///
 /// This demo makes a `Skeleton` of the bones and plays the walk cycle from
 /// `demo_008_walker_walk.json` on it (rotations of the joints and a little up and down of the

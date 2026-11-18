@@ -1,7 +1,7 @@
 {
   "atlases": [
-    { "name": "World map", "bitmap": "demo_005_globe_atlas.png" },
-    { "name": "Moon map", "bitmap": "demo_005_globe_moon.png" }
+    { "name": "World map", "bitmap": "earth.png" },
+    { "name": "Moon map", "bitmap": "moon.png" }
   ],
   "meshes": [
     { "name": "Ball", "sphere": { "radius": 1.0, "segments": 96, "rings": 48 } },

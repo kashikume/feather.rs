@@ -10,7 +10,7 @@ use anyhow::Result;
 /// `AndroidAssetsProvider` from the `AndroidApp` that `android_main` receives.
 pub trait AssetsProvider {
     /// Reads the asset `name` and returns its contents. `name` is a path relative to the
-    /// assets root, using `/` as separator, e.g. `"demo_000_viking_room_atlas.png"` or
+    /// assets root, using `/` as separator, e.g. `"viking_room.png"` or
     /// `"textures/wall.png"`.
     fn get_asset(&self, name: &str) -> Result<Vec<u8>>;
 }

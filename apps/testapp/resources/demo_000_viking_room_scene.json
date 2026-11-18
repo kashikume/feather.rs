@@ -1,9 +1,9 @@
 {
   "atlases": [
-    { "name": "Room atlas", "bitmap": "demo_000_viking_room_atlas.png" }
+    { "name": "Room atlas", "bitmap": "viking_room.png" }
   ],
   "meshes": [
-    { "name": "Room", "file": "demo_000_viking_room_mesh.fmesh" }
+    { "name": "Room", "file": "viking_room.fmesh" }
   ],
   "shaders": [
     {

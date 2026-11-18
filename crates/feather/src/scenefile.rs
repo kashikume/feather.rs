@@ -6,9 +6,9 @@
 //!
 //! ```json
 //! {
-//!   "atlases":  [{ "name": "Room", "bitmap": "demo_000_viking_room_atlas.png" },
+//!   "atlases":  [{ "name": "Room", "bitmap": "viking_room.png" },
 //!                { "name": "Icons", "bitmap": "icons.png", "metadata": "icons.atlas" }],
-//!   "meshes":   [{ "name": "Room", "file": "demo_000_viking_room_mesh.fmesh" },
+//!   "meshes":   [{ "name": "Room", "file": "viking_room.fmesh" },
 //!                { "name": "Box", "cuboid": { "x": [-1, 1], "y": [-1, 1], "z": [0, 2] } },
 //!                { "name": "Flag", "plane": { "x": [0, 2], "y": [-1, 0], "segments": [8, 4] } },
 //!                { "name": "Ball", "sphere": { "radius": 1, "segments": 64, "rings": 32 } }],

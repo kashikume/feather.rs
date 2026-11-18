@@ -1,6 +1,6 @@
 {
   "atlases": [
-    { "name": "Cube atlas", "bitmap": "demo_004_lit_cuboid_atlas.png" }
+    { "name": "Cube atlas", "bitmap": "statue.png" }
   ],
   "meshes": [
     { "name": "Cube", "cuboid": {} }

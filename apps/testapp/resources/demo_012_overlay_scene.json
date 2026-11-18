@@ -5,7 +5,7 @@
       "bitmap": "demo_012_overlay_atlas.png",
       "metadata": "demo_012_overlay_atlas.atlas"
     },
-    { "name": "Room texture", "bitmap": "demo_000_viking_room_atlas.png" }
+    { "name": "Room texture", "bitmap": "viking_room.png" }
   ],
   "meshes": [
     { "name": "Square", "plane": { "x": [0, 1], "y": [-1, 0] } }
