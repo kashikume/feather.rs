@@ -15,7 +15,20 @@ pub struct AtlasRegion {
     pub height: u32,
 }
 
-/// An image that textures are cut from. Pixels are stored as 8-bit RGBA, row by row.
+/// What an atlas's pixel values mean, which decides how shaders read them.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum ColorSpace {
+    /// Colours encoded in sRGB, as PNG files store them: shaders read them converted to linear
+    /// values (a stored 128 reads as about 0.22). For colour textures.
+    #[default]
+    Srgb,
+    /// Plain values: shaders read a stored 128 as about 0.5. For data that isn't a colour,
+    /// e.g. a normal map.
+    Linear,
+}
+
+/// An image that textures are cut from. Pixels are stored as 8-bit RGBA, row by row, in the
+/// atlas's `ColorSpace`, fixed when it is made.
 ///
 /// The optional metadata (a `.atlas` file, as written by the atlas creator tool) names
 /// rectangles of the image; `get_texture` turns one into a `Texture`.
@@ -25,6 +38,7 @@ pub struct Atlas {
     width: u32,
     height: u32,
     pixels: Vec<u8>,
+    color_space: ColorSpace,
     /// Named rectangles, from the metadata.
     regions: HashMap<String, AtlasRegion>,
 }
@@ -53,6 +67,7 @@ impl Atlas {
         bitmap: &str,
         metadata: Option<&str>,
         name: Option<String>,
+        color_space: ColorSpace,
     ) -> Result<Self> {
         let name = match name {
             Some(name) if !name.is_empty() => name,
@@ -60,7 +75,7 @@ impl Atlas {
         };
 
         let bytes = assets.get_asset(bitmap)?;
-        let mut atlas = Self::new_from_png_bytes(&bytes, Some(name))
+        let mut atlas = Self::new_from_png_bytes(&bytes, Some(name), color_space)
             .with_context(|| format!("Cannot read PNG asset {bitmap}"))?;
         if let Some(metadata) = metadata {
             (|| {
@@ -75,15 +90,25 @@ impl Atlas {
 
     /// Decodes an atlas from PNG data in memory. Any PNG color type and bit depth is converted
     /// to 8-bit RGBA. The atlas has no metadata; see `set_metadata`.
-    pub fn new_from_png_bytes(png: &[u8], name: Option<String>) -> Result<Self> {
+    pub fn new_from_png_bytes(
+        png: &[u8],
+        name: Option<String>,
+        color_space: ColorSpace,
+    ) -> Result<Self> {
         let (width, height, pixels) = read_png_rgba(png)?;
-        Ok(Self::from_rgba(name, width, height, pixels))
+        Ok(Self::from_rgba(name, width, height, pixels, color_space))
     }
 
     /// Creates an atlas from 8-bit RGBA pixels (`width * height * 4` bytes, row by row from
     /// the top), e.g. a texture generated in code. The atlas has no metadata; see
     /// `set_metadata`. Panics if `pixels` has the wrong length.
-    pub fn from_rgba(name: Option<String>, width: u32, height: u32, pixels: Vec<u8>) -> Self {
+    pub fn from_rgba(
+        name: Option<String>,
+        width: u32,
+        height: u32,
+        pixels: Vec<u8>,
+        color_space: ColorSpace,
+    ) -> Self {
         assert_eq!(pixels.len(), width as usize * height as usize * 4);
         Self {
             name,
@@ -91,6 +116,7 @@ impl Atlas {
             width,
             height,
             pixels,
+            color_space,
             regions: HashMap::new(),
         }
     }
@@ -124,6 +150,11 @@ impl Atlas {
 
     pub fn get_height(&self) -> u32 {
         self.height
+    }
+
+    /// What the pixel values mean (see `ColorSpace`).
+    pub fn get_color_space(&self) -> ColorSpace {
+        self.color_space
     }
 
     /// 8-bit RGBA pixels, row by row, `width * height * 4` bytes.
@@ -255,12 +286,21 @@ mod tests {
             2,
             1,
             vec![255, 0, 0, 255, 0, 255, 0, 255],
+            ColorSpace::Srgb,
         )
     }
 
     /// 4x2 atlas with no metadata.
     fn atlas_4x2() -> Atlas {
-        Atlas::from_rgba(None, 4, 2, vec![0; 4 * 2 * 4])
+        Atlas::from_rgba(None, 4, 2, vec![0; 4 * 2 * 4], ColorSpace::Srgb)
+    }
+
+    #[test]
+    fn color_space_is_kept() {
+        assert_eq!(test_atlas(None).get_color_space(), ColorSpace::Srgb);
+        let normals = Atlas::from_rgba(None, 1, 1, vec![128, 128, 255, 255], ColorSpace::Linear);
+        assert_eq!(normals.get_color_space(), ColorSpace::Linear);
+        assert_eq!(ColorSpace::default(), ColorSpace::Srgb);
     }
 
     /// Encodes a PNG in memory.
@@ -286,7 +326,7 @@ mod tests {
     }
 
     fn load(asset: &str, name: Option<String>) -> Result<Atlas> {
-        Atlas::new_from_png(&*test_resources(), asset, None, name)
+        Atlas::new_from_png(&*test_resources(), asset, None, name, ColorSpace::Srgb)
     }
 
     // --- loading ---
@@ -330,7 +370,7 @@ mod tests {
             &data,
             None,
         );
-        let atlas = Atlas::new_from_png_bytes(&png, None).unwrap();
+        let atlas = Atlas::new_from_png_bytes(&png, None, ColorSpace::Srgb).unwrap();
         assert_eq!((atlas.get_width(), atlas.get_height()), (2, 1));
         assert_eq!(atlas.get_pixels(), &data);
     }
@@ -345,7 +385,7 @@ mod tests {
             &[10, 20, 30, 40, 50, 60],
             None,
         );
-        let atlas = Atlas::new_from_png_bytes(&png, None).unwrap();
+        let atlas = Atlas::new_from_png_bytes(&png, None, ColorSpace::Srgb).unwrap();
         assert_eq!(atlas.get_pixels(), &[10, 20, 30, 255, 40, 50, 60, 255]);
     }
 
@@ -359,7 +399,7 @@ mod tests {
             &[0, 200],
             None,
         );
-        let atlas = Atlas::new_from_png_bytes(&png, None).unwrap();
+        let atlas = Atlas::new_from_png_bytes(&png, None, ColorSpace::Srgb).unwrap();
         assert_eq!(atlas.get_pixels(), &[0, 0, 0, 255, 200, 200, 200, 255]);
     }
 
@@ -373,7 +413,7 @@ mod tests {
             &[100, 50],
             None,
         );
-        let atlas = Atlas::new_from_png_bytes(&png, None).unwrap();
+        let atlas = Atlas::new_from_png_bytes(&png, None, ColorSpace::Srgb).unwrap();
         assert_eq!(atlas.get_pixels(), &[100, 100, 100, 50]);
     }
 
@@ -388,7 +428,7 @@ mod tests {
             &[0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xFF, 0xFF],
             None,
         );
-        let atlas = Atlas::new_from_png_bytes(&png, None).unwrap();
+        let atlas = Atlas::new_from_png_bytes(&png, None, ColorSpace::Srgb).unwrap();
         assert_eq!(atlas.get_pixels(), &[0x12, 0x56, 0x9A, 0xFF]);
     }
 
@@ -403,7 +443,7 @@ mod tests {
             &[1, 0],
             Some(palette),
         );
-        let atlas = Atlas::new_from_png_bytes(&png, None).unwrap();
+        let atlas = Atlas::new_from_png_bytes(&png, None, ColorSpace::Srgb).unwrap();
         assert_eq!(atlas.get_pixels(), &[0, 0, 255, 255, 255, 0, 0, 255]);
     }
 
@@ -415,7 +455,7 @@ mod tests {
     #[test]
     fn non_png_asset_fails() {
         assert!(load("quad.obj", None).is_err());
-        assert!(Atlas::new_from_png_bytes(b"not a png", None).is_err());
+        assert!(Atlas::new_from_png_bytes(b"not a png", None, ColorSpace::Srgb).is_err());
     }
 
     #[test]
@@ -431,7 +471,8 @@ mod tests {
         let mut assets = MemoryAssetsProvider::default();
         assets.assets.insert("sub/dir/tiny.png".to_string(), png);
 
-        let atlas = Atlas::new_from_png(&assets, "sub/dir/tiny.png", None, None).unwrap();
+        let atlas =
+            Atlas::new_from_png(&assets, "sub/dir/tiny.png", None, None, ColorSpace::Srgb).unwrap();
         assert_eq!(atlas.get_name(), Some("tiny.png".to_string()));
     }
 
@@ -451,10 +492,13 @@ mod tests {
             &[1, 2, 3, 4],
             None,
         );
-        let atlas = Atlas::new_from_png_bytes(&png, Some("tiny".to_string())).unwrap();
+        let atlas =
+            Atlas::new_from_png_bytes(&png, Some("tiny".to_string()), ColorSpace::Srgb).unwrap();
         assert_eq!(atlas.get_name(), Some("tiny".to_string()));
         assert_eq!(
-            Atlas::new_from_png_bytes(&png, None).unwrap().get_name(),
+            Atlas::new_from_png_bytes(&png, None, ColorSpace::Srgb)
+                .unwrap()
+                .get_name(),
             None
         );
     }
@@ -579,13 +623,21 @@ mod tests {
             .assets
             .insert("bad.atlas".to_string(), b"one 0 0 5 1".to_vec());
 
-        let atlas = Atlas::new_from_png(&assets, "a.png", Some("a.atlas"), None).unwrap();
+        let atlas =
+            Atlas::new_from_png(&assets, "a.png", Some("a.atlas"), None, ColorSpace::Srgb).unwrap();
         assert_eq!(atlas.get_texture_names(), ["one", "two"]);
 
-        let err = Atlas::new_from_png(&assets, "a.png", Some("bad.atlas"), None)
+        let err = Atlas::new_from_png(&assets, "a.png", Some("bad.atlas"), None, ColorSpace::Srgb)
             .err()
             .unwrap();
         assert!(format!("{err:#}").contains("bad.atlas"), "{err:#}");
-        assert!(Atlas::new_from_png(&assets, "a.png", Some("missing.atlas"), None).is_err());
+        assert!(Atlas::new_from_png(
+            &assets,
+            "a.png",
+            Some("missing.atlas"),
+            None,
+            ColorSpace::Srgb
+        )
+        .is_err());
     }
 }

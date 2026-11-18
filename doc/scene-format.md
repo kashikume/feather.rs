@@ -47,7 +47,8 @@ The viking room used by the test app ([`apps/testapp/resources/demo_000_viking_r
       "fragment": "demo_000_viking_room_shader.frag.spv",
       "model_uniform": "model",
       "view_uniform": "view",
-      "projection_uniform": "proj"
+      "projection_uniform": "proj",
+      "texture_samplers": ["texSampler"]
     }
   ],
   "materials": [
@@ -114,9 +115,13 @@ An atlas is an image that textures are cut from, with optional metadata naming i
 | `name`     | string | yes      | Unique among atlases                        |
 | `bitmap`   | string | yes      | PNG asset                                   |
 | `metadata` | string | no       | `.atlas` asset naming rectangles of the PNG |
+| `color_space` | string | no    | `"srgb"` (default): colours; `"linear"`: data, e.g. a normal map |
 
 Any PNG color type and bit depth is accepted; the image is converted to 8-bit RGBA. On the GPU
-the atlas becomes one sRGB image with mipmaps.
+the atlas becomes one image with mipmaps: an sRGB image by default, so shaders read its colours
+converted to linear values (a stored 128 reads as about 0.22), or with `"color_space": "linear"`
+a plain one, read as stored (128 reads as about 0.5). Normal maps and other images that hold
+numbers, not colours, need `"linear"`.
 
 The metadata lists one texture per line, `name x y width height`, in pixels from the top-left
 corner of the image (the name may contain spaces; empty lines are skipped):
@@ -133,12 +138,12 @@ the whole atlas can be used as a texture.
 ### Textures
 
 Textures are not listed in the file: a material names the atlas and, optionally, the texture
-(see [Materials](#materials)). A texture is the rectangle of the atlas that the metadata gives
-for its name, or the whole atlas when no name is given.
+of each of its texture slots (see [Materials](#materials)). A texture is the rectangle of the
+atlas that the metadata gives for its name, or the whole atlas when no name is given.
 
 Shaders always sample the whole atlas. To use only a texture's rectangle, a shader declares
-`float` uniforms for its edges, names them in its `umin_uniform`, `umax_uniform`,
-`vmin_uniform` and `vmax_uniform` (see [Shaders](#shaders)), and maps its coordinates with them:
+`float` uniforms for its edges, names them with the sampler in its `texture_samplers` (see
+[Shaders](#shaders)), and maps its coordinates with them:
 
 ```glsl
 layout(binding = 2) uniform TextureRect { float umin; float umax; float vmin; float vmax; } rect;
@@ -146,8 +151,44 @@ layout(binding = 2) uniform TextureRect { float umin; float umax; float vmin; fl
 outColor = texture(atlas, mix(vec2(rect.umin, rect.vmin), vec2(rect.umax, rect.vmax), uv));
 ```
 
-The engine fills them from the material's texture (UV space, 0–1 across the atlas, `v` = 0 at
-the top row). Whole-atlas textures don't need them.
+The engine fills them from the texture in that sampler's slot (UV space, 0–1 across the atlas,
+`v` = 0 at the top row). Whole-atlas textures don't need them.
+
+### Normal maps
+
+A normal map is a texture in its own slot, from a `"linear"` atlas, mapped with the same
+texture coordinates as the colour texture. Its pixels are tangent-space normals: red along `+u`,
+green up in the image (along `-v`), blue out of the surface, each mapped from -1..1 to 0..255
+(the usual OpenGL convention).
+
+Meshes have no tangents. The fragment shader builds the tangent frame at each pixel from the
+screen-space derivatives of the position and of the texture coordinates, which works with every
+mesh source (C. Schueler, "Normal Mapping Without Precomputed Tangents"):
+
+```glsl
+// Columns: the directions of growing u and growing v, and the normal.
+mat3 tangentFrame(vec3 normal, vec3 position, vec2 uv) {
+    vec3 dp1 = dFdx(position);
+    vec3 dp2 = dFdy(position);
+    vec2 duv1 = dFdx(uv);
+    vec2 duv2 = dFdy(uv);
+    vec3 dp2perp = cross(dp2, normal);
+    vec3 dp1perp = cross(normal, dp1);
+    vec3 t = dp2perp * duv1.x + dp1perp * duv2.x;
+    vec3 b = dp2perp * duv1.y + dp1perp * duv2.y;
+    // Undo the sign of dot(normal, cross(dp1, dp2)): Vulkan's framebuffer y goes down.
+    float side = dot(normal, cross(dp1, dp2)) < 0.0 ? -1.0 : 1.0;
+    float scale = side * inversesqrt(max(dot(t, t), dot(b, b)));
+    return mat3(t * scale, b * scale, normal);
+}
+...
+vec3 n = texture(normalMap, uv).xyz * 2.0 - 1.0;
+mat3 frame = tangentFrame(normalize(worldNormal), worldPosition, uv);
+vec3 bent = normalize(frame[0] * n.x - frame[1] * n.y + frame[2] * n.z);
+```
+
+`position` and `normal` must be in the same space (e.g. world space). Demo 23 (the tennis ball,
+`demo_023_tennis_ball_shader.frag`) uses it.
 
 ## Meshes
 
@@ -248,25 +289,41 @@ The texture wraps around the ball like a world map in equirectangular projection
 | `model_uniform`      | string | no       | Uniform that receives the node's model matrix       |
 | `view_uniform`       | string | no       | Uniform that receives the camera's view matrix      |
 | `projection_uniform` | string | no       | Uniform that receives the camera's projection matrix |
-| `umin_uniform`       | string | no       | Uniform that receives the left edge of the material's texture |
-| `umax_uniform`       | string | no       | Uniform that receives the right edge of the material's texture |
-| `vmin_uniform`       | string | no       | Uniform that receives the top edge of the material's texture |
-| `vmax_uniform`       | string | no       | Uniform that receives the bottom edge of the material's texture |
+| `texture_samplers`   | array  | see below | Samplers that sample the material's textures, in slot order |
 | `shadow_matrix_uniform` | string | no    | Uniform that receives the shadow light's view-projection matrix (`mat4`), see [Shadows](#shadows) |
-| `shadow_map_sampler` | string | no       | Sampler that samples the shadow map instead of the material's texture |
+| `shadow_map_sampler` | string | no       | Sampler that samples the shadow map instead of a texture |
 
 The test app's build compiles GLSL files from `apps/testapp/shaders/` into `assets/` as `<file>.spv`, so
 `shaders/demo_000_viking_room_shader.vert` is referenced as
 `"demo_000_viking_room_shader.vert.spv"`.
 
-The three matrix uniforms and the four texture edges are filled by the engine for every node
-drawn. When given, each name must exist in the shader, in a uniform block or in push constants:
-the matrices as `mat4`, the edges as `float`. Leave a field out if the shader doesn't use that
-value. The edges come from the node's material's texture (see [Textures](#textures)).
+`texture_samplers` lists the shader's samplers that sample the node's material's textures, at
+most four: the first samples the texture in slot 0, the next slot 1, and so on. **Every sampler
+of the shader must be listed**, except the `shadow_map_sampler`; a shader with no other samplers
+leaves the field out. Each entry is either the sampler's name, or an object that also names the
+four `float` uniforms that get the edges of that slot's texture (see [Textures](#textures)):
+
+| Field     | Type   | Required | Description                               |
+| --------- | ------ | -------- | ----------------------------------------- |
+| `sampler` | string | yes      | Name of the sampler                       |
+| `umin`    | string | yes      | Uniform that receives the texture's left edge   |
+| `umax`    | string | yes      | Uniform that receives the texture's right edge  |
+| `vmin`    | string | yes      | Uniform that receives the texture's top edge    |
+| `vmax`    | string | yes      | Uniform that receives the texture's bottom edge |
+
+```json
+"texture_samplers": [
+  { "sampler": "atlas", "umin": "umin", "umax": "umax", "vmin": "vmin", "vmax": "vmax" },
+  "normalMap"
+]
+```
+
+The three matrix uniforms and the texture edges are filled by the engine for every node drawn.
+When given, each name must exist in the shader, in a uniform block or in push constants: the
+matrices as `mat4`, the edges as `float`. Leave a field out if the shader doesn't use that value.
 
 Other uniforms (in blocks and push constants) take their values from materials and nodes, matched
-by the GLSL member name. Samplers sample the atlas of the material's texture, except the
-`shadow_map_sampler`, which samples the scene's shadow map.
+by the GLSL member name.
 
 ## Materials
 
@@ -274,10 +331,13 @@ by the GLSL member name. Samplers sample the atlas of the material's texture, ex
 | ---------- | ------ | -------- | ----------------------------------- |
 | `name`     | string | yes      | Unique among materials              |
 | `shader`   | string | yes      | Name of a shader                    |
-| `texture`  | object | no       | The texture its shader samples, see below |
+| `texture`  | object | no       | The texture in slot 0, see below    |
+| `textures` | array  | no       | The textures of slots 0, 1, ... (at most four); `null` leaves a slot empty |
 | `uniforms` | object | no       | Uniform values, see [Uniforms](#uniforms) |
 
-`texture` names an atlas and, optionally, a texture from the atlas's metadata:
+A material has four texture slots; its shader's `texture_samplers` sample them in order. Give
+either `texture` (slot 0 only) or `textures`, not both. Each texture names an atlas and,
+optionally, a texture from the atlas's metadata:
 
 | Field   | Type   | Required | Description                                              |
 | ------- | ------ | -------- | -------------------------------------------------------- |
@@ -286,11 +346,12 @@ by the GLSL member name. Samplers sample the atlas of the material's texture, ex
 
 ```json
 { "name": "Room", "shader": "Basic", "texture": { "atlas": "Room atlas" } },
-{ "name": "Plate 1", "shader": "Waving", "texture": { "atlas": "Plates", "name": "plate_01" } }
+{ "name": "Plate 1", "shader": "Waving", "texture": { "atlas": "Plates", "name": "plate_01" } },
+{ "name": "Tennis ball", "shader": "Tennis ball",
+  "textures": [{ "atlas": "Felt" }, { "atlas": "Felt normals" }] }
 ```
 
-Every sampler of the shader samples the texture's atlas. A shader with samplers used by a
-material without a texture draws magenta, and a warning is logged.
+A texture sampler whose slot is empty draws magenta, and a warning is logged.
 
 ## Nodes
 
@@ -362,7 +423,7 @@ the same name:
 3. the node's own uniforms.
 
 The engine then adds the model, view and projection matrices and the edges of the material's
-texture under the shader's names. Those always win over values from the file.
+textures under the shader's names. Those always win over values from the file.
 
 The file isn't checked against the shaders. Problems that depend on the shader are logged once
 as warnings while drawing, not reported when loading:
@@ -402,11 +463,13 @@ Loading fails, and nothing of the scene is kept, when:
 - the JSON is invalid, or a field is unknown or has the wrong type;
 - two items in the same list have the same name;
 - a name refers to an object that doesn't exist (e.g. `"mesh": "Rom"`), or a material names a
-  texture its atlas's metadata doesn't have;
+  texture its atlas's metadata doesn't have, or has both `texture` and `textures`, or more
+  than four textures;
 - a file is missing or invalid (not a PNG, `.atlas`, OBJ or SPIR-V), or a metadata rectangle is
   outside its atlas;
 - a shader uses resources the engine doesn't support, or its matrix or texture edge uniform
-  names are wrong;
+  names are wrong, or it has a sampler that is neither in `texture_samplers` nor the
+  `shadow_map_sampler`, or more than four texture samplers;
 - a transform has both `matrix` and translation/rotation/scale;
 - a camera has both or neither of `perspective` and `orthographic`, or invalid settings (see
   [Cameras](#cameras)), or `active_camera` names no camera.
@@ -490,5 +553,4 @@ visible, the nearer ones (greater z) over the farther ones. With `"origin": "top
 - **Moving lights:** `shadow_light` is fixed; applications move it with `Scene::set_shadow_light`.
 - **Other mesh sources:** only OBJ files, cuboids, planes and spheres; other generated meshes
   must be created in code.
-- **More than one texture per material.**
 - **More than one root node.**

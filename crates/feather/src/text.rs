@@ -396,8 +396,9 @@ fn glyph_rect_ids() -> [UniformName; 4] {
 /// from (0, -1) to (1, 0) in the XY plane, so its top left corner is at the origin.
 pub const GLYPH_MESH_NAME: &str = "Text glyph quad";
 
-/// Creates a material for drawing text with shader `shader` from the font atlas `atlas`. Its
-/// texture is the whole atlas: one-mesh text carries the characters' rectangles in its texture
+/// Creates a material for drawing text with shader `shader` from the font atlas `atlas`, in
+/// texture slot 0 (the shader's first texture sampler samples it). Its texture is the whole
+/// atlas: one-mesh text carries the characters' rectangles in its texture
 /// coordinates, and glyph nodes in their uniforms. If the shader declares the
 /// `GLYPH_RECT_UNIFORMS`, the material gives them the whole atlas (0..1), so the same shader
 /// draws both kinds of text. Fails if the shader or the atlas is not in the scene.
@@ -433,8 +434,9 @@ pub fn create_text_material(
 ///   rectangle in the `GLYPH_RECT_UNIFORMS` and its place and size in its transform. Changing
 ///   the text reuses the child nodes, adding or removing (`Scene::remove_node`) the difference;
 ///   no meshes are built. The material's shader must declare the rectangle uniforms and must
-///   not have the engine fill them from the material's texture (`ShaderUniformNames::umin`
-///   ...), since the engine's values would win over the nodes'.
+///   not have the engine fill them from the material's texture (a `rect` in
+///   `ShaderUniformNames::texture_samplers`), since the engine's values would win over the
+///   nodes'.
 ///
 /// Uniforms set on the node (e.g. a colour) reach the glyph nodes too.
 pub struct Text {
@@ -619,10 +621,10 @@ fn check_material(scene: &Scene, material: usize, builder: &TextBuilder) -> Resu
             "Shader {shader_name} can't draw text with a node per glyph: it has no `{missing}` uniform"
         );
     }
-    if shader.get_uniform_umin_name().is_some()
-        || shader.get_uniform_umax_name().is_some()
-        || shader.get_uniform_vmin_name().is_some()
-        || shader.get_uniform_vmax_name().is_some()
+    if shader
+        .get_texture_samplers()
+        .iter()
+        .any(|t| t.rect.is_some())
     {
         anyhow::bail!(
             "Shader {shader_name} can't draw text with a node per glyph: the engine fills its \
@@ -644,13 +646,20 @@ fn glyph_mesh(scene: &mut Scene) -> Result<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::shader::tests::{FRAG, VERT};
-    use crate::shader::ShaderUniformNames;
+    use crate::atlas::ColorSpace;
+    use crate::shader::tests::{basic_names, FRAG, VERT};
+    use crate::shader::{ShaderUniformNames, TextureRectNames};
 
     /// A 64x32 font atlas: `A` (65) is 8x16 pixels at (0, 0), the space (32) 4x16 at (8, 0)
     /// and `i` (105) 2x16 at (12, 16).
     fn font(scene: &mut Scene) -> usize {
-        let mut atlas = Atlas::from_rgba(Some("font".to_string()), 64, 32, vec![0; 64 * 32 * 4]);
+        let mut atlas = Atlas::from_rgba(
+            Some("font".to_string()),
+            64,
+            32,
+            vec![0; 64 * 32 * 4],
+            ColorSpace::Srgb,
+        );
         atlas
             .set_metadata("65 0 0 8 16\n32 8 0 4 16\n105 12 16 2 16")
             .unwrap();
@@ -773,7 +782,7 @@ mod tests {
         let atlas = font(&mut scene);
         let root = scene.create_root_node(None);
         let shader = scene
-            .create_shader(None, VERT, FRAG, ShaderUniformNames::default())
+            .create_shader(None, VERT, FRAG, basic_names())
             .unwrap();
         let material = create_text_material(&mut scene, None, shader, atlas).unwrap();
         assert_eq!(
@@ -832,7 +841,7 @@ mod tests {
                 Some("Text".into()),
                 VERT,
                 crate::shader::tests::TEXT_FRAG,
-                ShaderUniformNames::default(),
+                ShaderUniformNames::default().with_texture_sampler("font", None),
             )
             .unwrap();
         let material = create_text_material(&mut scene, None, shader, atlas).unwrap();
@@ -972,14 +981,17 @@ mod tests {
 
         // No rectangle uniforms.
         let plain = scene
-            .create_shader(None, VERT, FRAG, ShaderUniformNames::default())
+            .create_shader(None, VERT, FRAG, basic_names())
             .unwrap();
         let material = create_text_material(&mut scene, None, plain, atlas).unwrap();
         let err = Text::create(&mut scene, root, None, material, builder.clone(), "A");
         assert!(format!("{:#}", err.err().unwrap()).contains("no `umin` uniform"));
 
         // Rectangle uniforms filled by the engine from the material's texture.
-        let names = ShaderUniformNames::default().with_texture_rect("umin", "umax", "vmin", "vmax");
+        let names = ShaderUniformNames::default().with_texture_sampler(
+            "font",
+            Some(TextureRectNames::new("umin", "umax", "vmin", "vmax")),
+        );
         let filled = scene
             .create_shader(None, VERT, crate::shader::tests::TEXT_FRAG, names)
             .unwrap();
@@ -1120,7 +1132,8 @@ mod tests {
                 Some("Text".into()),
                 VERT,
                 crate::shader::tests::TEXT_FRAG,
-                ShaderUniformNames::matrices("model", "view", "proj"),
+                ShaderUniformNames::matrices("model", "view", "proj")
+                    .with_texture_sampler("font", None),
             )
             .unwrap();
         let material = create_text_material(&mut scene, None, shader, atlas).unwrap();
@@ -1165,14 +1178,14 @@ mod tests {
             let mut arena = UniformArena::new(256);
             for item in &items {
                 let node = scene.get_node(item.node).unwrap();
-                let texture = scene.get_material(item.material).unwrap().get_texture();
+                let slots = scene.get_material(item.material).unwrap().get_textures();
                 let engine = engine_uniforms(
                     shader.get_uniform_ids(),
                     item.model,
                     identity,
                     identity,
                     identity,
-                    texture,
+                    slots,
                 );
                 let values = UniformValues {
                     engine: &engine,

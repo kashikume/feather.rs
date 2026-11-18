@@ -9,10 +9,10 @@ use crate::{
     animation::Animation,
     animator::Animator,
     assetsprovider::AssetsProvider,
-    atlas::Atlas,
+    atlas::{Atlas, ColorSpace},
     bounds::Frustum,
     camera::Camera,
-    material::Material,
+    material::{Material, MAX_MATERIAL_TEXTURES},
     object::Object,
     shader::{Shader, ShaderUniformNames},
     shadow::ShadowLight,
@@ -403,13 +403,30 @@ impl Scene {
         Ok(())
     }
 
-    /// Sets the texture of a material (`None` for no texture). Fails if the material or the
-    /// texture's atlas does not exist.
+    /// Sets the texture in slot 0 of a material (`None` to empty it). Fails if the material or
+    /// the texture's atlas does not exist. See `material_set_texture_at`.
     pub fn material_set_texture(
         &mut self,
         material_handle: usize,
         texture: Option<Texture>,
     ) -> Result<()> {
+        self.material_set_texture_at(material_handle, 0, texture)
+    }
+
+    /// Sets the texture in slot `slot` of a material (`None` to empty it). Fails if the
+    /// material or the texture's atlas does not exist, or if `slot` is not below
+    /// `MAX_MATERIAL_TEXTURES`.
+    pub fn material_set_texture_at(
+        &mut self,
+        material_handle: usize,
+        slot: usize,
+        texture: Option<Texture>,
+    ) -> Result<()> {
+        if slot >= MAX_MATERIAL_TEXTURES {
+            anyhow::bail!(
+                "Texture slot {slot} out of range (a material has {MAX_MATERIAL_TEXTURES})"
+            );
+        }
         if let Some(texture) = &texture {
             let atlas = texture.get_atlas();
             if self.atlases.get(atlas).is_none() {
@@ -419,7 +436,7 @@ impl Scene {
         self.materials
             .get_mut(material_handle)
             .ok_or_else(|| anyhow::anyhow!("Material {material_handle} not found"))?
-            .set_texture(texture);
+            .set_texture_at(slot, texture);
         Ok(())
     }
 
@@ -561,15 +578,17 @@ impl Scene {
 
     /// Loads an atlas from the PNG asset `bitmap` and, when given, its metadata asset
     /// `metadata` (a `.atlas` file), and adds it to the scene. When `name` is `None` or empty,
-    /// the bitmap's file name is used. See `Atlas::new_from_png`.
+    /// the bitmap's file name is used. `color_space` says what the pixels mean (sRGB colours,
+    /// or linear data such as a normal map). See `Atlas::new_from_png`.
     pub fn create_atlas_from_png(
         &mut self,
         assets: &dyn AssetsProvider,
         bitmap: &str,
         metadata: Option<&str>,
         name: Option<String>,
+        color_space: ColorSpace,
     ) -> Result<usize> {
-        let atlas = Atlas::new_from_png(assets, bitmap, metadata, name)?;
+        let atlas = Atlas::new_from_png(assets, bitmap, metadata, name, color_space)?;
         Ok(self.add_atlas(atlas))
     }
 
@@ -945,7 +964,7 @@ mod tests {
     // --- shaders and materials ---
 
     use crate::assetsprovider::tests::test_resources;
-    use crate::shader::tests::{FRAG, VERT};
+    use crate::shader::tests::{basic_names, FRAG, VERT};
 
     #[test]
     fn create_shader_adds_it() {
@@ -955,7 +974,8 @@ mod tests {
                 Some("basic".to_string()),
                 VERT,
                 FRAG,
-                ShaderUniformNames::matrices("model", "view", "proj"),
+                ShaderUniformNames::matrices("model", "view", "proj")
+                    .with_texture_sampler("texSampler", None),
             )
             .unwrap();
 
@@ -984,7 +1004,7 @@ mod tests {
     fn create_material_uses_shader() {
         let mut scene = Scene::new();
         let shader = scene
-            .create_shader(None, VERT, FRAG, ShaderUniformNames::default())
+            .create_shader(None, VERT, FRAG, basic_names())
             .unwrap();
         let material = scene
             .create_material(Some("wood".to_string()), shader)
@@ -1008,7 +1028,7 @@ mod tests {
         let mut scene = Scene::new();
         let atlas = scene.add_atlas(test_atlas(None));
         let shader = scene
-            .create_shader(None, VERT, FRAG, ShaderUniformNames::default())
+            .create_shader(None, VERT, FRAG, basic_names())
             .unwrap();
         let material = scene.create_material(None, shader).unwrap();
 
@@ -1029,7 +1049,7 @@ mod tests {
         let mut scene = Scene::new();
         let atlas = scene.add_atlas(test_atlas(None));
         let shader = scene
-            .create_shader(None, VERT, FRAG, ShaderUniformNames::default())
+            .create_shader(None, VERT, FRAG, basic_names())
             .unwrap();
         let material = scene.create_material(None, shader).unwrap();
 
@@ -1043,13 +1063,46 @@ mod tests {
     }
 
     #[test]
+    fn material_set_texture_at() {
+        let mut scene = Scene::new();
+        let color = scene.add_atlas(test_atlas(Some("color")));
+        let normals = scene.add_atlas(test_atlas(Some("normals")));
+        let shader = scene
+            .create_shader(None, VERT, FRAG, basic_names())
+            .unwrap();
+        let material = scene.create_material(None, shader).unwrap();
+
+        scene
+            .material_set_texture(material, Some(Texture::full(color)))
+            .unwrap();
+        scene
+            .material_set_texture_at(material, 1, Some(Texture::full(normals)))
+            .unwrap();
+        let m = scene.get_material(material).unwrap();
+        assert_eq!(m.get_texture_at(0), Some(&Texture::full(color)));
+        assert_eq!(m.get_texture_at(1), Some(&Texture::full(normals)));
+
+        // Past the last slot, or an unknown atlas: an error, nothing changes.
+        assert!(scene
+            .material_set_texture_at(material, MAX_MATERIAL_TEXTURES, None)
+            .is_err());
+        assert!(scene
+            .material_set_texture_at(material, 2, Some(Texture::full(42)))
+            .is_err());
+        assert_eq!(
+            scene.get_material(material).unwrap().get_texture_at(2),
+            None
+        );
+    }
+
+    #[test]
     fn material_set_shader() {
         let mut scene = Scene::new();
         let s1 = scene
-            .create_shader(None, VERT, FRAG, ShaderUniformNames::default())
+            .create_shader(None, VERT, FRAG, basic_names())
             .unwrap();
         let s2 = scene
-            .create_shader(None, VERT, FRAG, ShaderUniformNames::default())
+            .create_shader(None, VERT, FRAG, basic_names())
             .unwrap();
         let material = scene.create_material(None, s1).unwrap();
 
@@ -1066,7 +1119,7 @@ mod tests {
         let mut scene = Scene::new();
         let node = scene.create_root_node(None);
         let shader = scene
-            .create_shader(None, VERT, FRAG, ShaderUniformNames::default())
+            .create_shader(None, VERT, FRAG, basic_names())
             .unwrap();
         let material = scene.create_material(None, shader).unwrap();
 
@@ -1079,7 +1132,7 @@ mod tests {
         let mut scene = Scene::new();
         let node = scene.create_root_node(None);
         let shader = scene
-            .create_shader(None, VERT, FRAG, ShaderUniformNames::default())
+            .create_shader(None, VERT, FRAG, basic_names())
             .unwrap();
         let material = scene.create_material(None, shader).unwrap();
 
@@ -1094,7 +1147,7 @@ mod tests {
         let a = scene.create_root_node(None);
         let b = scene.create_root_node(None);
         let shader = scene
-            .create_shader(None, VERT, FRAG, ShaderUniformNames::default())
+            .create_shader(None, VERT, FRAG, basic_names())
             .unwrap();
         let material = scene.create_material(None, shader).unwrap();
 
@@ -1278,7 +1331,7 @@ mod tests {
     /// Creates a material with one uniform and returns its handle.
     fn material_with(scene: &mut Scene, name: &str, value: u32) -> usize {
         let shader = scene
-            .create_shader(None, VERT, FRAG, ShaderUniformNames::default())
+            .create_shader(None, VERT, FRAG, basic_names())
             .unwrap();
         let material = scene.create_material(None, shader).unwrap();
         scene
@@ -1412,14 +1465,20 @@ mod tests {
 
     /// 1x1 in-memory atlas.
     fn test_atlas(name: Option<&str>) -> Atlas {
-        Atlas::from_rgba(name.map(str::to_string), 1, 1, vec![0, 0, 0, 255])
+        Atlas::from_rgba(
+            name.map(str::to_string),
+            1,
+            1,
+            vec![0, 0, 0, 255],
+            ColorSpace::Srgb,
+        )
     }
 
     #[test]
     fn create_atlas_from_png_adds_atlas() {
         let mut scene = Scene::new();
         let atlas = scene
-            .create_atlas_from_png(&*test_resources(), TEST_PNG, None, None)
+            .create_atlas_from_png(&*test_resources(), TEST_PNG, None, None, ColorSpace::Srgb)
             .unwrap();
 
         let atlas_obj = scene.get_atlas(atlas).unwrap();
@@ -1441,11 +1500,16 @@ mod tests {
                 TEST_PNG,
                 None,
                 Some("bricks".to_string()),
+                ColorSpace::Linear,
             )
             .unwrap();
         assert_eq!(
             scene.get_atlas(atlas).unwrap().get_name(),
             Some("bricks".to_string())
+        );
+        assert_eq!(
+            scene.get_atlas(atlas).unwrap().get_color_space(),
+            ColorSpace::Linear
         );
     }
 
@@ -1453,7 +1517,13 @@ mod tests {
     fn create_atlas_from_png_with_missing_file_fails() {
         let mut scene = Scene::new();
         assert!(scene
-            .create_atlas_from_png(&*test_resources(), "does_not_exist.png", None, None)
+            .create_atlas_from_png(
+                &*test_resources(),
+                "does_not_exist.png",
+                None,
+                None,
+                ColorSpace::Srgb
+            )
             .is_err());
         assert_eq!(scene.atlases.iter().count(), 0);
     }
@@ -1462,7 +1532,8 @@ mod tests {
     fn textures_of_an_atlas_in_the_scene_refer_to_it() {
         let mut scene = Scene::new();
         scene.add_atlas(test_atlas(Some("first")));
-        let mut atlas = Atlas::from_rgba(Some("b".to_string()), 4, 4, vec![0; 64]);
+        let mut atlas =
+            Atlas::from_rgba(Some("b".to_string()), 4, 4, vec![0; 64], ColorSpace::Srgb);
         atlas.set_metadata("quarter 0 0 2 2").unwrap();
         let b = scene.add_atlas(atlas);
 
@@ -1545,12 +1616,7 @@ mod tests {
         let mut scene = Scene::new();
         let atlas = scene.add_atlas(test_atlas(Some("atlas")));
         let shader = scene
-            .create_shader(
-                Some("shader".to_string()),
-                VERT,
-                FRAG,
-                ShaderUniformNames::default(),
-            )
+            .create_shader(Some("shader".to_string()), VERT, FRAG, basic_names())
             .unwrap();
         let material = scene
             .create_material(Some("material".to_string()), shader)
@@ -1766,7 +1832,7 @@ mod tests {
     /// Creates a shader and a material using it; returns (shader, material).
     fn test_material(scene: &mut Scene) -> (usize, usize) {
         let shader = scene
-            .create_shader(None, VERT, FRAG, ShaderUniformNames::default())
+            .create_shader(None, VERT, FRAG, basic_names())
             .unwrap();
         let material = scene.create_material(None, shader).unwrap();
         (shader, material)

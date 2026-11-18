@@ -5,9 +5,10 @@
 /// `Atlas::get_full_texture`) and store it where it is used, e.g. in a `Material`.
 ///
 /// Shaders sample the whole atlas. To use only the texture's rectangle, a shader declares
-/// `float` uniforms for its edges and names them in its `ShaderUniformNames` (`umin`, `umax`,
-/// `vmin`, `vmax`); the engine fills them from the material's texture, and the shader maps its
-/// coordinates with `mix(vec2(umin, vmin), vec2(umax, vmax), uv)`.
+/// `float` uniforms for its edges and names them with the sampler in its `ShaderUniformNames`
+/// (`with_texture_sampler`, `TextureRectNames`); the engine fills them from the material's
+/// texture in that sampler's slot, and the shader maps its coordinates with
+/// `mix(vec2(umin, vmin), vec2(umax, vmax), uv)`.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Texture {
     /// Handle of the atlas in `Scene::atlases`.

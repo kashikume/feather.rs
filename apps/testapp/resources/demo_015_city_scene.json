@@ -7,6 +7,7 @@
       "model_uniform": "model",
       "view_uniform": "view",
       "projection_uniform": "proj",
+      "texture_samplers": ["albedoMap"],
       "shadow_matrix_uniform": "lightViewProj",
       "shadow_map_sampler": "shadowMap"
     },

@@ -7,7 +7,8 @@
 //! ```json
 //! {
 //!   "atlases":  [{ "name": "Room", "bitmap": "viking_room.png" },
-//!                { "name": "Icons", "bitmap": "icons.png", "metadata": "icons.atlas" }],
+//!                { "name": "Icons", "bitmap": "icons.png", "metadata": "icons.atlas" },
+//!                { "name": "Bumps", "bitmap": "bumps.png", "color_space": "linear" }],
 //!   "meshes":   [{ "name": "Room", "file": "viking_room.fmesh" },
 //!                { "name": "Box", "cuboid": { "x": [-1, 1], "y": [-1, 1], "z": [0, 2] } },
 //!                { "name": "Flag", "plane": { "x": [0, 2], "y": [-1, 0], "segments": [8, 4] } },
@@ -17,11 +18,14 @@
 //!                  "fragment": "demo_000_viking_room_shader.frag.spv",
 //!                  "model_uniform": "model", "view_uniform": "view",
 //!                  "projection_uniform": "proj",
-//!                  "umin_uniform": "umin", "umax_uniform": "umax",
-//!                  "vmin_uniform": "vmin", "vmax_uniform": "vmax",
+//!                  "texture_samplers": [
+//!                    { "sampler": "colorMap", "umin": "umin", "umax": "umax",
+//!                      "vmin": "vmin", "vmax": "vmax" },
+//!                    "normalMap"],
 //!                  "shadow_matrix_uniform": "lightViewProj",
 //!                  "shadow_map_sampler": "shadowMap" }],
-//!   "materials": [{ "name": "Room", "shader": "Basic", "texture": { "atlas": "Room" } },
+//!   "materials": [{ "name": "Room", "shader": "Basic",
+//!                   "textures": [{ "atlas": "Room" }, { "atlas": "Bumps" }] },
 //!                 { "name": "Star", "shader": "Basic",
 //!                   "texture": { "atlas": "Icons", "name": "star" } }],
 //!   "shadow_light": { "direction": [1, 0.5, -2], "center": [0, 0, 0], "radius": 6 },
@@ -43,9 +47,15 @@
 //! - Every list item needs a name, unique within its list (cameras: if they have one). All
 //!   lists are optional.
 //! - An atlas is a PNG `bitmap` with optional `metadata` (a `.atlas` file naming rectangles of
-//!   the bitmap, see `atlas::parse_metadata`).
-//! - A material's `texture` is a texture of an atlas: the rectangle `name` from the atlas's
-//!   metadata, or the whole atlas when `name` is missing.
+//!   the bitmap, see `atlas::parse_metadata`) and an optional `color_space`: `"srgb"` (default,
+//!   colours) or `"linear"` (data such as normal maps, see `atlas::ColorSpace`).
+//! - A shader's `texture_samplers` lists the samplers that sample the material's texture
+//!   slots, in slot order (at most `MAX_MATERIAL_TEXTURES`); each is a sampler name, or an
+//!   object with the `sampler` and the four `umin`, `umax`, `vmin`, `vmax` uniforms that get
+//!   the slot's texture rectangle. Every sampler except `shadow_map_sampler` must be listed.
+//! - A material's `texture` is a texture of an atlas, for slot 0: the rectangle `name` from the
+//!   atlas's metadata, or the whole atlas when `name` is missing. `textures` instead fills the
+//!   slots in order, `null` leaving a slot empty.
 //! - A mesh is a `file`, an `.fmesh` (`MeshBuilderFmeshFile`, made from an OBJ by the
 //!   `mesh-converter` tool) or a Wavefront `.obj` (`MeshBuilderObjFile`), chosen by the
 //!   extension; or a `cuboid` with optional `x`, `y`, `z` ranges (default
@@ -80,7 +90,9 @@ use cgmath::{Deg, Matrix2, Matrix3, Matrix4};
 use serde::Deserialize;
 
 use super::assetsprovider::AssetsProvider;
+use super::atlas::ColorSpace;
 use super::camera::{Camera, ScreenOrigin, ScreenUnits};
+use super::material::MAX_MATERIAL_TEXTURES;
 use super::math::{IVec2, IVec3, IVec4, Mat4, Point3, UVec2, UVec3, UVec4, Vec2, Vec3, Vec4};
 use super::meshbuildercuboid::MeshBuilderCuboid;
 use super::meshbuilderfmeshfile::MeshBuilderFmeshFile;
@@ -88,7 +100,7 @@ use super::meshbuilderobjfile::MeshBuilderObjFile;
 use super::meshbuilderplane::MeshBuilderPlane;
 use super::meshbuildersphere::{self, MeshBuilderSphere};
 use super::scene::Scene;
-use super::shader::ShaderUniformNames;
+use super::shader::{ShaderUniformNames, TextureRectNames, TextureSamplerNames};
 use super::shadow::ShadowLight;
 use super::uniform::UniformValue;
 use super::uniforms::Uniforms;
@@ -170,6 +182,26 @@ struct AtlasEntry {
     bitmap: String,
     /// `.atlas` asset naming rectangles of the bitmap.
     metadata: Option<String>,
+    /// sRGB colours (default) or linear data.
+    #[serde(default)]
+    color_space: ColorSpaceEntry,
+}
+
+#[derive(Deserialize, Default, Clone, Copy)]
+#[serde(rename_all = "lowercase")]
+enum ColorSpaceEntry {
+    #[default]
+    Srgb,
+    Linear,
+}
+
+impl From<ColorSpaceEntry> for ColorSpace {
+    fn from(entry: ColorSpaceEntry) -> Self {
+        match entry {
+            ColorSpaceEntry::Srgb => ColorSpace::Srgb,
+            ColorSpaceEntry::Linear => ColorSpace::Linear,
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -235,12 +267,44 @@ struct ShaderEntry {
     model_uniform: Option<String>,
     view_uniform: Option<String>,
     projection_uniform: Option<String>,
-    umin_uniform: Option<String>,
-    umax_uniform: Option<String>,
-    vmin_uniform: Option<String>,
-    vmax_uniform: Option<String>,
+    /// Samplers of the material's texture slots, in slot order.
+    #[serde(default)]
+    texture_samplers: Vec<TextureSamplerEntry>,
     shadow_matrix_uniform: Option<String>,
     shadow_map_sampler: Option<String>,
+}
+
+/// A texture sampler: its name, or its name and the uniforms of its texture's rectangle.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum TextureSamplerEntry {
+    Name(String),
+    WithRect(TextureSamplerRectEntry),
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TextureSamplerRectEntry {
+    sampler: String,
+    umin: String,
+    umax: String,
+    vmin: String,
+    vmax: String,
+}
+
+impl TextureSamplerEntry {
+    fn names(&self) -> TextureSamplerNames {
+        match self {
+            TextureSamplerEntry::Name(sampler) => TextureSamplerNames {
+                sampler: sampler.clone(),
+                rect: None,
+            },
+            TextureSamplerEntry::WithRect(e) => TextureSamplerNames {
+                sampler: e.sampler.clone(),
+                rect: Some(TextureRectNames::new(&e.umin, &e.umax, &e.vmin, &e.vmax)),
+            },
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -248,7 +312,10 @@ struct ShaderEntry {
 struct MaterialEntry {
     name: String,
     shader: String,
+    /// The texture of slot 0; not with `textures`.
     texture: Option<TextureEntry>,
+    /// The textures of slots 0, 1, ...; `null` leaves a slot empty.
+    textures: Option<Vec<Option<TextureEntry>>>,
     #[serde(default)]
     uniforms: BTreeMap<String, UniformEntry>,
 }
@@ -362,6 +429,7 @@ impl Scene {
                     &entry.bitmap,
                     entry.metadata.as_deref(),
                     Some(entry.name.clone()),
+                    entry.color_space.into(),
                 )
                 .with_context(|| format!("atlas `{}`", entry.name))?;
             atlases.insert(entry.name.as_str(), handle);
@@ -389,10 +457,7 @@ impl Scene {
                     model: entry.model_uniform.clone(),
                     view: entry.view_uniform.clone(),
                     projection: entry.projection_uniform.clone(),
-                    umin: entry.umin_uniform.clone(),
-                    umax: entry.umax_uniform.clone(),
-                    vmin: entry.vmin_uniform.clone(),
-                    vmax: entry.vmax_uniform.clone(),
+                    texture_samplers: entry.texture_samplers.iter().map(|t| t.names()).collect(),
                     shadow_matrix: entry.shadow_matrix_uniform.clone(),
                     shadow_map: entry.shadow_map_sampler.clone(),
                 };
@@ -414,9 +479,21 @@ impl Scene {
                     .get(entry.shader.as_str())
                     .ok_or_else(|| anyhow!("unknown shader `{}`", entry.shader))?;
                 let material = scene.create_material(Some(entry.name.clone()), shader)?;
-                if let Some(texture) = &entry.texture {
-                    let texture = find_texture(&scene, &atlases, texture)?;
-                    scene.material_set_texture(material, Some(texture))?;
+                let slots: Vec<Option<&TextureEntry>> = match (&entry.texture, &entry.textures) {
+                    (Some(_), Some(_)) => bail!("give `texture` or `textures`, not both"),
+                    (Some(texture), None) => vec![Some(texture)],
+                    (None, Some(textures)) => textures.iter().map(Option::as_ref).collect(),
+                    (None, None) => Vec::new(),
+                };
+                if slots.len() > MAX_MATERIAL_TEXTURES {
+                    bail!("{} textures, at most {MAX_MATERIAL_TEXTURES}", slots.len());
+                }
+                for (slot, texture) in slots.into_iter().enumerate() {
+                    if let Some(texture) = texture {
+                        let texture = find_texture(&scene, &atlases, texture)
+                            .with_context(|| format!("texture {slot}"))?;
+                        scene.material_set_texture_at(material, slot, Some(texture))?;
+                    }
                 }
                 let uniforms = scene.get_material_mut(material).unwrap().uniforms_mut();
                 set_uniforms(uniforms, &entry.uniforms)?;
@@ -723,8 +800,9 @@ impl TransformEntry {
 mod tests {
     use super::*;
     use crate::assetsprovider::tests::MemoryAssetsProvider;
+    use crate::atlas::ColorSpace;
     use crate::object::Object;
-    use crate::shader::tests::{FRAG, VERT};
+    use crate::shader::tests::{FRAG, TWO_TEXTURES_FRAG, VERT};
     use crate::texture::Texture;
     use cgmath::{vec4, InnerSpace, SquareMatrix};
 
@@ -755,6 +833,7 @@ mod tests {
             ),
             ("basic.vert.spv", VERT.to_vec()),
             ("basic.frag.spv", FRAG.to_vec()),
+            ("two_textures.frag.spv", TWO_TEXTURES_FRAG.to_vec()),
         ] {
             assets.assets.insert(name.to_string(), bytes);
         }
@@ -769,7 +848,8 @@ mod tests {
         "meshes": [{ "name": "Triangle", "file": "triangle.obj" }],
         "shaders": [{
             "name": "Basic", "vertex": "basic.vert.spv", "fragment": "basic.frag.spv",
-            "model_uniform": "model", "view_uniform": "view", "projection_uniform": "proj"
+            "model_uniform": "model", "view_uniform": "view", "projection_uniform": "proj",
+            "texture_samplers": ["texSampler"]
         }],
         "materials": [
             {
@@ -808,7 +888,8 @@ mod tests {
 
         let shader = scene.shaders.get_by_name("Basic").unwrap();
         assert_eq!(shader.get_uniform_proj_name(), Some("proj"));
-        assert_eq!(shader.get_uniform_umin_name(), None);
+        assert_eq!(shader.get_texture_samplers()[0].sampler, "texSampler");
+        assert_eq!(shader.get_texture_samplers()[0].rect, None);
 
         let material = scene.materials.get_by_name("Mat").unwrap();
         assert_eq!(material.get_shader(), shader.get_handle());
@@ -886,15 +967,18 @@ mod tests {
         // `time` is the only float uniform of the types shaders.
         let json = r#"{
             "shaders": [{ "name": "S", "vertex": "types.vert.spv", "fragment": "types.frag.spv",
-                          "umin_uniform": "time", "umax_uniform": "time",
-                          "vmin_uniform": "time", "vmax_uniform": "time" }],
+                          "texture_samplers": [{ "sampler": "albedo", "umin": "time",
+                              "umax": "time", "vmin": "time", "vmax": "time" }] }],
             "root": {}
         }"#;
         let scene = Scene::from_json(&assets, json).unwrap();
         let names = scene.shaders.get_by_name("S").unwrap().get_uniform_names();
         assert_eq!(
             names,
-            &ShaderUniformNames::default().with_texture_rect("time", "time", "time", "time")
+            &ShaderUniformNames::default().with_texture_sampler(
+                "albedo",
+                Some(TextureRectNames::new("time", "time", "time", "time"))
+            )
         );
     }
 
@@ -964,6 +1048,133 @@ mod tests {
         );
         assert!(load_error(&json("triangle.ply")).contains("unknown file type"));
         assert!(load_error(&json("triangle")).contains("unknown file type"));
+    }
+
+    /// Atlases, a two-texture shader and the given materials (JSON array items).
+    fn two_texture_scene(materials: &str) -> String {
+        format!(
+            r#"{{
+            "atlases": [
+                {{ "name": "Color", "bitmap": "atlas.png", "metadata": "atlas.atlas" }},
+                {{ "name": "Normals", "bitmap": "atlas.png", "color_space": "linear" }}
+            ],
+            "shaders": [{{
+                "name": "Two", "vertex": "basic.vert.spv", "fragment": "two_textures.frag.spv",
+                "texture_samplers": [
+                    {{ "sampler": "colorMap", "umin": "colorUmin", "umax": "colorUmax",
+                      "vmin": "colorVmin", "vmax": "colorVmax" }},
+                    "normalMap"
+                ]
+            }}],
+            "materials": [{materials}],
+            "root": {{}}
+        }}"#
+        )
+    }
+
+    #[test]
+    fn loads_several_textures_per_material() {
+        let json = two_texture_scene(
+            r#"{ "name": "Both", "shader": "Two",
+                 "textures": [{ "atlas": "Color", "name": "right" }, { "atlas": "Normals" }] },
+               { "name": "Gap", "shader": "Two", "textures": [null, { "atlas": "Normals" }] }"#,
+        );
+        let scene = Scene::from_json(&assets(), &json).unwrap();
+
+        let color = scene.atlases.get_by_name("Color").unwrap();
+        let normals = scene.atlases.get_by_name("Normals").unwrap();
+        assert_eq!(color.get_color_space(), ColorSpace::Srgb);
+        assert_eq!(normals.get_color_space(), ColorSpace::Linear);
+
+        let both = scene.materials.get_by_name("Both").unwrap();
+        assert_eq!(both.get_texture_at(0), color.get_texture("right").as_ref());
+        assert_eq!(both.get_texture_at(1), Some(&normals.get_full_texture()));
+        assert_eq!(both.get_texture_at(2), None);
+        let gap = scene.materials.get_by_name("Gap").unwrap();
+        assert_eq!(gap.get_texture_at(0), None);
+        assert_eq!(gap.get_texture_at(1), Some(&normals.get_full_texture()));
+
+        let shader = scene.shaders.get_by_name("Two").unwrap();
+        assert_eq!(
+            shader.get_texture_samplers(),
+            [
+                TextureSamplerNames {
+                    sampler: "colorMap".to_string(),
+                    rect: Some(TextureRectNames::new(
+                        "colorUmin",
+                        "colorUmax",
+                        "colorVmin",
+                        "colorVmax"
+                    )),
+                },
+                TextureSamplerNames {
+                    sampler: "normalMap".to_string(),
+                    rect: None,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn texture_errors_name_the_problem() {
+        let five = vec![r#"{ "atlas": "Color" }"#; 5].join(", ");
+        let cases = [
+            (
+                two_texture_scene(
+                    r#"{ "name": "M", "shader": "Two", "texture": { "atlas": "Color" },
+                         "textures": [{ "atlas": "Color" }] }"#,
+                ),
+                "material `M`: give `texture` or `textures`, not both",
+            ),
+            (
+                two_texture_scene(&format!(
+                    r#"{{ "name": "M", "shader": "Two", "textures": [{five}] }}"#
+                )),
+                "material `M`: 5 textures, at most 4",
+            ),
+            (
+                two_texture_scene(
+                    r#"{ "name": "M", "shader": "Two", "textures": [null, { "atlas": "X" }] }"#,
+                ),
+                "material `M`: texture 1: unknown atlas `X`",
+            ),
+            (
+                two_texture_scene("")
+                    .replace(r#""color_space": "linear""#, r#""color_space": "raw""#),
+                "unknown variant `raw`",
+            ),
+            (
+                // The normal map's sampler not listed.
+                two_texture_scene("").replace(
+                    r#",
+                    "normalMap""#,
+                    "",
+                ),
+                "sampler `normalMap` is not listed",
+            ),
+            (
+                // Texture samplers are required.
+                r#"{ "shaders": [{ "name": "S", "vertex": "basic.vert.spv",
+                                   "fragment": "basic.frag.spv" }], "root": {} }"#
+                    .to_string(),
+                "shader `S`: sampler `texSampler` is not listed",
+            ),
+            (
+                // Shader-level rectangle uniforms are gone.
+                r#"{ "shaders": [{ "name": "S", "vertex": "basic.vert.spv",
+                                   "fragment": "basic.frag.spv", "umin_uniform": "u" }],
+                     "root": {} }"#
+                    .to_string(),
+                "unknown field `umin_uniform`",
+            ),
+        ];
+        for (json, expected) in cases {
+            let error = load_error(&json);
+            assert!(
+                error.contains(expected),
+                "expected `{expected}` in: {error}"
+            );
+        }
     }
 
     #[test]
@@ -1204,19 +1415,21 @@ mod tests {
             ),
             (
                 r#"{ "shaders": [{ "name": "S", "vertex": "basic.vert.spv",
-                                   "fragment": "basic.frag.spv" }],
+                                   "fragment": "basic.frag.spv",
+                                   "texture_samplers": ["texSampler"] }],
                      "materials": [{ "name": "M", "shader": "S", "texture": { "atlas": "Nope" } }],
                      "root": {} }"#,
-                "material `M`: unknown atlas `Nope`",
+                "material `M`: texture 0: unknown atlas `Nope`",
             ),
             (
                 r#"{ "atlases": [{ "name": "A", "bitmap": "atlas.png", "metadata": "atlas.atlas" }],
                      "shaders": [{ "name": "S", "vertex": "basic.vert.spv",
-                                   "fragment": "basic.frag.spv" }],
+                                   "fragment": "basic.frag.spv",
+                                   "texture_samplers": ["texSampler"] }],
                      "materials": [{ "name": "M", "shader": "S",
                                      "texture": { "atlas": "A", "name": "middle" } }],
                      "root": {} }"#,
-                "material `M`: atlas `A` has no texture `middle`",
+                "material `M`: texture 0: atlas `A` has no texture `middle`",
             ),
             (
                 r#"{ "root": { "name": "R", "uniforms": { "t": { "texture": "T" } } } }"#,

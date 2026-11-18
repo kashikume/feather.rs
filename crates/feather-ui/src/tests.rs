@@ -1,7 +1,7 @@
 //! Tests of the hud with real widgets in a scene (no GPU needed).
 
 use cgmath::SquareMatrix;
-use feather::atlas::Atlas;
+use feather::atlas::{Atlas, ColorSpace};
 use feather::camera::ScreenUnits;
 use feather::math::Mat4;
 use feather::scene::Scene;
@@ -36,11 +36,22 @@ fn fixture() -> Fixture {
         .unwrap();
 
     // `A` is 8 × 16 pixels, the space 4 × 16.
-    let mut atlas = Atlas::from_rgba(Some("font".into()), 64, 32, vec![0; 64 * 32 * 4]);
+    let mut atlas = Atlas::from_rgba(
+        Some("font".into()),
+        64,
+        32,
+        vec![0; 64 * 32 * 4],
+        ColorSpace::Srgb,
+    );
     atlas.set_metadata("65 0 0 8 16\n32 8 0 4 16").unwrap();
     let font = scene.add_atlas(atlas);
     let text_shader = scene
-        .create_shader(None, VERT, TEXT_FRAG, ShaderUniformNames::default())
+        .create_shader(
+            None,
+            VERT,
+            TEXT_FRAG,
+            ShaderUniformNames::default().with_texture_sampler("font", None),
+        )
         .unwrap();
     let text = create_text_material(&mut scene, None, text_shader, font).unwrap();
 

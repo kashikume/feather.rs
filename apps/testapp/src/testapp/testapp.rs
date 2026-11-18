@@ -31,6 +31,7 @@ use super::demo_019_walker::WalkerShadowDemo;
 use super::demo_020_spider::SpiderShadowDemo;
 use super::demo_021_animation::AnimationDemo;
 use super::demo_022_scrolling::ScrollingDemo;
+use super::demo_023_tennis_ball::TennisBallDemo;
 use super::testapp_hud::{HudAction, TestHud};
 
 /// One demo of the test app: a scene, seen through its active camera, and its animation. A
@@ -183,6 +184,10 @@ pub const DEMOS: &[DemoInfo] = &[
     DemoInfo {
         name: "Scrolling",
         create: |assets| Ok(Box::new(ScrollingDemo::new(assets)?)),
+    },
+    DemoInfo {
+        name: "Tennis ball",
+        create: |assets| Ok(Box::new(TennisBallDemo::new(assets)?)),
     },
 ];
 
@@ -399,6 +404,7 @@ mod tests {
     use feather::object::Object;
 
     use super::*;
+    use feather::atlas::ColorSpace;
     use feather::featherapp::SceneStats;
 
     /// The assets the app gets at runtime: `resources/` plus the shaders, atlases and meshes
@@ -509,6 +515,63 @@ mod tests {
         assert!(cube.get_mesh().is_some());
         let material = scene.get_material(cube.get_material().unwrap()).unwrap();
         assert!(material.get_texture().is_some());
+    }
+
+    #[test]
+    fn tennis_ball_demo_has_a_colour_texture_and_a_normal_map() {
+        let mut demo = demo(23);
+        let scene = demo.scene();
+
+        let ball = scene.get_node(scene.find_node("Ball").unwrap()).unwrap();
+        let mesh = scene.get_mesh(ball.get_mesh().unwrap()).unwrap();
+        assert_eq!(mesh.gen_num_vertexes(), 129 * 65);
+        let material = scene.get_material(ball.get_material().unwrap()).unwrap();
+        let felt = scene.find_atlas("Felt").unwrap();
+        let normals = scene.find_atlas("Felt normals").unwrap();
+        assert_eq!(material.get_texture_at(0).unwrap().get_atlas(), felt);
+        assert_eq!(material.get_texture_at(1).unwrap().get_atlas(), normals);
+        assert_eq!(material.get_texture_at(2), None);
+        for (atlas, color_space) in [(felt, ColorSpace::Srgb), (normals, ColorSpace::Linear)] {
+            let atlas = scene.get_atlas(atlas).unwrap();
+            assert_eq!((atlas.get_width(), atlas.get_height()), (2048, 1024));
+            assert_eq!(atlas.get_color_space(), color_space);
+        }
+        let shader = scene.get_shader(material.get_shader()).unwrap();
+        let samplers: Vec<_> = shader
+            .get_texture_samplers()
+            .iter()
+            .map(|t| t.sampler.as_str())
+            .collect();
+        assert_eq!(samplers, ["colorMap", "normalMap"]);
+
+        // The normal map is mostly flat felt: pointing out of the surface (blue), x and y
+        // around the middle.
+        let pixels = scene.get_atlas(normals).unwrap().get_pixels();
+        let (mut sum, mut count) = ([0u64; 3], 0u64);
+        for pixel in pixels.chunks_exact(4).step_by(97) {
+            for k in 0..3 {
+                sum[k] += pixel[k] as u64;
+            }
+            count += 1;
+        }
+        let mean = sum.map(|s| s / count);
+        assert!(mean[2] > 230, "normals don't point outwards: {mean:?}");
+        assert!(
+            (118..138).contains(&mean[0]) && (118..138).contains(&mean[1]),
+            "{mean:?}"
+        );
+
+        let transforms = |demo: &mut Box<dyn Demo>| {
+            let scene = demo.scene();
+            let node = |name| scene.get_node(scene.find_node(name).unwrap()).unwrap();
+            [node("Tilt").get_transform(), node("Ball").get_transform()]
+        };
+        demo.update(1.0).unwrap();
+        let first = transforms(&mut demo);
+        demo.update(2.0).unwrap();
+        let second = transforms(&mut demo);
+        assert_ne!(first[0], second[0], "the axis doesn't sway");
+        assert_ne!(first[1], second[1], "the ball doesn't spin");
     }
 
     #[test]
@@ -849,8 +912,9 @@ mod tests {
         let shader = scene
             .get_shader(scene.find_shader(shader).unwrap())
             .unwrap();
-        assert_eq!(shader.get_uniform_umin_name(), Some("umin"));
-        assert_eq!(shader.get_uniform_vmax_name(), Some("vmax"));
+        let rect = shader.get_texture_samplers()[0].rect.as_ref().unwrap();
+        assert_eq!(rect.umin, "umin");
+        assert_eq!(rect.vmax, "vmax");
     }
 
     #[test]

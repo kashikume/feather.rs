@@ -31,7 +31,11 @@ pub fn request_exit() {
 /// The maximum number of frames that can be processed concurrently.
 const MAX_FRAMES_IN_FLIGHT: usize = 2;
 
+/// Texture slots of a draw whose material is missing.
+const NO_TEXTURES: [Option<Texture>; MAX_MATERIAL_TEXTURES] = [None; MAX_MATERIAL_TEXTURES];
+
 use super::appdata::AppData;
+use super::atlas::ColorSpace;
 use super::buffers::FrameUniformBuffer;
 use super::colorobjects::create_color_objects;
 use super::commandbuffers::{create_command_buffers, record_command_buffer, GpuDraw};
@@ -43,6 +47,7 @@ use super::gpuimage::{create_texture_sampler, GpuImage, UploadContext};
 use super::gpumeshbuffer::GpuMeshBuffer;
 use super::instance::create_instance;
 use super::logicaldevice::create_logical_device;
+use super::material::MAX_MATERIAL_TEXTURES;
 use super::math::Mat4;
 use super::object::Object;
 use super::physicaldevice::{pick_physical_device, DeviceFeatures};
@@ -53,6 +58,7 @@ use super::shadowpass::{ShadowDraw, ShadowMap, ShadowPass, ShadowRenderer};
 use super::surface;
 use super::swapchain::Swapchain;
 use super::syncobjects::create_sync_objects;
+use super::texture::Texture;
 use super::touch::{MouseCall, TouchAsMouse};
 use super::uniformdata::{
     engine_uniforms, pack_draw, sampler_sources, SamplerSource, UniformArena, UniformValues,
@@ -139,9 +145,20 @@ impl App {
             command_pool: data.command_pool,
             queue: data.graphics_queue,
         };
-        data.fallback_texture = Some(GpuImage::upload_rgba(&upload, 1, 1, &[255, 0, 255, 255])?);
-        data.fallback_shadow_map =
-            Some(GpuImage::upload_rgba(&upload, 1, 1, &[255, 255, 255, 255])?);
+        data.fallback_texture = Some(GpuImage::upload_rgba(
+            &upload,
+            1,
+            1,
+            &[255, 0, 255, 255],
+            ColorSpace::Srgb,
+        )?);
+        data.fallback_shadow_map = Some(GpuImage::upload_rgba(
+            &upload,
+            1,
+            1,
+            &[255, 255, 255, 255],
+            ColorSpace::Srgb,
+        )?);
         data.shadow_renderer = Some(ShadowRenderer::create(
             &instance,
             &device,
@@ -460,16 +477,17 @@ impl App {
                 continue;
             };
 
-            // The material's texture: every sampler samples its atlas (or the fallback
-            // texture), and its rectangle goes to the shader's umin/umax/vmin/vmax uniforms.
-            let texture = scene
+            // The material's textures: texture sampler i samples the atlas of slot i (or the
+            // fallback texture), and slot i's rectangle goes to that sampler's rectangle
+            // uniforms.
+            let slots = scene
                 .get_material(item.material)
-                .and_then(|m| m.get_texture());
+                .map_or(&NO_TEXTURES, |m| m.get_textures());
             issues.clear();
             let sources = sampler_sources(
                 shader.get_layout(),
-                shader.get_uniform_ids().shadow_map,
-                texture,
+                shader.get_uniform_ids(),
+                slots,
                 |a| scene.get_atlas(a).is_some(),
                 &mut issues,
             );
@@ -494,7 +512,7 @@ impl App {
                 view,
                 proj,
                 shadow_matrix,
-                texture,
+                slots,
             );
             let values = UniformValues {
                 engine: &engine,
@@ -695,6 +713,7 @@ impl App {
                 atlas.get_width(),
                 atlas.get_height(),
                 atlas.get_pixels(),
+                atlas.get_color_space(),
             ) {
                 Ok(image) => {
                     gpu.gpu_atlases.insert(handle, image);

@@ -23,8 +23,8 @@ What works today:
   `tobj`), procedural cuboids, subdivided planes and balls (UV spheres)
 - Atlases loaded from PNG (any color type, converted to 8-bit RGBA) with optional `.atlas`
   metadata naming their textures, or made from pixels generated in code (`Atlas::from_rgba`);
-  textures are plain values taken from an atlas
-- Shaders (SPIR-V) and materials (a shader, a texture and uniform values); each shader's uniform
+  sRGB colours or linear data (e.g. normal maps); textures are plain values taken from an atlas
+- Shaders (SPIR-V) and materials (a shader, up to four textures and uniform values); each shader's uniform
   blocks, push constants and samplers are read from its SPIR-V, and each shader gets its own
   pipeline
 - Uniforms on materials and nodes, inherited down the scene graph
@@ -34,8 +34,8 @@ What works today:
   holds any number of cameras, from code or its JSON file, and is drawn through its active one
 - Several scenes drawn together, one over the other, each through its active camera (e.g. a 2D
   overlay over a 3D scene)
-- Atlases uploaded with mipmaps; a material's texture passes its UV rectangle to the shader
-  (`umin`, `umax`, `vmin`, `vmax` uniforms)
+- Atlases uploaded with mipmaps; each texture of a material passes its UV rectangle to the
+  shader (four `float` uniforms named for its sampler)
 - Atlases built from `.atlist` image lists by the atlas creator during the build, and font
   atlases rendered from Windows fonts described in `.font` files
 - Transparent nodes, alpha-blended; draws sorted: opaque nodes by shader, then transparent nodes
@@ -130,6 +130,7 @@ doesn't take.
 | 20   | Spider (shadows) | Demo 9 again, with real shadows: the spider's body and legs cast onto the floor, with no shadow disc |
 | 21   | Animation   | A lane per kind of easing with a cube sliding across, round after round (in, out, in-out); a cube spinning forever; a cube fading in and out, then removed and replaced; the scene's camera dollying in and swaying |
 | 22   | Scrolling   | A list of 80 lines of text with a vertical and a horizontal scrollbar, made with `feather-ui`: drag the knobs, click the tracks to page, turn the wheel; the scrollbars hide when everything fits. Lines and letters outside the view are hidden (there is no clipping) |
+| 23   | Tennis ball | A tennis ball turning under a light from the side: a material with two textures, the felt's colours and a normal map (a linear atlas) that gives the seam its groove and the felt its fuzz, with the tangent frame computed in the fragment shader. Both images are made by `tools/scripts/make_tennis_ball_textures.py` |
 
 Each demo is in its own file, `apps/testapp/src/testapp/demo_NNN_<name>.rs`, and its own
 resources are named `demo_NNN_<name>_<kind>` (`scene`, `atlas`, `shader`, ...). Models and images
@@ -269,15 +270,18 @@ let assets = create_assets_provider("assets")?;
 let bytes = assets.get_asset("demo_000_viking_room_shader.vert.spv")?;
 let mesh = MeshBuilderFmeshFile::new(&*assets, "viking_room.fmesh")?
     .build(&mut scene, Some("Room".to_string()))?;
-let atlas = scene.create_atlas_from_png(&*assets, "viking_room.png", None, None)?;
+let atlas = scene.create_atlas_from_png(&*assets, "viking_room.png", None, None, ColorSpace::Srgb)?;
 let plates = scene.create_atlas_from_png(
     &*assets,
     "demo_002_atlas_atlas.png",
     Some("demo_002_atlas_atlas.atlas"),
     Some("Plates".to_string()),
+    ColorSpace::Srgb,
 )?;
 ```
 
+Every atlas says what its pixels are (`ColorSpace`): `Srgb` for colours, as PNG files store
+them, or `Linear` for data such as normal maps, which shaders must read as stored.
 `MeshBuilderObjFile` reads an OBJ the same way. Atlases and meshes can also be built from bytes
 already in memory (`Atlas::new_from_png_bytes`, `MeshBuilderFmeshFile::from_bytes`,
 `MeshBuilderObjFile::from_bytes`).
@@ -432,7 +436,7 @@ let room_node = scene.find_node("Room").unwrap();
 
 Scenes can also be built in code, with `create_root_node`, `create_node`, `MeshBuilderCuboid`,
 `MeshBuilderPlane`, `MeshBuilderSphere`, `MeshBuilderFmeshFile`, `MeshBuilderObjFile`, `create_shader`, `create_atlas_from_png`,
-`create_material`, `material_set_texture` and the other `Scene` methods. Demos 2 and 3
+`create_material`, `material_set_texture`, `material_set_texture_at` and the other `Scene` methods. Demos 2 and 3
 (`demo_002_atlas.rs`, `demo_003_waving_atlas.rs`) load their atlas, mesh and shader from a scene
 file and create a material and a node for every texture of the atlas in code.
 
@@ -603,8 +607,9 @@ Both use one material per font, whose texture is the whole atlas. The shader sam
 at `mix(vec2(umin, vmin), vec2(umax, vmax), uv)` and takes the colour's alpha from the font
 images, which are white. `create_text_material` sets those uniforms to the whole atlas (0..1),
 which is what one-mesh text needs, and glyph nodes override them with their own. For that the
-shader must not name them for the engine (`umin_uniform` ... in the scene file), or the engine
-would fill them from the material's texture over the nodes' values; `Text::create` checks this.
+shader must not name them as its font sampler's rectangle (`texture_samplers` in the scene
+file), or the engine would fill them from the material's texture over the nodes' values;
+`Text::create` checks this.
 Uniforms set on a text's node, like a colour, reach its glyph nodes too.
 
 A `\n` starts a new line (a new paragraph, with wrapping); characters missing from the font take
@@ -679,18 +684,25 @@ instead.
 
 An atlas is an image with optional metadata (a `.atlas` file) naming rectangles of it. A
 `Texture` is a plain value, not a scene object: get it from the atlas, by name or for the whole
-atlas, and give it to a material:
+atlas, and give it to a material. A material has four texture slots (`MAX_MATERIAL_TEXTURES`):
 
 ```rust
 let atlas = scene.get_atlas(atlas_handle).unwrap();
 let texture = atlas.get_texture("plate_01").unwrap(); // or atlas.get_full_texture()
-scene.material_set_texture(material, Some(texture))?;
+scene.material_set_texture(material, Some(texture))?; // slot 0
+scene.material_set_texture_at(material, 1, Some(normal_map))?;
 ```
 
-Every sampler of the material's shader samples the texture's atlas. Shaders always sample the
-whole atlas; to use only the texture's rectangle, declare `float` uniforms for its edges, name
-them in the shader's `ShaderUniformNames` (`umin`, `umax`, `vmin`, `vmax`, like the `model`,
-`view` and `projection` matrices) and map the texture coordinates with them:
+The shader names its **texture samplers** in slot order: the first samples slot 0, the next
+slot 1, and so on. Every sampler of the shader must be one of them, or the shadow map sampler.
+Shaders always sample the whole atlas; to use only a texture's rectangle, declare `float`
+uniforms for its edges, name them with the sampler and map the texture coordinates with them:
+
+```rust
+let names = ShaderUniformNames::matrices("model", "view", "proj")
+    .with_texture_sampler("atlas", Some(TextureRectNames::new("umin", "umax", "vmin", "vmax")))
+    .with_texture_sampler("normalMap", None); // slot 1, whole image
+```
 
 ```glsl
 layout(binding = 1) uniform sampler2D atlas;
@@ -699,11 +711,15 @@ layout(binding = 2) uniform TextureRect { float umin; float umax; float vmin; fl
 outColor = texture(atlas, mix(vec2(rect.umin, rect.vmin), vec2(rect.umax, rect.vmax), uv));
 ```
 
-`v` is 0 at the top row of the atlas image. A shader with samplers whose material has no texture
+`v` is 0 at the top row of the atlas image. A sampler whose slot of the material is empty
 shows magenta, and a warning is logged.
 
+A normal map goes in its own slot, from a `Linear` atlas. Meshes have no tangents: the shader
+builds the tangent frame from screen-space derivatives (see
+[doc/scene-format.md](doc/scene-format.md#normal-maps) and demo 23).
+
 When drawing, the engine adds the node's global transform, the camera's view and projection and
-the edges of the material's texture under the names given to `create_shader`, then writes every value into the shader's uniform
+the edges of each of the material's textures under the names given to `create_shader`, then writes every value into the shader's uniform
 blocks and push constants by name, at the offsets read from the shader's SPIR-V. A uniform with
 no value, a value of the wrong type, or a value the shader doesn't use is logged once as a
 warning.
@@ -723,7 +739,8 @@ so the scene file holds no binary data. The viking room:
   "shaders":  [{
     "name": "Basic",
     "vertex": "demo_000_viking_room_shader.vert.spv", "fragment": "demo_000_viking_room_shader.frag.spv",
-    "model_uniform": "model", "view_uniform": "view", "projection_uniform": "proj"
+    "model_uniform": "model", "view_uniform": "view", "projection_uniform": "proj",
+    "texture_samplers": ["texSampler"]
   }],
   "materials": [{ "name": "Room", "shader": "Basic", "texture": { "atlas": "Room atlas" } }],
   "root": {
@@ -735,10 +752,10 @@ so the scene file holds no binary data. The viking room:
 
 | Item | Fields |
 | ---- | ------ |
-| atlas | `name`, `bitmap` (PNG), optional `metadata` (`.atlas`) |
+| atlas | `name`, `bitmap` (PNG), optional `metadata` (`.atlas`), optional `color_space` (`"srgb"`, the default, or `"linear"`) |
 | mesh | `name`, and one of `file` (OBJ), `cuboid` (optional `x`, `y`, `z` as `[min, max]`; `{}` is a 1×1×1 cube), `plane` (optional `x`, `y` as `[min, max]` and `segments` `[columns, rows]`) or `sphere` (optional `radius`, `segments`, `rings`; `{}` is a ball of diameter 1) |
-| shader | `name`, `vertex`, `fragment` (SPIR-V), optional `model_uniform`, `view_uniform`, `projection_uniform`, `umin_uniform`, `umax_uniform`, `vmin_uniform`, `vmax_uniform` |
-| material | `name`, `shader`, optional `texture` (`{ "atlas": ..., "name": ... }`; without `name` the whole atlas), optional `uniforms` |
+| shader | `name`, `vertex`, `fragment` (SPIR-V), optional `model_uniform`, `view_uniform`, `projection_uniform`, `texture_samplers` (required when the shader samples textures: sampler names in slot order, or `{ "sampler", "umin", "umax", "vmin", "vmax" }` objects) |
+| material | `name`, `shader`, optional `texture` (`{ "atlas": ..., "name": ... }`; without `name` the whole atlas) or `textures` (up to four, slot by slot, `null` for an empty slot), optional `uniforms` |
 | node | all optional: `name`, `mesh`, `material`, `transform`, `visible`, `transparent`, `uniforms`, `children` |
 
 - Names must be unique within each list. Nodes are found with `Scene::find_node(name)`.

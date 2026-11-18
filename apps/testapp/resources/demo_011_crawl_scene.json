@@ -13,7 +13,8 @@
       "fragment": "demo_011_crawl_text_shader.frag.spv",
       "model_uniform": "model",
       "view_uniform": "view",
-      "projection_uniform": "proj"
+      "projection_uniform": "proj",
+      "texture_samplers": ["font"]
     },
     {
       "name": "Stars",

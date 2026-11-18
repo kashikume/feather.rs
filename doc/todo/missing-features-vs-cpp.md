@@ -39,54 +39,51 @@ Features feather.rs already covers are listed in
 12. **Built-in shader generator** (`ShaderProgram::Create(flags)`): GLSL generated at runtime from
     flags `SpecLight`, `Shadow`, `Transparency`, `Glow`, `SingleColor`, so simple materials need no
     hand-written shaders. Rust needs every shader written and compiled to SPIR-V by the app.
-13. **Multiple textures per material** (`Material::get_textures`, `texture` lines in the material
-    file): several sampler slots, each with its own atlas region (`texUmin0`, ...). Rust has one
-    texture per material and binds every sampler to its atlas.
 
 ## Resources and assets
 
-14. **Global resource cache shared between scenes** (`feather-Cache`): atlases, meshes, shaders
+13. **Global resource cache shared between scenes** (`feather-Cache`): atlases, meshes, shaders
     and materials stored once by name and reused by every root/scene, with garbage collection of
     unused entries and `getStats()`. In Rust each `Scene` owns its own resources.
-15. **Material description file** (`feather-Material`, `assets/materials.mdb`): text format with
+14. **Material description file** (`feather-Material`, `assets/materials.mdb`): text format with
     `@material` sections, `shader`, `texture` (atlas / single), `uniform` (float, int, vec3, vec4,
     RGB, RGBA), `font`, `version` and `define` / `%name` macros. Rust has JSON scene files instead;
     loading `.mdb` would let GuitarPrompter's assets be reused unchanged.
-16. **Font atlas attached to a material** (`Material::font_atlas`, `TextBuilder(material)`): build
+15. **Font atlas attached to a material** (`Material::font_atlas`, `TextBuilder(material)`): build
     text directly from a material that names its font.
-17. **Asset enumeration** (`AssetManager::enumerate_files`): list the files of an asset directory.
-18. **Typed loading errors** (`feather-Exceptions.h`: `FileNotFound`, `FileReadError`,
+16. **Asset enumeration** (`AssetManager::enumerate_files`): list the files of an asset directory.
+17. **Typed loading errors** (`feather-Exceptions.h`: `FileNotFound`, `FileReadError`,
     `IncorrectFileFormat`, `UnsupportedFileVersion`, `MaterialNotFound`): callers can tell failure
     kinds apart; Rust returns opaque `anyhow` errors.
 
 ## Images and textures
 
-19. **JPEG loading** (`feather-jpeg`): decode JPEG images into atlases/textures.
-20. **Mutable atlases** (`Atlas::setTexel`, `m_isMutable`, `buildTexBuffer`): change pixels at
+18. **JPEG loading** (`feather-jpeg`): decode JPEG images into atlases/textures.
+19. **Mutable atlases** (`Atlas::setTexel`, `m_isMutable`, `buildTexBuffer`): change pixels at
     runtime and re-upload the texture.
-21. **Texture from a raw buffer** (`Texture::CreateFromBuffer(w, h, format, buffer)`), including
+20. **Texture from a raw buffer** (`Texture::CreateFromBuffer(w, h, format, buffer)`), including
     **RGB (3-byte) pixel format** (`PixelFormat::RGB`); Rust atlases are RGBA only.
-22. **Texture size in pixels** (`Texture::getWidth`, `getHeight`, `getSize`).
+21. **Texture size in pixels** (`Texture::getWidth`, `getHeight`, `getSize`).
 
 ## Meshes
 
-23. **Ribbon mesh builder** (`feather-MeshBuilderRibbon`): a strip built from pairs of points with
+22. **Ribbon mesh builder** (`feather-MeshBuilderRibbon`): a strip built from pairs of points with
     UVs, with normals generated automatically.
-24. **Custom mesh builder** (`feather-MeshBuilderCustom`): add points (position, normal, UV) and
+23. **Custom mesh builder** (`feather-MeshBuilderCustom`): add points (position, normal, UV) and
     faces (polygons, optionally inverted) one by one.
-25. **Mesh merger** (`feather-MeshMerger`): combine two meshes into one.
-26. **Plane builder variants** (`feather-MeshBuilderPlane`): planes in the XZ plane, centered unit
+24. **Mesh merger** (`feather-MeshMerger`): combine two meshes into one.
+25. **Plane builder variants** (`feather-MeshBuilderPlane`): planes in the XZ plane, centered unit
     planes (`unitCXY`, `unitCXZ`), planes with custom UV ranges, and the **9-patch plane**
     (`build9pInXY`) for scalable UI panels.
-27. **Coordinate system preview** (`CreateCoordinateSystemPreview`): a helper that adds X/Y/Z axes
+26. **Coordinate system preview** (`CreateCoordinateSystemPreview`): a helper that adds X/Y/Z axes
     gizmo nodes under a parent, for debugging.
 
 ## Input and application
 
-28. **Thread-safe scene objects** (`ThreadsafeObject`, `FEATHER_THREADSAFE`): optional locking so
+27. **Thread-safe scene objects** (`ThreadsafeObject`, `FEATHER_THREADSAFE`): optional locking so
     the scene can be modified from a thread other than the render thread, and a debug check that
     catches access from the wrong thread.
-29. **Profiler integration** (Tracy `ZoneScoped` in `types.h`).
+28. **Profiler integration** (Tracy `ZoneScoped` in `types.h`).
 
 ## Animation ideas (not in C++ either)
 

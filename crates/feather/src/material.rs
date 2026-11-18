@@ -2,17 +2,22 @@ use super::object::Object;
 use super::texture::Texture;
 use super::uniforms::Uniforms;
 
-/// How to draw a surface: a shader, the texture it samples and the uniform values passed to
+/// Number of texture slots of a material.
+pub const MAX_MATERIAL_TEXTURES: usize = 4;
+
+/// How to draw a surface: a shader, the textures it samples and the uniform values passed to
 /// it.
 ///
-/// Every sampler of the shader samples the texture's atlas, and the shader's `umin`, `umax`,
-/// `vmin` and `vmax` uniforms (see `ShaderUniformNames`) get the texture's rectangle.
+/// A material has `MAX_MATERIAL_TEXTURES` texture slots, each empty or holding a texture. The
+/// shader's texture samplers (`ShaderUniformNames::texture_samplers`) sample them in order:
+/// sampler `i` samples the atlas of slot `i`, and the rectangle uniforms named for sampler `i`
+/// get the rectangle of slot `i`'s texture.
 pub struct Material {
     name: Option<String>,
     handle: usize,
     /// Handle of the shader in `Scene::shaders`.
     shader: usize,
-    texture: Option<Texture>,
+    textures: [Option<Texture>; MAX_MATERIAL_TEXTURES],
     uniforms: Uniforms,
 }
 
@@ -36,7 +41,7 @@ impl Material {
             name,
             handle: usize::MAX,
             shader,
-            texture: None,
+            textures: [None; MAX_MATERIAL_TEXTURES],
             uniforms: Uniforms::new(),
         }
     }
@@ -49,14 +54,36 @@ impl Material {
         self.shader = shader;
     }
 
+    /// The texture in slot 0.
     pub fn get_texture(&self) -> Option<&Texture> {
-        self.texture.as_ref()
+        self.textures[0].as_ref()
     }
 
-    /// Sets the texture the material's shader samples (`None` for no texture). Use
-    /// `Scene::material_set_texture` to also check that the texture's atlas exists.
+    /// Sets the texture in slot 0 (`None` to empty it). Use `Scene::material_set_texture` to
+    /// also check that the texture's atlas exists.
     pub fn set_texture(&mut self, texture: Option<Texture>) {
-        self.texture = texture;
+        self.textures[0] = texture;
+    }
+
+    /// The texture in slot `slot`; `None` when the slot is empty or past the last one.
+    pub fn get_texture_at(&self, slot: usize) -> Option<&Texture> {
+        self.textures.get(slot)?.as_ref()
+    }
+
+    /// Sets the texture in slot `slot` (`None` to empty it). Use
+    /// `Scene::material_set_texture_at` to also check the slot and the texture's atlas.
+    /// Panics if `slot` is not below `MAX_MATERIAL_TEXTURES`.
+    pub fn set_texture_at(&mut self, slot: usize, texture: Option<Texture>) {
+        assert!(
+            slot < MAX_MATERIAL_TEXTURES,
+            "texture slot {slot} out of range (a material has {MAX_MATERIAL_TEXTURES})"
+        );
+        self.textures[slot] = texture;
+    }
+
+    /// All texture slots, in order.
+    pub fn get_textures(&self) -> &[Option<Texture>; MAX_MATERIAL_TEXTURES] {
+        &self.textures
     }
 
     pub fn uniforms(&self) -> &Uniforms {
@@ -98,6 +125,32 @@ mod tests {
         assert_eq!(material.get_texture(), Some(&texture));
         material.set_texture(None);
         assert_eq!(material.get_texture(), None);
+    }
+
+    #[test]
+    fn texture_slots() {
+        let mut material = Material::new(None, 0);
+        let color = Texture::full(1);
+        let normals = Texture::full(2);
+        material.set_texture(Some(color));
+        material.set_texture_at(1, Some(normals));
+        assert_eq!(material.get_texture_at(0), Some(&color));
+        assert_eq!(material.get_texture_at(1), Some(&normals));
+        assert_eq!(material.get_texture_at(2), None);
+        assert_eq!(material.get_texture_at(MAX_MATERIAL_TEXTURES), None);
+        assert_eq!(
+            material.get_textures(),
+            &[Some(color), Some(normals), None, None]
+        );
+        material.set_texture_at(0, None);
+        assert_eq!(material.get_texture(), None);
+        assert_eq!(material.get_texture_at(1), Some(&normals));
+    }
+
+    #[test]
+    #[should_panic(expected = "out of range")]
+    fn texture_slot_past_the_last_panics() {
+        Material::new(None, 0).set_texture_at(MAX_MATERIAL_TEXTURES, None);
     }
 
     #[test]

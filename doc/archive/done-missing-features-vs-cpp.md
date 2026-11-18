@@ -4,8 +4,8 @@ What feather.rs has of the C++ engine (`guitarprompter/contrib/feather`), and mo
 features are in [../todo/missing-features-vs-cpp.md](../todo/missing-features-vs-cpp.md).
 
 Features feather.rs already covers (not listed below): scene graph with transforms and visibility,
-materials with uniforms, uniform inheritance down the hierarchy, PNG atlases with metadata,
-textures as atlas regions, cuboid / plane / OBJ mesh builders, text in the XY and XZ planes
+materials with uniforms and up to four textures, uniform inheritance down the hierarchy, PNG
+atlases with metadata, textures as atlas regions, cuboid / plane / OBJ mesh builders, text in the XY and XZ planes
 (one mesh or one node per glyph), transparency sorting back to front, directional shadow maps,
 named lookup of resources, animations (animator, slide and perpetual animations, easing
 functions), mouse input, the `featherui` UI library (`feather-ui`: hud, NSWE layout, spacer,
@@ -89,3 +89,17 @@ them for each scene, its own included, and the engine logs them per scene at `de
 
 - **Rendering statistics** (`RenderingState::m_stats.nodesRendered`,
   `RenderingBatcher::getNodesCount`): number of nodes drawn in a frame.
+
+### Multiple textures per material (see [done-multiple-textures-plan.md](done-multiple-textures-plan.md))
+
+Removed on 2026-11-18. A material has four texture slots (`MAX_MATERIAL_TEXTURES`,
+`Material::get_texture_at`, `Scene::material_set_texture_at`; `"textures"` in scene files). The
+shader names its texture samplers in slot order, each with optional rectangle uniforms
+(`ShaderUniformNames::texture_samplers`, `"texture_samplers"`), and every sampler but the shadow
+map must be one of them. Atlases are sRGB or linear (`ColorSpace`, `"color_space"`), for normal
+maps. Unlike C++, every slot reaches the shader (C++ stored the slots but bound only slot 0).
+Per-node textures are still missing.
+
+- **Multiple textures per material** (`Material::get_textures`, `texture` lines in the material
+  file): several sampler slots, each with its own atlas region (`texUmin0`, ...). Rust has one
+  texture per material and binds every sampler to its atlas.

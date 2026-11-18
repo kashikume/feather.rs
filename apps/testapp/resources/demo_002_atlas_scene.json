@@ -17,10 +17,9 @@
       "model_uniform": "model",
       "view_uniform": "view",
       "projection_uniform": "proj",
-      "umin_uniform": "umin",
-      "umax_uniform": "umax",
-      "vmin_uniform": "vmin",
-      "vmax_uniform": "vmax"
+      "texture_samplers": [
+        { "sampler": "atlas", "umin": "umin", "umax": "umax", "vmin": "vmin", "vmax": "vmax" }
+      ]
     }
   ],
   "cameras": [

@@ -1,6 +1,7 @@
 //! Turning uniform values into what a shader reads: bytes for uniform blocks (one aligned
 //! slice per block in a per-frame buffer) and push constants, and an atlas for each sampler.
 
+use super::material::MAX_MATERIAL_TEXTURES;
 use super::math::Mat4;
 use super::shader::ShaderUniformIds;
 use super::shaderlayout::{ShaderLayout, UniformMember, UniformType};
@@ -42,10 +43,10 @@ pub enum UniformIssue {
     },
     /// A value is set for a uniform the shader doesn't have.
     Unused(String),
-    /// The shader has samplers, but the material has no texture.
-    NoTexture,
-    /// The material's texture belongs to an atlas that isn't in the scene.
-    UnknownAtlas(usize),
+    /// The shader has a texture sampler for this slot, but the material's slot is empty.
+    NoTexture(usize),
+    /// The material's texture in this slot belongs to an atlas that isn't in the scene.
+    UnknownAtlas { slot: usize, atlas: usize },
 }
 
 impl std::fmt::Display for UniformIssue {
@@ -61,16 +62,16 @@ impl std::fmt::Display for UniformIssue {
                 "uniform `{name}` is {expected:?} in the shader, but the value is {found}"
             ),
             UniformIssue::Unused(name) => write!(f, "uniform `{name}` is not used by the shader"),
-            UniformIssue::NoTexture => {
+            UniformIssue::NoTexture(slot) => {
                 write!(
                     f,
-                    "the shader has samplers, but the material has no texture"
+                    "the shader samples texture slot {slot}, but the material has no texture there"
                 )
             }
-            UniformIssue::UnknownAtlas(atlas) => {
+            UniformIssue::UnknownAtlas { slot, atlas } => {
                 write!(
                     f,
-                    "the material's texture uses atlas {atlas}, which doesn't exist"
+                    "the material's texture in slot {slot} uses atlas {atlas}, which doesn't exist"
                 )
             }
         }
@@ -175,39 +176,41 @@ pub fn pack_draw(
 }
 
 /// The values the engine provides for a draw, under the names the shader gave them (see
-/// `ShaderUniformNames`, here as `ShaderUniformIds`): the model, view and projection matrices, the shadow light's matrix
-/// and, when the material has a texture, the edges of its rectangle. Names the shader doesn't
-/// use are left out.
+/// `ShaderUniformNames`, here as `ShaderUniformIds`): the model, view and projection matrices,
+/// the shadow light's matrix and, for each texture sampler with rectangle uniforms whose slot
+/// has a texture, the edges of that texture's rectangle. Names the shader doesn't use are left
+/// out.
 pub fn engine_uniforms(
     names: &ShaderUniformIds,
     model: Mat4,
     view: Mat4,
     projection: Mat4,
     shadow_matrix: Mat4,
-    texture: Option<&Texture>,
+    textures: &[Option<Texture>; MAX_MATERIAL_TEXTURES],
 ) -> Vec<(UniformName, UniformValue)> {
     let matrices = [
-        (&names.model, model),
-        (&names.view, view),
-        (&names.projection, projection),
-        (&names.shadow_matrix, shadow_matrix),
+        (names.model, model),
+        (names.view, view),
+        (names.projection, projection),
+        (names.shadow_matrix, shadow_matrix),
     ]
     .into_iter()
-    .map(|(name, m)| (name, UniformValue::Mat4(m)));
-    let rect = texture.into_iter().flat_map(|t| {
-        [
-            (&names.umin, t.get_u_min()),
-            (&names.umax, t.get_u_max()),
-            (&names.vmin, t.get_v_min()),
-            (&names.vmax, t.get_v_max()),
-        ]
-        .into_iter()
-        .map(|(name, v)| (name, UniformValue::Float(v)))
-    });
-    matrices
-        .chain(rect)
-        .filter_map(|(name, value)| Some(((*name)?, value)))
-        .collect()
+    .filter_map(|(name, m)| Some((name?, UniformValue::Mat4(m))));
+    let rects = names
+        .texture_rects
+        .iter()
+        .zip(textures)
+        .filter_map(|(rect, texture)| Some(((*rect)?, (*texture)?)))
+        .flat_map(|(rect, t)| {
+            [
+                (rect.umin, t.get_u_min()),
+                (rect.umax, t.get_u_max()),
+                (rect.vmin, t.get_v_min()),
+                (rect.vmax, t.get_v_max()),
+            ]
+            .map(|(name, v)| (name, UniformValue::Float(v)))
+        });
+    matrices.chain(rects).collect()
 }
 
 /// What a sampler of a shader samples.
@@ -220,37 +223,46 @@ pub enum SamplerSource {
 }
 
 /// What each sampler of the shader samples, in `ShaderLayout::samplers` order: the sampler
-/// named `shadow_map` (see `ShaderUniformNames`) the shadow map, every other one the atlas of
-/// the material's texture. That is `None` (and an issue) when the material has no texture or
-/// its atlas doesn't exist (`atlas_exists`).
+/// named `shadow_map` the shadow map, and texture sampler `i` (`ShaderUniformIds::
+/// texture_samplers`) the atlas of the material's texture in slot `i`. That is `None` (and an
+/// issue) when the slot is empty or its atlas doesn't exist (`atlas_exists`). A sampler that is
+/// neither (which `Shader::new` doesn't allow) gets `None` too.
 pub fn sampler_sources(
     layout: &ShaderLayout,
-    shadow_map: Option<UniformName>,
-    texture: Option<&Texture>,
+    names: &ShaderUniformIds,
+    textures: &[Option<Texture>; MAX_MATERIAL_TEXTURES],
     atlas_exists: impl Fn(usize) -> bool,
     issues: &mut Vec<UniformIssue>,
 ) -> Vec<SamplerSource> {
-    let is_shadow = |name: UniformName| shadow_map == Some(name);
-    if layout.samplers.iter().all(|s| is_shadow(s.name)) {
-        return vec![SamplerSource::ShadowMap; layout.samplers.len()];
-    }
-    let atlas = match texture {
-        None => {
-            issues.push(UniformIssue::NoTexture);
-            None
-        }
-        Some(texture) if !atlas_exists(texture.get_atlas()) => {
-            issues.push(UniformIssue::UnknownAtlas(texture.get_atlas()));
-            None
-        }
-        Some(texture) => Some(texture.get_atlas()),
-    };
     layout
         .samplers
         .iter()
-        .map(|s| match is_shadow(s.name) {
-            true => SamplerSource::ShadowMap,
-            false => SamplerSource::Atlas(atlas),
+        .map(|s| {
+            if names.shadow_map == Some(s.name) {
+                return SamplerSource::ShadowMap;
+            }
+            let Some(slot) = names
+                .texture_samplers
+                .iter()
+                .position(|n| *n == Some(s.name))
+            else {
+                return SamplerSource::Atlas(None);
+            };
+            let atlas = match textures[slot] {
+                None => {
+                    issues.push(UniformIssue::NoTexture(slot));
+                    None
+                }
+                Some(texture) if !atlas_exists(texture.get_atlas()) => {
+                    issues.push(UniformIssue::UnknownAtlas {
+                        slot,
+                        atlas: texture.get_atlas(),
+                    });
+                    None
+                }
+                Some(texture) => Some(texture.get_atlas()),
+            };
+            SamplerSource::Atlas(atlas)
         })
         .collect()
 }
@@ -268,8 +280,8 @@ pub fn unused_uniforms(layout: &ShaderLayout, uniforms: &Uniforms) -> Vec<Unifor
 mod tests {
     use super::*;
     use crate::math::{Mat4, Vec4};
-    use crate::shader::tests::{FRAG, VERT};
-    use crate::shader::ShaderUniformNames;
+    use crate::shader::tests::{basic_names, FRAG, TWO_TEXTURES_FRAG, VERT};
+    use crate::shader::{ShaderUniformIds, ShaderUniformNames, TextureRectNames};
     use cgmath::SquareMatrix;
 
     fn mat_bytes(m: Mat4) -> Vec<u8> {
@@ -346,10 +358,24 @@ mod tests {
         assert_eq!(packed.push_constants, mat_bytes(translation(1.0)));
     }
 
+    /// Material texture slots holding `textures` from slot 0 on.
+    fn slots<const N: usize>(textures: [Texture; N]) -> [Option<Texture>; MAX_MATERIAL_TEXTURES] {
+        let mut slots = [None; MAX_MATERIAL_TEXTURES];
+        for (slot, texture) in textures.into_iter().enumerate() {
+            slots[slot] = Some(texture);
+        }
+        slots
+    }
+
+    const EMPTY: [Option<Texture>; MAX_MATERIAL_TEXTURES] = [None; MAX_MATERIAL_TEXTURES];
+
     #[test]
     fn engine_uniforms_use_the_shader_names() {
         let names = ShaderUniformNames::matrices("model", "view", "proj")
-            .with_texture_rect("umin", "umax", "vmin", "vmax")
+            .with_texture_sampler(
+                "atlas",
+                Some(TextureRectNames::new("umin", "umax", "vmin", "vmax")),
+            )
             .with_shadow("light", "shadows")
             .ids();
         let texture = Texture::new(3, 0.25, 0.5, 0.125, 1.0);
@@ -359,7 +385,7 @@ mod tests {
             translation(2.0),
             translation(3.0),
             translation(4.0),
-            Some(&texture),
+            &slots([texture]),
         );
         assert_eq!(
             values,
@@ -377,27 +403,60 @@ mod tests {
     }
 
     #[test]
+    fn engine_uniforms_give_each_slot_its_rectangle() {
+        let names = ShaderUniformNames::default()
+            .with_texture_sampler("a", Some(TextureRectNames::new("a0", "a1", "a2", "a3")))
+            .with_texture_sampler("b", None)
+            .with_texture_sampler("c", Some(TextureRectNames::new("c0", "c1", "c2", "c3")))
+            .ids();
+        let m = Mat4::identity();
+        let a = Texture::new(1, 0.0, 0.5, 0.0, 0.25);
+        let b = Texture::new(2, 0.5, 1.0, 0.0, 1.0);
+        let c = Texture::new(3, 0.25, 0.75, 0.5, 1.0);
+        assert_eq!(
+            engine_uniforms(&names, m, m, m, m, &slots([a, b, c])),
+            named([
+                ("a0", UniformValue::Float(0.0)),
+                ("a1", UniformValue::Float(0.5)),
+                ("a2", UniformValue::Float(0.0)),
+                ("a3", UniformValue::Float(0.25)),
+                ("c0", UniformValue::Float(0.25)),
+                ("c1", UniformValue::Float(0.75)),
+                ("c2", UniformValue::Float(0.5)),
+                ("c3", UniformValue::Float(1.0)),
+            ])
+        );
+    }
+
+    #[test]
     fn engine_uniforms_skip_unnamed_values_and_missing_texture() {
         let names = ShaderUniformNames {
             view: Some("v".to_string()),
-            umax: Some("right".to_string()),
             ..ShaderUniformNames::default()
         }
+        .with_texture_sampler("t", Some(TextureRectNames::new("l", "right", "t", "b")))
         .ids();
         let m = Mat4::identity();
-        let texture = Texture::full(0);
         assert_eq!(
-            engine_uniforms(&names, m, m, m, m, Some(&texture)),
+            engine_uniforms(&names, m, m, m, m, &slots([Texture::full(0)])),
             named([
                 ("v", UniformValue::Mat4(m)),
-                ("right", UniformValue::Float(1.0))
+                ("l", UniformValue::Float(0.0)),
+                ("right", UniformValue::Float(1.0)),
+                ("t", UniformValue::Float(0.0)),
+                ("b", UniformValue::Float(1.0)),
             ])
         );
-        // Without a texture there is no rectangle; packing reports the uniform as missing.
+        // Without a texture there is no rectangle; packing reports the uniforms as missing.
         assert_eq!(
-            engine_uniforms(&names, m, m, m, m, None),
+            engine_uniforms(&names, m, m, m, m, &EMPTY),
             named([("v", UniformValue::Mat4(m))])
         );
+    }
+
+    /// Ids of the basic test shader's names: its one sampler samples slot 0.
+    fn basic_ids() -> ShaderUniformIds {
+        basic_names().ids()
     }
 
     #[test]
@@ -406,10 +465,60 @@ mod tests {
         let texture = Texture::new(8, 0.5, 1.0, 0.0, 0.25);
         let mut issues = Vec::new();
 
-        let sources = sampler_sources(&layout, None, Some(&texture), |a| a == 8, &mut issues);
+        let sources = sampler_sources(
+            &layout,
+            &basic_ids(),
+            &slots([texture]),
+            |a| a == 8,
+            &mut issues,
+        );
 
         assert_eq!(issues, []);
         assert_eq!(sources, [SamplerSource::Atlas(Some(8))]);
+    }
+
+    #[test]
+    fn each_texture_sampler_samples_its_slot() {
+        let layout = ShaderLayout::reflect(VERT, TWO_TEXTURES_FRAG).unwrap();
+        let names = ShaderUniformNames::default()
+            .with_texture_sampler("colorMap", None)
+            .with_texture_sampler("normalMap", None)
+            .ids();
+        let mut issues = Vec::new();
+        let sources = sampler_sources(
+            &layout,
+            &names,
+            &slots([Texture::full(5), Texture::full(6)]),
+            |_| true,
+            &mut issues,
+        );
+        assert_eq!(issues, []);
+        // In `layout.samplers` order (by binding): colorMap, normalMap.
+        let atlas_of = |name: &str| {
+            let i = layout.samplers.iter().position(|s| s.name == name).unwrap();
+            sources[i]
+        };
+        assert_eq!(atlas_of("colorMap"), SamplerSource::Atlas(Some(5)));
+        assert_eq!(atlas_of("normalMap"), SamplerSource::Atlas(Some(6)));
+
+        // Slots swapped in the names: the samplers follow.
+        let swapped = ShaderUniformNames::default()
+            .with_texture_sampler("normalMap", None)
+            .with_texture_sampler("colorMap", None)
+            .ids();
+        let sources = sampler_sources(
+            &layout,
+            &swapped,
+            &slots([Texture::full(5), Texture::full(6)]),
+            |_| true,
+            &mut issues,
+        );
+        let i = layout
+            .samplers
+            .iter()
+            .position(|s| s.name == "colorMap")
+            .unwrap();
+        assert_eq!(sources[i], SamplerSource::Atlas(Some(6)));
     }
 
     #[test]
@@ -417,36 +526,63 @@ mod tests {
         let layout = ShaderLayout::reflect(VERT, FRAG).unwrap();
         let mut issues = Vec::new();
         assert_eq!(
-            sampler_sources(&layout, None, None, |_| true, &mut issues),
+            sampler_sources(&layout, &basic_ids(), &EMPTY, |_| true, &mut issues),
             [SamplerSource::Atlas(None)]
         );
-        assert_eq!(issues, [UniformIssue::NoTexture]);
+        assert_eq!(issues, [UniformIssue::NoTexture(0)]);
 
         issues.clear();
-        let texture = Texture::full(99);
         assert_eq!(
-            sampler_sources(&layout, None, Some(&texture), |_| false, &mut issues),
+            sampler_sources(
+                &layout,
+                &basic_ids(),
+                &slots([Texture::full(99)]),
+                |_| false,
+                &mut issues
+            ),
             [SamplerSource::Atlas(None)]
         );
-        assert_eq!(issues, [UniformIssue::UnknownAtlas(99)]);
+        assert_eq!(issues, [UniformIssue::UnknownAtlas { slot: 0, atlas: 99 }]);
+    }
+
+    #[test]
+    fn an_empty_second_slot_is_reported_with_its_number() {
+        let layout = ShaderLayout::reflect(VERT, TWO_TEXTURES_FRAG).unwrap();
+        let names = ShaderUniformNames::default()
+            .with_texture_sampler("colorMap", None)
+            .with_texture_sampler("normalMap", None)
+            .ids();
+        let mut issues = Vec::new();
+        sampler_sources(
+            &layout,
+            &names,
+            &slots([Texture::full(1)]),
+            |_| true,
+            &mut issues,
+        );
+        assert_eq!(issues, [UniformIssue::NoTexture(1)]);
     }
 
     #[test]
     fn shaders_without_samplers_need_no_texture() {
         let layout = ShaderLayout::default();
         let mut issues = Vec::new();
-        assert!(sampler_sources(&layout, None, None, |_| true, &mut issues).is_empty());
+        let names = ShaderUniformIds::default();
+        assert!(sampler_sources(&layout, &names, &EMPTY, |_| true, &mut issues).is_empty());
         assert_eq!(issues, []);
     }
 
     #[test]
     fn the_shadow_map_sampler_samples_the_shadow_map() {
         let layout = ShaderLayout::reflect(VERT, FRAG).unwrap();
-        let name = layout.samplers[0].name;
+        let names = ShaderUniformIds {
+            shadow_map: Some(layout.samplers[0].name),
+            ..ShaderUniformIds::default()
+        };
         let mut issues = Vec::new();
         // The shader's only sampler is the shadow map: no texture needed.
         assert_eq!(
-            sampler_sources(&layout, Some(name), None, |_| true, &mut issues),
+            sampler_sources(&layout, &names, &EMPTY, |_| true, &mut issues),
             [SamplerSource::ShadowMap]
         );
         assert_eq!(issues, []);

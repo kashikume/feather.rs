@@ -1,11 +1,16 @@
-# Multiple textures per material: plan
+# Multiple textures per material: plan (done)
+
+Implemented on 2026-11-18; see *Done* at the end for what changed from the plan and what is
+still to check. The plan is kept as written; file and line references are from before the
+change.
 
 Goal: **a material holds up to 4 textures** (slots 0–3), and each sampler of its shader samples
 the slot it is given. First use: a **normal map** next to the colour texture, shown by a new
 demo, a rotating tennis ball.
 
-Covers item 13 of [missing-features-vs-cpp.md](missing-features-vs-cpp.md) (multiple textures
-per material) and the "More than one texture per material" line of
+Covered item 13 of [../todo/missing-features-vs-cpp.md](../todo/missing-features-vs-cpp.md)
+(multiple textures per material, now in
+[done-missing-features-vs-cpp.md](done-missing-features-vs-cpp.md)) and the "More than one texture per material" line of
 [scene-format.md](../scene-format.md#not-in-the-format-yet).
 
 ## What the C++ engine does
@@ -246,3 +251,40 @@ felt and the seam fill the screen.
 3. **Colour space from code:** a `ColorSpace` parameter on every atlas constructor and
    `Scene::create_atlas_from_png`; no setter.
 4. **Demo:** one ball, no on/off switch; the lighting shows the relief.
+
+## Done
+
+All steps but the Android half of step 8 (2026-11-18), as planned, with these details:
+
+- `Material::get_texture` / `set_texture` stay as slot 0 shortcuts; `get_texture_at`,
+  `set_texture_at` (panics past slot 3), `get_textures`; `Scene::material_set_texture_at`
+  (an error past slot 3).
+- `ShaderUniformNames::texture_samplers` is a `Vec<TextureSamplerNames>` (sampler +
+  `Option<TextureRectNames>`), built with `with_texture_sampler(name, rect)`;
+  `Shader::get_texture_samplers` replaces the four `get_uniform_umin_name` ... getters.
+  `ShaderUniformIds` has `texture_samplers` and `texture_rects`, indexed by slot. Loading fails
+  for an unknown sampler, one listed twice, one that is also the shadow map sampler, more than 4,
+  a rectangle uniform that isn't a `float`, and any sampler of the shader that is neither listed
+  nor the shadow map.
+- `UniformIssue::NoTexture(slot)` and `UnknownAtlas { slot, atlas }` name the slot.
+- Scene files: a material's texture errors say which slot (`material `M`: texture 1: unknown
+  atlas `X``), also for `texture`, which is slot 0.
+- `GpuImage::upload_rgba` takes the `ColorSpace`; `image_format` maps it to `R8G8B8A8_SRGB` or
+  `R8G8B8A8_UNORM`. The fallback (magenta) and shadow fallback images stay sRGB.
+- The scene files of every textured demo got `texture_samplers` (18 files, the HUD's included);
+  the engine's, feather-ui's and the test app's tests were changed the same way. A new engine
+  test shader, `testdata/shaders/two_textures.frag`, has two samplers with a rectangle each.
+- Demo 23 has no switch, as decided: the light comes from the right, a little in front; the
+  ball turns at 22°/s around its tilted axis, which sways ±12° (`TennisBallDemo`). The shader
+  adds wrap-around diffuse light, a weak broad highlight and a felt sheen at the lit edge, and
+  fades the bent normals' light out where the ball itself faces away, so bumps on the dark side
+  stay dark.
+- `make_tennis_ball_textures.py` takes about 70 s at 2048 × 1024; the images are RGB PNGs of
+  2.6 MB (colours) and 3.9 MB (normals, fine fuzz compresses badly). The seam distance and the
+  blotches are computed at a quarter of the size and upsampled; the fuzz is per pixel, lowered
+  towards the poles so its slopes stay the same.
+
+Checked on Windows (release build): the seam reads as a groove, with its shadowed edge away from
+the light, and the felt's fuzz catches the light; no break where the texture wraps (u = 0/1).
+The Android APK builds (`gradlew assembleDebug`). **Not done yet**: running demo 23 on the
+Galaxy S25 (no phone was connected).

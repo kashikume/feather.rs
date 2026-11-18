@@ -775,7 +775,7 @@ def make_scene_files(mesh_names):
         "atlases": [{"name": "City", "bitmap": "demo_016_city_atlas.png", "metadata": "demo_016_city_atlas.atlas"}],
         "meshes": [{"name": name, "file": f"{mesh_file(name)}.fmesh"} for name in mesh_names],
         "shaders": [
-            {"name": "Lit", "vertex": "demo_016_city_shader.vert.spv", "fragment": "demo_016_city_shader.frag.spv", "model_uniform": "model", "view_uniform": "view", "projection_uniform": "proj", "umin_uniform": "umin", "umax_uniform": "umax", "vmin_uniform": "vmin", "vmax_uniform": "vmax", "shadow_matrix_uniform": "lightViewProj", "shadow_map_sampler": "shadowMap"},
+            {"name": "Lit", "vertex": "demo_016_city_shader.vert.spv", "fragment": "demo_016_city_shader.frag.spv", "model_uniform": "model", "view_uniform": "view", "projection_uniform": "proj", "texture_samplers": [{"sampler": "albedoMap", "umin": "umin", "umax": "umax", "vmin": "vmin", "vmax": "vmax"}], "shadow_matrix_uniform": "lightViewProj", "shadow_map_sampler": "shadowMap"},
             {"name": "Sky", "vertex": "demo_016_city_sky_shader.vert.spv", "fragment": "demo_016_city_sky_shader.frag.spv", "model_uniform": "model", "view_uniform": "view", "projection_uniform": "proj"},
         ],
         "materials": [{"name": "Sky", "shader": "Sky"}] + mats,

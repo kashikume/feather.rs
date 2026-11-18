@@ -12,7 +12,7 @@ use cgmath::{Deg, InnerSpace, Rad};
 
 use feather::animation::PerpetualAnimation;
 use feather::assetsprovider::AssetsProvider;
-use feather::atlas::Atlas;
+use feather::atlas::{Atlas, ColorSpace};
 use feather::math::{Mat4, Point3, Vec2, Vec3};
 use feather::scene::Scene;
 use feather::shadow::ShadowLight;
@@ -151,6 +151,7 @@ impl CityDemo {
                 texture.width,
                 texture.height,
                 texture.pixels,
+                ColorSpace::Srgb,
             ));
             let (shininess, specular, reflectivity) = match name {
                 "Glass facade" => (90.0, 0.9, 0.55),
