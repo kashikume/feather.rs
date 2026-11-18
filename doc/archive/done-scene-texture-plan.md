@@ -1,4 +1,8 @@
-# A scene drawn into a texture: plan
+# A scene drawn into a texture: plan (done)
+
+Implemented on 2026-11-18; see *Done* at the end for what changed from the plan and what is
+still to check. The plan is kept as written; file and line references are from before the
+change.
 
 Goal: **a scene can be drawn into a texture that another scene samples**, every frame. First
 use: a new demo, a **drive-in cinema**: the window shows a night scene with a big screen and two
@@ -154,3 +158,50 @@ target names a missing atlas, is logged once.
 4. **Nesting**: none. A texture scene can't show a scene texture itself; if it has one, it
    samples the fallback and a warning is logged once.
 5. **Size**: fixed in the atlas (`width`, `height`).
+
+## Done
+
+All steps (2026-11-18), as planned, with these details:
+
+- `Atlas::scene_texture(name, width, height, SceneTextureOptions { msaa })`,
+  `Atlas::get_scene_texture`; in scene files `"scene_texture": { "width", "height", "msaa" }`
+  instead of `bitmap` (no `metadata`, no `color_space`).
+- `FeatherApp::get_num_texture_scenes` / `get_texture_scene` and `SceneTextureTarget { scene,
+  atlas }`; the test app's `Demo::texture_scene_count` / `texture_scene_at`.
+  `FrameStats::texture_scenes`; the HUD shows them first ("Texture 0").
+- `scenetexture.rs`: `SceneTextureGpu` (the texture with every mip level, a view of level 0 for
+  the framebuffer, transient multisampled colour and depth, its own render pass and
+  framebuffer), `TexturePass`, `record_texture_pass` and the per-frame mipmap blits. The scene
+  textures live in the window scene's `SceneGpuState::scene_textures`, created in `sync_scene`,
+  dropped like atlases when removed or changed (size, sampling).
+- `SceneGpuState::pipeline_target`: pipelines are rebuilt when the target they were built for
+  changes; a texture scene's pipelines are built for its texture's render pass, samples and
+  extent. `record_draws` is shared by the window's pass and texture passes.
+- `collect_draws` collects texture scenes first, then the window's scenes; a window scene's
+  sampler of a scene texture binds it only if a texture scene was drawn into it this frame.
+  A texture scene that is also a window scene, listed twice, aimed at a scene that isn't drawn,
+  at an atlas that isn't a scene texture, or at a texture another one draws into is logged once
+  and not drawn.
+- Demo 23 (the drive-in): the screen's shader adds a faint projector glow (the movie's
+  background is black, as the engine clears every scene to black), and the lot and cars are lit
+  by the screen as an area light in the movie's average colour, read from the texture's
+  smallest mip level, so the cars' material also uses two texture slots.
+
+Checked on Windows: the room shows the right way up on the screen; no validation errors (debug
+build), also switching demos 22 → 23 → 0 → 23 → 22 → 23 (scene textures released and made
+again).
+
+Checked on the Galaxy S25 (2340 × 1080, 120 Hz): demo 23 looks as on Windows, at 120 fps, with
+nothing logged. GPU time per frame from Vulkan timestamp queries at the start and end of each
+frame's command buffer (a temporary module, not committed, as in
+[done-engine-performance-improvements.md](done-engine-performance-improvements.md)), averaged
+over 5 s periods, 25 s after tapping to the demo, the order MSAA on, off, on:
+
+| GPU ms/frame | MSAA on (4×) | MSAA off |
+|---|---|---|
+| S25, demo 23 | 2.27 / 2.28 | 2.13 |
+| S25, demo 0 before the tap (for reference) | 1.25 / 1.53 | 1.53 |
+
+Multisampling the 1280 × 544 scene texture costs about 0.15 ms per frame (7 % of the frame's
+GPU time, under 2 % of the 8.3 ms a frame has at 120 Hz), so **the default stays on**
+(decision 2); `"msaa": false` is there for larger textures or slower devices.

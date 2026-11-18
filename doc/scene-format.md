@@ -113,7 +113,8 @@ An atlas is an image that textures are cut from, with optional metadata naming i
 | Field      | Type   | Required | Description                                 |
 | ---------- | ------ | -------- | ------------------------------------------- |
 | `name`     | string | yes      | Unique among atlases                        |
-| `bitmap`   | string | yes      | PNG asset                                   |
+| `bitmap`   | string | see below | PNG asset                                  |
+| `scene_texture` | object | see below | A texture another scene is drawn into, see [Scene textures](#scene-textures) |
 | `metadata` | string | no       | `.atlas` asset naming rectangles of the PNG |
 | `color_space` | string | no    | `"srgb"` (default): colours; `"linear"`: data, e.g. a normal map |
 
@@ -134,6 +135,29 @@ plate_02 1 131 128 128
 The atlas creator (`tools/atlas-creator`) writes such a file next to the atlas it packs; the test
 app builds its atlases this way from `.atlist` lists (see the README). Without `metadata` only
 the whole atlas can be used as a texture.
+
+An atlas has exactly one of `bitmap` and `scene_texture`.
+
+### Scene textures
+
+A scene texture is an atlas with no image of its own: every frame, the application draws
+another scene into it (a texture scene, `FeatherApp::get_texture_scene`, see the README's
+[Scenes in textures](../README.md#scenes-in-textures)). Materials use it like any atlas, e.g. a
+cinema screen showing a live scene.
+
+```json
+{ "name": "Screen", "scene_texture": { "width": 1280, "height": 544 } }
+```
+
+| Field    | Type    | Required | Description                                                |
+| -------- | ------- | -------- | ---------------------------------------------------------- |
+| `width`  | integer | yes      | Width in pixels, above 0                                   |
+| `height` | integer | yes      | Height in pixels, above 0; the texture scene's camera gets the aspect `width / height` |
+| `msaa`   | boolean | no       | Draw with the device's multisampling, resolved into the texture (default `true`) |
+
+It holds sRGB colours (no `color_space`) and has no `metadata`: the whole texture is used. Its
+mipmaps are made again every frame. Until a scene is drawn into it, it samples as the fallback
+texture.
 
 ### Textures
 
@@ -462,6 +486,8 @@ The engine uses a right-handed coordinate system. The viking room's camera has Z
 Loading fails, and nothing of the scene is kept, when:
 - the JSON is invalid, or a field is unknown or has the wrong type;
 - two items in the same list have the same name;
+- an atlas has both or neither of `bitmap` and `scene_texture`, or a scene texture has a size
+  of 0, `metadata` or a `color_space`;
 - a name refers to an object that doesn't exist (e.g. `"mesh": "Rom"`), or a material names a
   texture its atlas's metadata doesn't have, or has both `texture` and `textures`, or more
   than four textures;
@@ -553,4 +579,6 @@ visible, the nearer ones (greater z) over the farther ones. With `"origin": "top
 - **Moving lights:** `shadow_light` is fixed; applications move it with `Scene::set_shadow_light`.
 - **Other mesh sources:** only OBJ files, cuboids, planes and spheres; other generated meshes
   must be created in code.
+- **Which scene draws into a scene texture:** set by the application
+  (`FeatherApp::get_texture_scene`), as scenes don't know each other.
 - **More than one root node.**

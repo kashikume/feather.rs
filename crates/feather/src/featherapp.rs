@@ -3,6 +3,15 @@ use anyhow::Result;
 use winit::event::MouseButton;
 use winit::keyboard::KeyCode;
 
+/// Where a texture scene is drawn (`FeatherApp::get_texture_scene`): the scene texture `atlas`
+/// (a handle, see `Atlas::scene_texture`) of the scene whose `Scene::get_id` is `scene`, one of
+/// the window's scenes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct SceneTextureTarget {
+    pub scene: u64,
+    pub atlas: usize,
+}
+
 /// What an app built on the engine provides: its scenes, and what it does every frame and on
 /// input.
 ///
@@ -18,6 +27,21 @@ pub trait FeatherApp {
     /// Scene `scene_index` (`0..get_num_scenes_to_render()`), drawn through its active camera
     /// over the scenes before it.
     fn get_scene_to_render(&mut self, scene_index: usize) -> &mut Scene;
+
+    /// How many scenes are drawn into textures: every frame, before the window's scenes, each
+    /// texture scene is drawn through its active camera into a scene texture
+    /// (`Atlas::scene_texture`) of one of the window's scenes, which samples it like an image.
+    /// None by default.
+    fn get_num_texture_scenes(&self) -> usize {
+        0
+    }
+
+    /// Texture scene `index` (`0..get_num_texture_scenes()`) and the scene texture it is drawn
+    /// into. Its camera's aspect is the texture's. A texture scene can't be one of the window's
+    /// scenes too, and its own scene textures stay empty (no nesting).
+    fn get_texture_scene(&mut self, _index: usize) -> (&mut Scene, SceneTextureTarget) {
+        unreachable!("the app has no texture scenes")
+    }
 
     /// Called when a key is pressed (not for auto-repeat). `key` is the physical key, so it
     /// doesn't depend on the keyboard layout.
@@ -85,15 +109,17 @@ pub struct FrameStats {
     /// The stats of every scene, by index (`FeatherApp::get_scene_to_render`). A scene without
     /// a camera isn't drawn: it has no draws, but its resources are counted.
     pub scenes: Vec<SceneStats>,
+    /// The stats of every texture scene, by index (`FeatherApp::get_texture_scene`).
+    pub texture_scenes: Vec<SceneStats>,
     /// How long the engine took to collect the draws of every scene and pack their uniforms, in
     /// seconds.
     pub collect_time: f32,
 }
 
 impl FrameStats {
-    /// The stats of every scene added together.
+    /// The stats of every scene, texture scenes included, added together.
     pub fn total(&self) -> SceneStats {
-        SceneStats::sum(&self.scenes)
+        SceneStats::sum(self.scenes.iter().chain(&self.texture_scenes))
     }
 }
 
@@ -121,16 +147,18 @@ pub struct SceneStats {
 
 impl SceneStats {
     /// `stats` added together.
-    pub fn sum(stats: &[SceneStats]) -> SceneStats {
-        stats.iter().fold(SceneStats::default(), |a, b| SceneStats {
-            draws: a.draws + b.draws,
-            culled: a.culled + b.culled,
-            shadow_draws: a.shadow_draws + b.shadow_draws,
-            nodes: a.nodes + b.nodes,
-            meshes: a.meshes + b.meshes,
-            mesh_buffers: a.mesh_buffers + b.mesh_buffers,
-            atlases: a.atlases + b.atlases,
-        })
+    pub fn sum<'a>(stats: impl IntoIterator<Item = &'a SceneStats>) -> SceneStats {
+        stats
+            .into_iter()
+            .fold(SceneStats::default(), |a, b| SceneStats {
+                draws: a.draws + b.draws,
+                culled: a.culled + b.culled,
+                shadow_draws: a.shadow_draws + b.shadow_draws,
+                nodes: a.nodes + b.nodes,
+                meshes: a.meshes + b.meshes,
+                mesh_buffers: a.mesh_buffers + b.mesh_buffers,
+                atlases: a.atlases + b.atlases,
+            })
     }
 }
 

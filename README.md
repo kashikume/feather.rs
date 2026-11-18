@@ -34,6 +34,8 @@ What works today:
   holds any number of cameras, from code or its JSON file, and is drawn through its active one
 - Several scenes drawn together, one over the other, each through its active camera (e.g. a 2D
   overlay over a 3D scene)
+- Scenes drawn into textures every frame (scene textures, with multisampling and mipmaps),
+  shown by another scene like any texture (e.g. a screen showing a live scene)
 - Atlases uploaded with mipmaps; each texture of a material passes its UV rectangle to the
   shader (four `float` uniforms named for its sampler)
 - Atlases built from `.atlist` image lists by the atlas creator during the build, and font
@@ -130,6 +132,7 @@ doesn't take.
 | 20   | Animation   | A lane per kind of easing with a cube sliding across, round after round (in, out, in-out); a cube spinning forever; a cube fading in and out, then removed and replaced; the scene's camera dollying in and swaying |
 | 21   | Scrolling   | A list of 80 lines of text with a vertical and a horizontal scrollbar, made with `feather-ui`: drag the knobs, click the tracks to page, turn the wheel; the scrollbars hide when everything fits. Lines and letters outside the view are hidden (there is no clipping) |
 | 22   | Tennis ball | A tennis ball turning under a light from the side: a material with two textures, the felt's colours and a normal map (a linear atlas) that gives the seam its groove and the felt its fuzz, with the tangent frame computed in the fragment shader. Both images are made by `tools/scripts/make_tennis_ball_textures.py` |
+| 23   | Drive-in    | A drive-in cinema at night: two of the city's cars parked before a big screen that shows demo 0's turning room, live: the room's scene is drawn into a scene texture every frame. The screen lights the lot and the cars with the movie's average colour (the texture's smallest mipmap); the camera sways behind the cars |
 
 Each demo is in its own file, `apps/testapp/src/testapp/demo_NNN_<name>.rs`, and its own
 resources are named `demo_NNN_<name>_<kind>` (`scene`, `atlas`, `shader`, ...). Models and images
@@ -352,6 +355,7 @@ crates/
     camera.rs        cameras: perspective or orthographic
     shadow.rs, shadowpass.rs
                      shadow lights, and the shadow pass drawing casters into shadow maps
+    scenetexture.rs  scene textures on the GPU: drawing texture scenes into them, and mipmaps
     instance.rs, physicaldevice.rs, logicaldevice.rs, swapchain.rs, pipeline.rs, ...
                      Vulkan object wrappers
   feather-ui/        the UI library (crate `feather_ui`): Hud, widgets (layouts, labels, buttons,
@@ -539,6 +543,38 @@ Each scene keeps its own GPU state (mesh buffers, atlases, pipelines), released 
 stops drawing it.
 
 The test app's demos draw one scene, unless they override `Demo::scene_count` and `scene_at`. Demo 11 draws demo 0's room with a 2D overlay over it.
+
+### Scenes in textures
+
+A scene can also be drawn into a texture of another scene, every frame, before the window's
+scenes: a **scene texture**. It is an atlas with a size but no pixels (`Atlas::scene_texture`, or
+`"scene_texture"` in a scene file), which materials use like any atlas:
+
+```json
+"atlases": [{ "name": "Screen", "scene_texture": { "width": 1280, "height": 544 } }]
+```
+
+The app lists the scenes it draws into textures, and where, next to the window's scenes:
+
+```rust
+fn get_num_texture_scenes(&self) -> usize { 1 }
+
+fn get_texture_scene(&mut self, _index: usize) -> (&mut Scene, SceneTextureTarget) {
+    let target = SceneTextureTarget { scene: self.cinema.get_id(), atlas: self.screen };
+    (&mut self.movie, target)
+}
+```
+
+The texture scene is drawn through its active camera, with the texture's aspect, into its own
+render pass: with the device's multisampling (as the window), resolved into the texture, unless
+the scene texture says `"msaa": false`. Then its mipmaps are made again, so the texture is
+filtered like an image at any distance, and its smallest level is the scene's average colour.
+The target must be one of the window's scenes; a texture scene's own scene textures stay empty
+(no nesting). Until a scene is drawn into it, a scene texture samples as the fallback texture.
+`FrameStats::texture_scenes` has the stats of each texture scene.
+
+In the test app, a demo lists its texture scenes with `Demo::texture_scene_count` and
+`texture_scene_at`. Demo 23 (the drive-in) shows demo 0's room on a cinema screen.
 
 ### Bones and animation
 

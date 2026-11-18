@@ -72,6 +72,7 @@ pub struct TestHud {
     /// (the rest are the HUD's), and the collect time summed over the frames since they were
     /// last shown.
     stats: Vec<SceneStats>,
+    texture_stats: Vec<SceneStats>,
     demo_scenes: usize,
     collect_time: f32,
     stats_frames: u32,
@@ -173,6 +174,7 @@ impl TestHud {
             seconds: 0.0,
             last_time: None,
             stats: Vec::new(),
+            texture_stats: Vec::new(),
             demo_scenes: 0,
             collect_time: 0.0,
             stats_frames: 0,
@@ -210,10 +212,12 @@ impl TestHud {
     }
 
     /// The engine's stats of the frame just collected, shown with the frame rate: the collect
-    /// time averaged over the frames since the last time, then two lines per scene, the demo's
-    /// ("Scene 0", ...) and the last `hud_scenes`, the HUD's own, drawn after them ("HUD").
+    /// time averaged over the frames since the last time, then two lines per scene: the
+    /// texture scenes' ("Texture 0", ...), the demo's ("Scene 0", ...) and the last
+    /// `hud_scenes`, the HUD's own, drawn after them ("HUD").
     pub fn set_frame_stats(&mut self, stats: &FrameStats, hud_scenes: usize) {
         self.stats.clone_from(&stats.scenes);
+        self.texture_stats.clone_from(&stats.texture_scenes);
         self.demo_scenes = stats.scenes.len().saturating_sub(hud_scenes);
         self.collect_time += stats.collect_time;
         self.stats_frames += 1;
@@ -254,16 +258,22 @@ impl TestHud {
                 if self.stats_frames > 0 {
                     let ms = self.collect_time / self.stats_frames as f32 * 1000.0;
                     shown += &format!("  {ms:.2} ms");
-                    let lines = self
-                        .stats
+                    let textures = self
+                        .texture_stats
                         .iter()
                         .enumerate()
-                        .map(|(index, s)| {
-                            let name = if index < self.demo_scenes {
-                                format!("Scene {index}")
-                            } else {
-                                "HUD".to_string()
-                            };
+                        .map(|(index, s)| (format!("Texture {index}"), s));
+                    let scenes = self.stats.iter().enumerate().map(|(index, s)| {
+                        let name = if index < self.demo_scenes {
+                            format!("Scene {index}")
+                        } else {
+                            "HUD".to_string()
+                        };
+                        (name, s)
+                    });
+                    let lines = textures
+                        .chain(scenes)
+                        .map(|(name, s)| {
                             let draws = format!(
                                 "{name}: {} draws  {} culled  {} shadow",
                                 s.draws, s.culled, s.shadow_draws

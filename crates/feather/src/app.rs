@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
@@ -40,7 +40,7 @@ use super::buffers::FrameUniformBuffer;
 use super::colorobjects::create_color_objects;
 use super::commandbuffers::{create_command_buffers, record_command_buffer, GpuDraw};
 use super::commandpool::create_command_pool;
-use super::dephobjects::create_depth_objects;
+use super::dephobjects::{create_depth_objects, get_depth_format};
 use super::featherapp::{FeatherApp, FrameStats, SceneStats, PIXELS_PER_WHEEL_LINE};
 use super::framebuffers::create_framebuffers;
 use super::gpuimage::{create_texture_sampler, GpuImage, UploadContext};
@@ -53,7 +53,8 @@ use super::object::Object;
 use super::physicaldevice::{pick_physical_device, DeviceFeatures};
 use super::pipeline::{create_render_pass, PipelineKey, PipelineTarget, ShaderPipeline};
 use super::queuefamilyindices::QueueFamilyIndices;
-use super::scene::{sort_for_rendering, Culling};
+use super::scene::{sort_for_rendering, Culling, Scene};
+use super::scenetexture::{SceneTextureGpu, TexturePass};
 use super::shadowpass::{ShadowDraw, ShadowMap, ShadowPass, ShadowRenderer};
 use super::surface;
 use super::swapchain::Swapchain;
@@ -64,6 +65,41 @@ use super::uniformdata::{
     engine_uniforms, pack_draw, sampler_sources, SamplerSource, UniformArena, UniformValues,
 };
 use cgmath::SquareMatrix;
+
+/// What a frame draws (`App::collect_draws`): every draw, texture scenes' first, and the
+/// passes that use them.
+struct FrameDraws {
+    draws: Vec<GpuDraw>,
+    shadow_passes: Vec<ShadowPass>,
+    texture_passes: Vec<TexturePass>,
+    /// The window's draws in `draws`, after the texture scenes'.
+    window_draws: std::ops::Range<usize>,
+    /// The uniforms of every draw.
+    arena: UniformArena,
+}
+
+/// A scene the app gives the engine: one of the window's scenes or a texture scene, by index.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SceneSlot {
+    Window(usize),
+    Texture(usize),
+}
+
+/// The scene in `slot`.
+fn scene_in(app: &mut dyn FeatherApp, slot: SceneSlot) -> &mut Scene {
+    match slot {
+        SceneSlot::Window(index) => app.get_scene_to_render(index),
+        SceneSlot::Texture(index) => app.get_texture_scene(index).0,
+    }
+}
+
+/// Every scene the app gives the engine: the texture scenes, then the window's scenes.
+fn scene_slots(app: &dyn FeatherApp) -> Vec<SceneSlot> {
+    (0..app.get_num_texture_scenes())
+        .map(SceneSlot::Texture)
+        .chain((0..app.get_num_scenes_to_render()).map(SceneSlot::Window))
+        .collect()
+}
 
 /// Our Vulkan app.
 pub struct App {
@@ -241,8 +277,8 @@ impl App {
     /// to `on_update`), places new meshes in mesh buffers and updates node uniforms and
     /// transforms.
     fn prepare_scenes(&mut self, time: f32) -> Result<()> {
-        for i in 0..self.data.app.get_num_scenes_to_render() {
-            let scene = self.data.app.get_scene_to_render(i);
+        for slot in scene_slots(&*self.data.app) {
+            let scene = scene_in(&mut *self.data.app, slot);
             scene.advance_animations_to(time);
             scene.build_missing_mesh_buffers()?;
             scene.update_nodes();
@@ -297,54 +333,149 @@ impl App {
         }
     }
 
-    /// Collects the draw calls of every rendered scene, scene after scene, each in drawing
-    /// order (`sort_for_rendering`: opaque by shader, then transparent back to front) and seen
+    /// Collects the draw calls of every texture scene, each into its scene texture, then of
+    /// every scene of the window, scene after scene, each in drawing order
+    /// (`sort_for_rendering`: opaque by shader, then transparent back to front) and seen
     /// through its active camera, and packs their uniforms into the returned arena; and the
     /// shadow passes of the scenes with a shadow light. Scenes without a camera are skipped. The
-    /// first draw of every scene but the first clears the depth buffer, so later scenes are
-    /// drawn over earlier ones. Creates the pipelines of shaders drawn for the first time.
+    /// first draw of every window scene but the first clears the depth buffer, so later scenes
+    /// are drawn over earlier ones. Creates the pipelines of shaders drawn for the first time.
     /// `stats` gets a `SceneStats` per scene (its `collect_time` is filled in by `render`).
-    unsafe fn collect_draws(
-        &mut self,
-        stats: &mut FrameStats,
-    ) -> Result<(Vec<GpuDraw>, Vec<ShadowPass>, UniformArena)> {
-        let mut arena = UniformArena::new(self.data.min_uniform_alignment as usize);
-        let mut draws = Vec::new();
-        let mut shadow_passes = Vec::new();
-        for index in 0..self.data.app.get_num_scenes_to_render() {
-            let first_draw = draws.len();
+    unsafe fn collect_draws(&mut self, stats: &mut FrameStats) -> Result<FrameDraws> {
+        let mut frame = FrameDraws {
+            draws: Vec::new(),
+            shadow_passes: Vec::new(),
+            texture_passes: Vec::new(),
+            window_draws: 0..0,
+            arena: UniformArena::new(self.data.min_uniform_alignment as usize),
+        };
+        let window_scenes: Vec<u64> = (0..self.data.app.get_num_scenes_to_render())
+            .map(|i| self.data.app.get_scene_to_render(i).get_id())
+            .collect();
+
+        // Texture scenes, into the scene textures of the window's scenes.
+        let mut drawn = HashSet::new();
+        let mut texture_scenes = HashSet::new();
+        for index in 0..self.data.app.get_num_texture_scenes() {
             let mut scene_stats = SceneStats::default();
+            let (scene, target) = self.data.app.get_texture_scene(index);
+            let scene_id = scene.get_id();
+            let problem = if window_scenes.contains(&scene_id) {
+                Some("is also one of the window's scenes".to_string())
+            } else if !texture_scenes.insert(scene_id) {
+                Some("is listed twice".to_string())
+            } else if !window_scenes.contains(&target.scene) {
+                Some(format!(
+                    "is drawn into scene {}, which isn't one of the window's scenes",
+                    target.scene
+                ))
+            } else if !drawn.insert((target.scene, target.atlas)) {
+                Some(format!(
+                    "is drawn into scene texture {} of scene {}, which another texture scene \
+                     is drawn into",
+                    target.atlas, target.scene
+                ))
+            } else {
+                None
+            };
+            let pass = self
+                .data
+                .scenes
+                .get(&target.scene)
+                .and_then(|gpu| gpu.scene_textures.get(&target.atlas))
+                .map(|texture| (texture.pass(0..0), texture.samples));
+            let problem = problem.or_else(|| {
+                pass.is_none().then(|| {
+                    format!(
+                        "is drawn into atlas {} of scene {}, which isn't a scene texture",
+                        target.atlas, target.scene
+                    )
+                })
+            });
+            let gpu = self.data.scenes.entry(scene_id).or_default();
+            if let Some(problem) = problem {
+                drawn.remove(&(target.scene, target.atlas));
+                if !gpu.warned_texture_target {
+                    log::warn!("Texture scene {index} {problem}; it isn't drawn");
+                    gpu.warned_texture_target = true;
+                }
+                stats.texture_scenes.push(scene_stats);
+                continue;
+            }
+            gpu.warned_texture_target = false;
+            let (mut pass, samples) = pass.unwrap();
+            let target = PipelineTarget {
+                render_pass: pass.render_pass,
+                msaa_samples: samples,
+                sample_shading: self.data.features.sample_rate_shading
+                    && samples != vk::SampleCountFlags::_1,
+                extent: pass.extent,
+            };
+            let first_draw = frame.draws.len();
             self.collect_scene_draws(
-                index,
-                &mut draws,
-                &mut shadow_passes,
-                &mut arena,
+                SceneSlot::Texture(index),
+                &target,
+                &HashSet::new(),
+                &mut frame,
                 &mut scene_stats,
             )?;
-            scene_stats.draws = draws.len() - first_draw;
+            scene_stats.draws = frame.draws.len() - first_draw;
+            pass.draws = first_draw..frame.draws.len();
+            frame.texture_passes.push(pass);
+            stats.texture_scenes.push(scene_stats);
+        }
+
+        // The window's scenes.
+        let window_start = frame.draws.len();
+        let window_target = PipelineTarget {
+            render_pass: self.data.render_pass,
+            msaa_samples: self.data.msaa_samples,
+            sample_shading: self.data.features.sample_rate_shading,
+            extent: self.data.swapchain.swapchain_extent,
+        };
+        for index in 0..self.data.app.get_num_scenes_to_render() {
+            let first_draw = frame.draws.len();
+            let mut scene_stats = SceneStats::default();
+            self.collect_scene_draws(
+                SceneSlot::Window(index),
+                &window_target,
+                &drawn,
+                &mut frame,
+                &mut scene_stats,
+            )?;
+            scene_stats.draws = frame.draws.len() - first_draw;
             stats.scenes.push(scene_stats);
             if index > 0 {
-                if let Some(draw) = draws.get_mut(first_draw) {
+                if let Some(draw) = frame.draws.get_mut(first_draw) {
                     draw.clear_depth = true;
                 }
             }
         }
-        Ok((draws, shadow_passes, arena))
+        frame.window_draws = window_start..frame.draws.len();
+        Ok(frame)
     }
 
-    /// Adds the draws of scene `index` to `draws`, and its shadow pass to `shadow_passes` (see
-    /// `collect_draws`). `stats` gets the scene's resources, culled nodes and shadow draws.
+    /// Adds the draws of the scene in `slot`, drawn into `target`, to `frame.draws`, and its
+    /// shadow pass to `frame.shadow_passes` (see `collect_draws`). Its samplers sample its
+    /// scene textures that were `drawn` this frame (by `(scene id, atlas)`); the others sample
+    /// the fallback texture. `stats` gets the scene's resources, culled nodes and shadow draws.
     unsafe fn collect_scene_draws(
         &mut self,
-        index: usize,
-        draws: &mut Vec<GpuDraw>,
-        shadow_passes: &mut Vec<ShadowPass>,
-        arena: &mut UniformArena,
+        slot: SceneSlot,
+        target: &PipelineTarget,
+        drawn: &HashSet<(u64, usize)>,
+        frame: &mut FrameDraws,
         stats: &mut SceneStats,
     ) -> Result<()> {
-        let extent = self.data.swapchain.swapchain_extent;
+        let FrameDraws {
+            draws,
+            shadow_passes,
+            arena,
+            ..
+        } = frame;
+        let extent = target.extent;
         let data = &mut self.data;
-        let scene = data.app.get_scene_to_render(index);
+        let scene = scene_in(&mut *data.app, slot);
         let scene_id = scene.get_id();
         stats.nodes = scene.nodes.len();
         stats.meshes = scene.meshes.len();
@@ -355,7 +486,7 @@ impl App {
         // Seen through the scene's active camera; a scene without a camera isn't drawn.
         let Some(camera) = scene.active_camera_mut() else {
             if !gpu.warned_no_camera {
-                log::warn!("Scene {index} has no camera; it isn't drawn");
+                log::warn!("Scene {slot:?} has no camera; it isn't drawn");
                 gpu.warned_no_camera = true;
             }
             return Ok(());
@@ -391,12 +522,15 @@ impl App {
         let items = scene.draw_items(Some(&culling));
         stats.culled = culling.culled_count();
 
-        let target = PipelineTarget {
-            render_pass: data.render_pass,
-            msaa_samples: data.msaa_samples,
-            sample_shading: data.features.sample_rate_shading,
-            extent,
-        };
+        // Pipelines built for another target (e.g. the scene's texture changed) are rebuilt.
+        let target_key = (target.render_pass, target.msaa_samples, target.extent);
+        if gpu.pipeline_target != Some(target_key) {
+            if !gpu.shader_pipelines.is_empty() {
+                self.device.device_wait_idle()?;
+                gpu.destroy_pipelines(&self.device);
+            }
+            gpu.pipeline_target = Some(target_key);
+        }
         let fallback_view = data.fallback_texture.as_ref().unwrap().view;
 
         // Shadows: the casters, drawn from the light into the scene's shadow map. Shaders
@@ -449,7 +583,7 @@ impl App {
             }
             let shader = scene.get_shader(item.shader).unwrap();
             if !gpu.shader_pipelines.contains_key(&key) {
-                match ShaderPipeline::create(&self.device, &target, shader, key.transparent) {
+                match ShaderPipeline::create(&self.device, target, shader, key.transparent) {
                     Ok(pipeline) => {
                         gpu.shader_pipelines.insert(key, pipeline);
                     }
@@ -497,8 +631,15 @@ impl App {
                     SamplerSource::ShadowMap => (shadow_view, shadow_sampler),
                     SamplerSource::Atlas(atlas) => (
                         atlas
-                            .and_then(|a| gpu.gpu_atlases.get(&a))
-                            .map_or(fallback_view, |image| image.view),
+                            .and_then(|a| {
+                                gpu.gpu_atlases.get(&a).map(|image| image.view).or_else(|| {
+                                    drawn
+                                        .contains(&(scene_id, a))
+                                        .then(|| gpu.scene_textures.get(&a).map(|t| t.view))
+                                        .flatten()
+                                })
+                            })
+                            .unwrap_or(fallback_view),
                         data.texture_sampler,
                     ),
                 })
@@ -608,21 +749,24 @@ impl App {
     /// longer rendered; uploads new mesh buffers and atlases of each rendered scene, and
     /// releases removed ones.
     unsafe fn sync_gpu_state(&mut self) -> Result<()> {
-        let count = self.data.app.get_num_scenes_to_render();
-        let rendered: Vec<u64> = (0..count)
-            .map(|i| self.data.app.get_scene_to_render(i).get_id())
+        let slots = scene_slots(&*self.data.app);
+        let rendered: Vec<u64> = slots
+            .iter()
+            .map(|&slot| scene_in(&mut *self.data.app, slot).get_id())
             .collect();
         self.release_unrendered_scenes(&rendered)?;
-        for index in 0..count {
-            self.sync_scene(index)?;
+        for slot in slots {
+            self.sync_scene(slot)?;
         }
         Ok(())
     }
 
-    /// Uploads new mesh buffers and atlases of scene `index` and releases removed ones.
-    unsafe fn sync_scene(&mut self, index: usize) -> Result<()> {
+    /// Uploads new mesh buffers and atlases of the scene in `slot` and releases removed ones;
+    /// creates the scene textures of the window's scenes.
+    unsafe fn sync_scene(&mut self, slot: SceneSlot) -> Result<()> {
+        let depth_format = get_depth_format(&self.instance, &self.data)?;
         let data = &mut self.data;
-        let scene = data.app.get_scene_to_render(index);
+        let scene = scene_in(&mut *data.app, slot);
         let gpu = data.scenes.entry(scene.get_id()).or_default();
 
         let upload = UploadContext {
@@ -681,6 +825,40 @@ impl App {
         }
         gpu.failed_atlases.retain(|&h| scene.get_atlas(h).is_some());
 
+        // Scene textures: the window's scenes' only (no nesting). Removed ones, or ones whose
+        // size or sampling changed, are dropped like atlases.
+        let wanted_texture = |handle: usize| {
+            let atlas = scene.get_atlas(handle)?;
+            let options = atlas.get_scene_texture()?;
+            let samples = if options.msaa {
+                data.msaa_samples
+            } else {
+                vk::SampleCountFlags::_1
+            };
+            Some((atlas.get_width(), atlas.get_height(), samples))
+        };
+        let window_scene = matches!(slot, SceneSlot::Window(_));
+        let stale: Vec<usize> = gpu
+            .scene_textures
+            .iter()
+            .filter(|(&h, t)| {
+                !window_scene || wanted_texture(h) != Some((t.width, t.height, t.samples))
+            })
+            .map(|(&h, _)| h)
+            .collect();
+        if !stale.is_empty() {
+            self.device.device_wait_idle()?;
+            gpu.shader_pipelines
+                .drain()
+                .for_each(|(_, p)| p.destroy(&self.device));
+            for handle in stale {
+                gpu.scene_textures
+                    .remove(&handle)
+                    .unwrap()
+                    .destroy(&self.device);
+            }
+        }
+
         // The shadow map, as big as the scene's shadow light wants it.
         let wanted = scene.get_shadow_light().map(|l| l.map_size);
         if gpu.shadow_map.as_ref().map(|m| m.size) != wanted {
@@ -705,7 +883,36 @@ impl App {
 
         for atlas in scene.atlases.iter() {
             let handle = atlas.get_handle();
-            if gpu.gpu_atlases.contains_key(&handle) || gpu.failed_atlases.contains(&handle) {
+            if gpu.gpu_atlases.contains_key(&handle)
+                || gpu.failed_atlases.contains(&handle)
+                || gpu.scene_textures.contains_key(&handle)
+            {
+                continue;
+            }
+            if let Some((width, height, samples)) = wanted_texture(handle) {
+                if !window_scene {
+                    continue;
+                }
+                match SceneTextureGpu::create(
+                    &self.instance,
+                    &self.device,
+                    data.physical_device,
+                    width,
+                    height,
+                    samples,
+                    depth_format,
+                ) {
+                    Ok(texture) => {
+                        gpu.scene_textures.insert(handle, texture);
+                    }
+                    Err(e) => {
+                        log::error!(
+                            "Cannot create scene texture {}: {e:#}",
+                            atlas.get_name().unwrap_or_else(|| handle.to_string())
+                        );
+                        gpu.failed_atlases.insert(handle);
+                    }
+                }
                 continue;
             }
             match GpuImage::upload_rgba(
@@ -765,16 +972,18 @@ impl App {
 
         let collect_start = Instant::now();
         let mut stats = FrameStats::default();
-        let (mut draws, shadow_passes, arena) = self.collect_draws(&mut stats)?;
+        let mut frame = self.collect_draws(&mut stats)?;
         stats.collect_time = collect_start.elapsed().as_secs_f32();
         self.report_frame_stats(&stats);
-        self.upload_uniforms(image_index, &arena, &mut draws)?;
+        self.upload_uniforms(image_index, &frame.arena, &mut frame.draws)?;
         record_command_buffer(
             &self.device,
             &self.data,
             image_index,
-            &shadow_passes,
-            &draws,
+            &frame.shadow_passes,
+            &frame.texture_passes,
+            &frame.draws,
+            frame.window_draws.clone(),
         )?;
 
         let wait_semaphores = &[self.data.image_available_semaphores[self.frame]];

@@ -8,6 +8,7 @@ use super::gpuimage::GpuImage;
 use super::gpumeshbuffer::GpuMeshBuffer;
 use super::physicaldevice::DeviceFeatures;
 use super::pipeline::{PipelineKey, ShaderPipeline};
+use super::scenetexture::SceneTextureGpu;
 use super::shadowpass::{ShadowMap, ShadowRenderer};
 use super::swapchain::Swapchain;
 use super::uniformdata::UniformIssue;
@@ -93,6 +94,14 @@ pub struct SceneGpuState {
     pub shadow_map: Option<ShadowMap>,
     /// Whether the scene not having a camera was logged (once until it has one again).
     pub warned_no_camera: bool,
+    /// The scene's scene textures (`Atlas::scene_texture`), by atlas handle, while it is one
+    /// of the window's scenes.
+    pub scene_textures: HashMap<usize, SceneTextureGpu>,
+    /// What the pipelines were built for (render pass, samples, extent): the window, or a
+    /// scene texture for a texture scene. They are rebuilt when it changes.
+    pub pipeline_target: Option<(vk::RenderPass, vk::SampleCountFlags, vk::Extent2D)>,
+    /// Whether a problem with this texture scene's target was logged (once until it is fixed).
+    pub warned_texture_target: bool,
 }
 
 impl SceneGpuState {
@@ -103,6 +112,7 @@ impl SceneGpuState {
             .drain()
             .for_each(|(_, p)| p.destroy(device));
         self.failed_pipelines.clear();
+        self.pipeline_target = None;
     }
 
     /// Destroys everything. The GPU must not be using any of it.
@@ -117,5 +127,8 @@ impl SceneGpuState {
         if let Some(map) = self.shadow_map.take() {
             map.destroy(device);
         }
+        self.scene_textures
+            .drain()
+            .for_each(|(_, t)| t.destroy(device));
     }
 }

@@ -5,7 +5,7 @@ use winit::keyboard::KeyCode;
 #[cfg(windows)]
 use feather::assetsprovider::create_assets_provider;
 use feather::assetsprovider::AssetsProvider;
-use feather::featherapp::{FeatherApp, FrameStats};
+use feather::featherapp::{FeatherApp, FrameStats, SceneTextureTarget};
 use feather::scene::Scene;
 
 use super::demo_000_viking_room::VikingRoomDemo;
@@ -31,6 +31,7 @@ use super::demo_019_spider::SpiderShadowDemo;
 use super::demo_020_animation::AnimationDemo;
 use super::demo_021_scrolling::ScrollingDemo;
 use super::demo_022_tennis_ball::TennisBallDemo;
+use super::demo_023_drive_in::DriveInDemo;
 use super::testapp_hud::{HudAction, TestHud};
 
 /// One demo of the test app: a scene, seen through its active camera, and its animation. A
@@ -46,6 +47,16 @@ pub trait Demo {
     /// Scene `index` (`0..scene_count()`).
     fn scene_at(&mut self, _index: usize) -> &mut Scene {
         self.scene()
+    }
+    /// How many scenes the demo draws into textures of its scenes (see
+    /// `FeatherApp::get_num_texture_scenes`); none by default.
+    fn texture_scene_count(&self) -> usize {
+        0
+    }
+    /// Texture scene `index` (`0..texture_scene_count()`) and the scene texture it is drawn
+    /// into.
+    fn texture_scene_at(&mut self, _index: usize) -> (&mut Scene, SceneTextureTarget) {
+        unreachable!("the demo has no texture scenes")
     }
     /// Called every frame; `time` is in seconds since the demo started.
     fn update(&mut self, time: f32) -> Result<()>;
@@ -184,6 +195,10 @@ pub const DEMOS: &[DemoInfo] = &[
         name: "Tennis ball",
         create: |assets| Ok(Box::new(TennisBallDemo::new(assets)?)),
     },
+    DemoInfo {
+        name: "Drive-in",
+        create: |assets| Ok(Box::new(DriveInDemo::new(assets)?)),
+    },
 ];
 
 /// The development app: shows one demo at a time. The left and right arrow keys, and the
@@ -239,6 +254,14 @@ impl FeatherApp for TestApp {
         } else {
             self.hud.scene()
         }
+    }
+
+    fn get_num_texture_scenes(&self) -> usize {
+        self.demo.texture_scene_count()
+    }
+
+    fn get_texture_scene(&mut self, index: usize) -> (&mut Scene, SceneTextureTarget) {
+        self.demo.texture_scene_at(index)
     }
 
     fn on_key_pressed(&mut self, key: KeyCode) -> Result<()> {
@@ -564,6 +587,63 @@ mod tests {
         let second = transforms(&mut demo);
         assert_ne!(first[0], second[0], "the axis doesn't sway");
         assert_ne!(first[1], second[1], "the ball doesn't spin");
+    }
+
+    #[test]
+    fn drive_in_demo_draws_the_movie_into_its_screen() {
+        let mut demo = demo(23);
+        assert_eq!(demo.scene_count(), 1);
+        assert_eq!(demo.texture_scene_count(), 1);
+
+        let drive_in = demo.scene();
+        let drive_in_id = drive_in.get_id();
+        let screen = drive_in.find_atlas("Screen").unwrap();
+        let atlas = drive_in.get_atlas(screen).unwrap();
+        assert_eq!((atlas.get_width(), atlas.get_height()), (1280, 544));
+        assert!(atlas.get_scene_texture().unwrap().msaa);
+        // The screen shows the texture; the cars' second texture is the screen too (its light).
+        fn node<'a>(scene: &'a Scene, name: &str) -> &'a feather::node::Node {
+            scene.get_node(scene.find_node(name).unwrap()).unwrap()
+        }
+        fn material<'a>(scene: &'a Scene, name: &str) -> &'a feather::material::Material {
+            let node = node(scene, name);
+            scene.get_material(node.get_material().unwrap()).unwrap()
+        }
+        assert_eq!(
+            material(drive_in, "Screen")
+                .get_texture()
+                .unwrap()
+                .get_atlas(),
+            screen
+        );
+        let car = material(drive_in, "Sedan");
+        assert_eq!(car.get_texture_at(1).unwrap().get_atlas(), screen);
+        assert_eq!(
+            car.get_texture_at(0).unwrap().get_atlas(),
+            drive_in.find_atlas("City").unwrap()
+        );
+
+        let (movie, target) = demo.texture_scene_at(0);
+        assert_eq!(
+            target,
+            SceneTextureTarget {
+                scene: drive_in_id,
+                atlas: screen
+            }
+        );
+        assert_ne!(movie.get_id(), drive_in_id);
+        assert!(movie.find_node("Room").is_some());
+
+        // The room turns and the camera sways.
+        let room =
+            |demo: &mut Box<dyn Demo>| node(demo.texture_scene_at(0).0, "Room").get_transform();
+        let eye =
+            |demo: &mut Box<dyn Demo>| demo.scene().active_camera().unwrap().get_eye_position();
+        demo.update(1.0).unwrap();
+        let (room1, eye1) = (room(&mut demo), eye(&mut demo));
+        demo.update(3.0).unwrap();
+        assert_ne!(room(&mut demo), room1, "the room doesn't turn");
+        assert_ne!(eye(&mut demo), eye1, "the camera doesn't sway");
     }
 
     #[test]
@@ -1550,6 +1630,7 @@ mod tests {
         };
         let stats = |draws, collect_time| FrameStats {
             scenes: vec![scene(draws, 1000), scene(2, 200), scene(77, 77)],
+            texture_scenes: Vec::new(),
             collect_time,
         };
         let panel = hud.panel();
@@ -1589,6 +1670,7 @@ mod tests {
         hud.set_frame_stats(
             &FrameStats {
                 scenes: vec![scene(3, 3), scene(77, 77)],
+                texture_scenes: Vec::new(),
                 collect_time: 0.001,
             },
             1,
@@ -1605,6 +1687,25 @@ mod tests {
             ]
         );
         assert!(height(&hud) < three_scenes);
+
+        // Texture scenes come first.
+        hud.set_frame_stats(
+            &FrameStats {
+                scenes: vec![scene(3, 3), scene(77, 77)],
+                texture_scenes: vec![scene(9, 9)],
+                collect_time: 0.001,
+            },
+            1,
+        );
+        hud.update(1.5).unwrap();
+        assert_eq!(
+            hud.get_scene_lines()[0],
+            (
+                "Texture 0: 9 draws  205 culled  40 shadow",
+                counts(9).as_str()
+            )
+        );
+        assert_eq!(hud.get_scene_lines().len(), 3);
     }
 
     #[test]

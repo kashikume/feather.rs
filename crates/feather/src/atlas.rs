@@ -27,6 +27,14 @@ pub enum ColorSpace {
     Linear,
 }
 
+/// How a scene texture (`Atlas::scene_texture`) is drawn.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SceneTextureOptions {
+    /// Draw with the device's multisampling (as the window is drawn), resolved into the
+    /// texture; `false` draws with one sample.
+    pub msaa: bool,
+}
+
 /// An image that textures are cut from. Pixels are stored as 8-bit RGBA, row by row, in the
 /// atlas's `ColorSpace`, fixed when it is made.
 ///
@@ -39,6 +47,8 @@ pub struct Atlas {
     height: u32,
     pixels: Vec<u8>,
     color_space: ColorSpace,
+    /// Set for a scene texture (`scene_texture`): no pixels, drawn by a scene every frame.
+    scene_texture: Option<SceneTextureOptions>,
     /// Named rectangles, from the metadata.
     regions: HashMap<String, AtlasRegion>,
 }
@@ -117,8 +127,41 @@ impl Atlas {
             height,
             pixels,
             color_space,
+            scene_texture: None,
             regions: HashMap::new(),
         }
+    }
+
+    /// Creates a **scene texture**: an atlas `width` x `height` pixels with no pixels of its
+    /// own, which a scene is drawn into every frame (`FeatherApp::get_texture_scene`). Materials
+    /// use it like any atlas (e.g. `get_full_texture`). It holds sRGB colours, and has mipmaps,
+    /// made again every frame. Until a scene is drawn into it, it samples as the fallback
+    /// texture. Panics if a size is 0.
+    pub fn scene_texture(
+        name: Option<String>,
+        width: u32,
+        height: u32,
+        options: SceneTextureOptions,
+    ) -> Self {
+        assert!(
+            width > 0 && height > 0,
+            "scene texture of size {width}x{height}"
+        );
+        Self {
+            name,
+            handle: usize::MAX,
+            width,
+            height,
+            pixels: Vec::new(),
+            color_space: ColorSpace::Srgb,
+            scene_texture: Some(options),
+            regions: HashMap::new(),
+        }
+    }
+
+    /// The options of a scene texture (`scene_texture`); `None` for an atlas with pixels.
+    pub fn get_scene_texture(&self) -> Option<SceneTextureOptions> {
+        self.scene_texture
     }
 
     /// Replaces the named rectangles with those in `text` (see `parse_metadata`). Fails, keeping
@@ -157,7 +200,7 @@ impl Atlas {
         self.color_space
     }
 
-    /// 8-bit RGBA pixels, row by row, `width * height * 4` bytes.
+    /// 8-bit RGBA pixels, row by row, `width * height * 4` bytes; empty for a scene texture.
     pub fn get_pixels(&self) -> &[u8] {
         &self.pixels
     }
@@ -293,6 +336,24 @@ mod tests {
     /// 4x2 atlas with no metadata.
     fn atlas_4x2() -> Atlas {
         Atlas::from_rgba(None, 4, 2, vec![0; 4 * 2 * 4], ColorSpace::Srgb)
+    }
+
+    #[test]
+    fn scene_texture_has_a_size_and_no_pixels() {
+        let options = SceneTextureOptions { msaa: false };
+        let atlas = Atlas::scene_texture(Some("Screen".to_string()), 640, 272, options);
+        assert_eq!((atlas.get_width(), atlas.get_height()), (640, 272));
+        assert!(atlas.get_pixels().is_empty());
+        assert_eq!(atlas.get_scene_texture(), Some(options));
+        assert_eq!(atlas.get_color_space(), ColorSpace::Srgb);
+        assert_eq!(atlas.get_full_texture(), Texture::full(atlas.get_handle()));
+        assert_eq!(test_atlas(None).get_scene_texture(), None);
+    }
+
+    #[test]
+    #[should_panic(expected = "scene texture of size")]
+    fn scene_texture_of_size_zero_panics() {
+        Atlas::scene_texture(None, 0, 10, SceneTextureOptions { msaa: true });
     }
 
     #[test]

@@ -1,8 +1,11 @@
+use std::ops::Range;
+
 use anyhow::Result;
 use vulkanalia::prelude::v1_0::*;
 
 use super::appdata::AppData;
 use super::pipeline::PipelineKey;
+use super::scenetexture::{record_texture_pass, TexturePass};
 use super::shadowpass::{record_shadow_pass, ShadowPass};
 
 //================================================
@@ -55,14 +58,17 @@ pub unsafe fn create_command_buffers(device: &Device, data: &mut AppData) -> Res
 }
 
 /// Records the command buffer of swapchain image `image_index`: the scenes' shadow passes,
-/// then the main pass, which clears the image and issues `draws` (best sorted by pipeline).
-/// The command buffer must not be in use by the GPU.
+/// the texture scenes' passes (each with its range of `draws`), then the main pass, which
+/// clears the image and issues `draws[window_draws]` (best sorted by pipeline). The command
+/// buffer must not be in use by the GPU.
 pub unsafe fn record_command_buffer(
     device: &Device,
     data: &AppData,
     image_index: usize,
     shadow_passes: &[ShadowPass],
+    texture_passes: &[TexturePass],
     draws: &[GpuDraw],
+    window_draws: Range<usize>,
 ) -> Result<()> {
     let command_buffer = data.command_buffers[image_index];
 
@@ -77,6 +83,9 @@ pub unsafe fn record_command_buffer(
         for pass in shadow_passes {
             record_shadow_pass(device, command_buffer, renderer, pass);
         }
+    }
+    for pass in texture_passes {
+        record_texture_pass(device, command_buffer, pass, draws);
     }
 
     let render_area = vk::Rect2D::builder()
@@ -105,6 +114,28 @@ pub unsafe fn record_command_buffer(
 
     device.cmd_begin_render_pass(command_buffer, &info, vk::SubpassContents::INLINE);
 
+    record_draws(device, command_buffer, &draws[window_draws], *render_area);
+
+    device.cmd_end_render_pass(command_buffer);
+    device.end_command_buffer(command_buffer)?;
+
+    Ok(())
+}
+
+/// Records `draws` inside a begun render pass covering `render_area`, binding pipelines,
+/// descriptor sets and buffers only when they change.
+pub unsafe fn record_draws(
+    device: &Device,
+    command_buffer: vk::CommandBuffer,
+    draws: &[GpuDraw],
+    render_area: vk::Rect2D,
+) {
+    let depth_clear_value = vk::ClearValue {
+        depth_stencil: vk::ClearDepthStencilValue {
+            depth: 1.0,
+            stencil: 0,
+        },
+    };
     let mut bound_pipeline = None;
     let mut bound_buffers = None;
     for draw in draws {
@@ -114,7 +145,7 @@ pub unsafe fn record_command_buffer(
                 .clear_value(depth_clear_value)
                 .build();
             let rect = vk::ClearRect::builder()
-                .rect(*render_area)
+                .rect(render_area)
                 .base_array_layer(0)
                 .layer_count(1)
                 .build();
@@ -172,9 +203,4 @@ pub unsafe fn record_command_buffer(
             0,
         );
     }
-
-    device.cmd_end_render_pass(command_buffer);
-    device.end_command_buffer(command_buffer)?;
-
-    Ok(())
 }

@@ -48,7 +48,9 @@
 //!   lists are optional.
 //! - An atlas is a PNG `bitmap` with optional `metadata` (a `.atlas` file naming rectangles of
 //!   the bitmap, see `atlas::parse_metadata`) and an optional `color_space`: `"srgb"` (default,
-//!   colours) or `"linear"` (data such as normal maps, see `atlas::ColorSpace`).
+//!   colours) or `"linear"` (data such as normal maps, see `atlas::ColorSpace`). Instead of a
+//!   `bitmap`, an atlas can be a `scene_texture` with a `width`, a `height` and an optional
+//!   `msaa` (default `true`): a texture another scene is drawn into (`Atlas::scene_texture`).
 //! - A shader's `texture_samplers` lists the samplers that sample the material's texture
 //!   slots, in slot order (at most `MAX_MATERIAL_TEXTURES`); each is a sampler name, or an
 //!   object with the `sampler` and the four `umin`, `umax`, `vmin`, `vmax` uniforms that get
@@ -90,7 +92,7 @@ use cgmath::{Deg, Matrix2, Matrix3, Matrix4};
 use serde::Deserialize;
 
 use super::assetsprovider::AssetsProvider;
-use super::atlas::ColorSpace;
+use super::atlas::{Atlas, ColorSpace, SceneTextureOptions};
 use super::camera::{Camera, ScreenOrigin, ScreenUnits};
 use super::material::MAX_MATERIAL_TEXTURES;
 use super::math::{IVec2, IVec3, IVec4, Mat4, Point3, UVec2, UVec3, UVec4, Vec2, Vec3, Vec4};
@@ -178,8 +180,10 @@ struct ShadowLightEntry {
 #[serde(deny_unknown_fields)]
 struct AtlasEntry {
     name: String,
-    /// PNG asset.
-    bitmap: String,
+    /// PNG asset. Exactly one of `bitmap` and `scene_texture` must be given.
+    bitmap: Option<String>,
+    /// A texture a scene is drawn into (`Atlas::scene_texture`).
+    scene_texture: Option<SceneTextureEntry>,
     /// `.atlas` asset naming rectangles of the bitmap.
     metadata: Option<String>,
     /// sRGB colours (default) or linear data.
@@ -187,7 +191,16 @@ struct AtlasEntry {
     color_space: ColorSpaceEntry,
 }
 
-#[derive(Deserialize, Default, Clone, Copy)]
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SceneTextureEntry {
+    width: u32,
+    height: u32,
+    /// Multisampling; on when missing.
+    msaa: Option<bool>,
+}
+
+#[derive(Deserialize, Default, Clone, Copy, PartialEq)]
 #[serde(rename_all = "lowercase")]
 enum ColorSpaceEntry {
     #[default]
@@ -423,15 +436,33 @@ impl Scene {
 
         let mut atlases = HashMap::new();
         for entry in &file.atlases {
-            let handle = scene
-                .create_atlas_from_png(
+            let handle = (|| match (&entry.bitmap, &entry.scene_texture) {
+                (Some(bitmap), None) => scene.create_atlas_from_png(
                     assets,
-                    &entry.bitmap,
+                    bitmap,
                     entry.metadata.as_deref(),
                     Some(entry.name.clone()),
                     entry.color_space.into(),
-                )
-                .with_context(|| format!("atlas `{}`", entry.name))?;
+                ),
+                (None, Some(texture)) => {
+                    if entry.metadata.is_some() || entry.color_space != ColorSpaceEntry::Srgb {
+                        bail!("a scene texture has no `metadata` and is always sRGB");
+                    }
+                    if texture.width == 0 || texture.height == 0 {
+                        bail!("scene texture of size {}x{}", texture.width, texture.height);
+                    }
+                    Ok(scene.add_atlas(Atlas::scene_texture(
+                        Some(entry.name.clone()),
+                        texture.width,
+                        texture.height,
+                        SceneTextureOptions {
+                            msaa: texture.msaa.unwrap_or(true),
+                        },
+                    )))
+                }
+                _ => bail!("give exactly one of `bitmap` and `scene_texture`"),
+            })()
+            .with_context(|| format!("atlas `{}`", entry.name))?;
             atlases.insert(entry.name.as_str(), handle);
         }
 
@@ -1113,6 +1144,57 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn loads_scene_textures() {
+        let json = r#"{
+            "atlases": [
+                { "name": "Screen", "scene_texture": { "width": 640, "height": 272 } },
+                { "name": "Sharp", "scene_texture": { "width": 8, "height": 4, "msaa": false } }
+            ],
+            "root": {}
+        }"#;
+        let scene = Scene::from_json(&assets(), json).unwrap();
+        let screen = scene.atlases.get_by_name("Screen").unwrap();
+        assert_eq!((screen.get_width(), screen.get_height()), (640, 272));
+        assert_eq!(
+            screen.get_scene_texture(),
+            Some(SceneTextureOptions { msaa: true })
+        );
+        let sharp = scene.atlases.get_by_name("Sharp").unwrap();
+        assert_eq!(
+            sharp.get_scene_texture(),
+            Some(SceneTextureOptions { msaa: false })
+        );
+
+        for (json, expected) in [
+            (
+                r#"{ "atlases": [{ "name": "A" }], "root": {} }"#,
+                "atlas `A`: give exactly one of `bitmap` and `scene_texture`",
+            ),
+            (
+                r#"{ "atlases": [{ "name": "A", "bitmap": "atlas.png",
+                                   "scene_texture": { "width": 4, "height": 4 } }], "root": {} }"#,
+                "give exactly one",
+            ),
+            (
+                r#"{ "atlases": [{ "name": "A", "scene_texture": { "width": 0, "height": 4 } }],
+                     "root": {} }"#,
+                "scene texture of size 0x4",
+            ),
+            (
+                r#"{ "atlases": [{ "name": "A", "color_space": "linear",
+                                   "scene_texture": { "width": 4, "height": 4 } }], "root": {} }"#,
+                "always sRGB",
+            ),
+        ] {
+            let error = load_error(json);
+            assert!(
+                error.contains(expected),
+                "expected `{expected}` in: {error}"
+            );
+        }
     }
 
     #[test]

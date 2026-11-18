@@ -21,6 +21,7 @@ pub mod demo_019_spider;
 pub mod demo_020_animation;
 pub mod demo_021_scrolling;
 pub mod demo_022_tennis_ball;
+pub mod demo_023_drive_in;
 pub mod random;
 pub mod testapp;
 pub mod testapp_hud;
