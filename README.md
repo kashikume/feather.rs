@@ -79,6 +79,8 @@ What works today:
   - `VK_LAYER_KHRONOS_validation`, which debug builds **require**. Without it, start-up fails with
     `Validation layer requested but not supported.`
 - A GPU and driver that support Vulkan
+- On Windows, the Windows SDK's resource compiler (`rc.exe`), which comes with the MSVC build
+  tools Rust needs: the test app's build compiles its icon into `testapp.exe` with it
 - For Android: the Android SDK and NDK, a JDK, the `aarch64-linux-android` Rust target and
   `cargo-ndk`, and a phone with Vulkan; see [doc/android.md](doc/android.md#setup)
 
@@ -375,8 +377,11 @@ apps/
                      build.rs; images/ holds the listed images, shared between the lists
     resources/       scene files, models (OBJ, converted into .fmesh) and images used whole,
                      copied to assets/ by build.rs; models and images are shared between demos
-    build.rs         compiles shaders, builds atlases, converts meshes and copies assets next
-                     to the executable
+    icon/            the feather icon: feather.ico and testapp.rc (compiled into testapp.exe),
+                     feather_256.png (the window's icon); made by
+                     tools/scripts/make_feather_icon.py, as is the Android launcher icon
+    build.rs         compiles shaders, builds atlases, converts meshes, copies assets next
+                     to the executable and, on Windows, compiles the icon into it
 tools/
   atlas-creator/     packs PNG images into an atlas: command line tool and library
   font-creator/      renders a Windows font's characters to PNG images and an .atlist: command

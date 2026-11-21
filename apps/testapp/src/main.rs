@@ -3,7 +3,7 @@ use winit::dpi::LogicalSize;
 use winit::event_loop::EventLoop;
 use winit::window::Window;
 
-use feather::app::App;
+use feather::app::{window_icon_from_png, App};
 
 use feather_testapp::testapp::testapp::{demo_window_title, TestApp, DEMOS};
 
@@ -16,9 +16,13 @@ fn main() -> Result<()> {
     let demo = demo_from_args(std::env::args().skip(1))?;
 
     let event_loop = EventLoop::new()?;
+    // The feather in the title bar and the taskbar (the .exe's own icon, compiled in by
+    // build.rs, is for Explorer).
+    let icon = window_icon_from_png(include_bytes!("../icon/feather_256.png"))?;
     let window = Window::default_attributes()
         .with_title(demo_window_title(demo))
-        .with_inner_size(LogicalSize::new(1024, 768));
+        .with_inner_size(LogicalSize::new(1024, 768))
+        .with_window_icon(Some(icon));
 
     App::run(event_loop, window, Box::new(TestApp::new(demo)?))
 }

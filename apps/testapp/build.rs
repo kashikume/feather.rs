@@ -17,6 +17,9 @@
 //!   `$OUT_DIR/atlases/<name>/`, packed the same way. Only the `.font` files are in the
 //!   repository.
 //!
+//! - On Windows, `icon/testapp.rc` (the feather icon, `icon/feather.ico`) is compiled into
+//!   `testapp.exe` with the `embed-resource` crate.
+//!
 //! See `feather-build` for how `glslc` is found.
 
 use std::env;
@@ -54,5 +57,14 @@ fn main() {
         for file in [&atlas.png, &atlas.metadata] {
             feather_build::copy_file(file, &assets_dir.join(file.file_name().unwrap()));
         }
+    }
+
+    // Windows: the feather icon in testapp.exe (Explorer, the taskbar), from `icon/testapp.rc`,
+    // compiled by the Windows SDK's resource compiler. Not in the library: Android loads that.
+    if env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
+        println!("cargo:rerun-if-changed=icon/feather.ico");
+        embed_resource::compile_for("icon/testapp.rc", ["testapp"], embed_resource::NONE)
+            .manifest_optional()
+            .expect("failed to compile icon/testapp.rc");
     }
 }

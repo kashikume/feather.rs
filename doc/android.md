@@ -767,6 +767,8 @@ apps/testapp/android/
     src/main/AndroidManifest.xml
     src/main/kotlin/com/kashikume/feather/testapp/MainActivity.kt
     src/main/res/values/strings.xml, themes.xml
+    src/main/res/mipmap-anydpi/ic_launcher.xml, src/main/res/drawable/ic_launcher_*.xml
+                                the launcher icon (see *The launcher icon*)
 ```
 
 | What                       | Version          | Why                                                     |
@@ -832,6 +834,27 @@ To make another app's Android project from this one, change: the package and app
 (`namespace`, `applicationId`, the Kotlin file's package and folder), the library's name (in the
 manifest's `lib_name`, and `-p testapp` in the cargo task), the JNI name of
 `nativeRequestExit` on the Rust side, and the app's name in `strings.xml`.
+
+### The launcher icon
+
+The test app's icon is a feather on a sky gradient, an **adaptive icon**
+(`res/mipmap-anydpi/ic_launcher.xml`): a background layer (`res/drawable/ic_launcher_background.xml`,
+the gradient as a vector drawable filling the square) and a foreground layer
+(`res/drawable/ic_launcher_foreground.xml`, the feather as vector paths), which the launcher
+cuts to its own shape and may move or scale a little. Everything that matters stays within the
+middle 66 × 66 of the 108 × 108 square. As the app needs API 30 and adaptive icons came with
+API 26, no PNGs per density are needed. The manifest names it (`android:icon` and
+`android:roundIcon` on `<application>`).
+
+The three files are made, with the Windows icon, by one script, so both platforms show the same
+feather:
+
+```
+python tools/scripts/make_feather_icon.py apps/testapp/icon apps/testapp/android/app/src/main/res
+```
+
+To change the icon, change the script (its colours and shapes are at the top) and run it again;
+the generated files are committed, so building doesn't need Python.
 
 ### Assets
 

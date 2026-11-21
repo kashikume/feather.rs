@@ -9,7 +9,7 @@ use winit::application::ApplicationHandler;
 use winit::event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, Touch, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::keyboard::{KeyCode, PhysicalKey};
-use winit::window::{Window, WindowAttributes, WindowId};
+use winit::window::{Icon, Window, WindowAttributes, WindowId};
 
 use vulkanalia::vk::ExtDebugUtilsExtension;
 use vulkanalia::vk::KhrSurfaceExtension;
@@ -17,6 +17,15 @@ use vulkanalia::vk::KhrSwapchainExtension;
 
 /// Set by `request_exit`, checked by `App::run`'s loop.
 static EXIT_REQUESTED: AtomicBool = AtomicBool::new(false);
+
+/// A window icon (`WindowAttributes::with_window_icon`) from PNG data, e.g. built into the
+/// program with `include_bytes!`. Any PNG colour type and bit depth is accepted (see
+/// `Atlas::new_from_png_bytes`).
+pub fn window_icon_from_png(png: &[u8]) -> Result<Icon> {
+    let image = Atlas::new_from_png_bytes(png, None, ColorSpace::Srgb)?;
+    let (width, height) = (image.get_width(), image.get_height());
+    Ok(Icon::from_rgba(image.get_pixels().to_vec(), width, height)?)
+}
 
 /// Asks `App::run` to end its loop, destroying the engine and the app, as closing the window
 /// does. Can be called from any thread.
@@ -35,7 +44,7 @@ const MAX_FRAMES_IN_FLIGHT: usize = 2;
 const NO_TEXTURES: [Option<Texture>; MAX_MATERIAL_TEXTURES] = [None; MAX_MATERIAL_TEXTURES];
 
 use super::appdata::AppData;
-use super::atlas::ColorSpace;
+use super::atlas::{Atlas, ColorSpace};
 use super::buffers::FrameUniformBuffer;
 use super::colorobjects::create_color_objects;
 use super::commandbuffers::{create_command_buffers, record_command_buffer, GpuDraw};
@@ -1362,5 +1371,17 @@ impl Runner {
             _ => {}
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn window_icon_from_png() {
+        let png = include_bytes!("../testdata/atlas_512.png");
+        assert!(super::window_icon_from_png(png).is_ok());
+        assert!(super::window_icon_from_png(b"not a png").is_err());
     }
 }
